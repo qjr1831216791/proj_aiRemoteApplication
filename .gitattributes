@@ -1,0 +1,19 @@
+# 行尾统一：仓库内文本一律 LF，避免 Windows/macOS 协作时的 CRLF 噪音
+* text=auto
+
+# 平台脚本按各自习惯固定行尾
+*.sh  text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 常见二进制文件，禁止行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.exe binary
+*.dll binary

@@ -1,0 +1,17 @@
+# EditorConfig：跨 IDE 的基础编辑行为（https://editorconfig.org）
+# 技术栈确定后可按语言补充缩进等规则
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Markdown 依赖行尾双空格换行，不裁剪行尾空格
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+[*.{json,yaml,yml}]
+indent_style = space
+indent_size = 2
