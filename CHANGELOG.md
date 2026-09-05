@@ -7,6 +7,9 @@
 
 ### Added
 - Spec 驱动开发脚手架：`specs/`（MOC 导航、spec/plan/tasks 模板、归档区）、`docs/`（产品愿景、开发宪法、ADR）
+- 调研报告 `docs/research/remote-solutions.md`：远程操作 Claude Code 的方案调研（CC Switch 约束、多端、公网化与自研评估）
+- Sprint 0 试用部署指南 `docs/research/sprint0-cloudcli-lan-deploy.md`（局域网版，CloudCLI on Windows）
+- Sprint 0 安装脚本 `tools/sprint0/`：`install-server.ps1`（服务端一键部署）与 `install-client.ps1`（客户端连通性验证 + 桌面快捷方式）；配套 `install-server.bat` / `install-client.bat` 双击启动器（服务端自动提权，客户端内嵌服务端地址）；`start-server.bat` 手动启动、`setup-autostart.ps1` 登录自启（含 `run-server-hidden.ps1` 幂等后台启动器）；`sprint0/README.md` 新手上路引导
 - 环境与工具目录：`config/`（含 `.env.example`）、`scripts/`（生命周期命令）、`tools/`（辅助工具）
 - `CLAUDE.md`：Spec 驱动敏捷开发规范与目录结构约定
 - 根 `README.md`（文档地图）、`.gitattributes`（行尾统一）、`.editorconfig`（编辑行为基线）

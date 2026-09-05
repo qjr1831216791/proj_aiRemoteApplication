@@ -49,6 +49,7 @@ proj_aiRemoteApplication/
 ├── docs/                  # 跨 Spec 的长期文档
 │   ├── product.md         # 产品愿景：为什么做
 │   ├── constitution.md    # 开发宪法：跨 Spec 的不变约束，冲突时以此为准
+│   ├── research/          # 调研报告（立项前的需求与技术调研）
 │   └── adr/               # 架构决策记录（含模板与索引）
 ├── specs/                 # ★ Spec 驱动开发核心
 │   ├── MOC.md             # 全部 Spec 的导航地图（状态/迭代/主题）
