@@ -1,0 +1,31 @@
+# Claude Code
+.claude/config.json
+.claude/settings.local.json
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Temp
+.temp/
+.tmp/
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+
+# Test artifacts
+test-results/
+playwright-report/

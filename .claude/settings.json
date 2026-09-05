@@ -1,0 +1,14 @@
+{
+    "worktree": {
+      "bgIsolation": "none"
+    },
+    "permissions": {
+      "defaultMode": "bypassPermissions",
+      "skipDangerousModePermissionPrompt": true,
+      "allow": [
+      ]
+    },
+    "hooks": {
+      
+    }
+  }
