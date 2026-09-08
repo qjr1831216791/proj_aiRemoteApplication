@@ -11,6 +11,7 @@
 ## 快速路径：脚本化安装（推荐）
 
 部署文档中可自动化的部分已脚本化，位于 `tools/sprint0/`（**新手直接看 [tools/sprint0/README.md](../../../tools/sprint0/README.md) 的上路引导**，本文是细节底册）：
+2026-09-08 起日常入口是双击 **`tools/sprint0/start-here.bat`** 总控菜单（启动/停止/状态/安装/HTTPS/自启开关全在菜单里），脚本本体收纳于 `tools/sprint0/bin/`：
 
 | 脚本 | 跑在哪 | 覆盖的手工章节 | 用法 |
 |------|--------|----------------|------|
@@ -210,12 +211,87 @@ Remove-NetFirewallRule -DisplayName "CloudCLI LAN 3001"   # 删防火墙规则�
 
 CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
 
+## 9. HTTPS/域名版（ai.jackqi.cn）：手机可"装成 App"的进阶形态
+
+> **性质澄清**：这**不是公网版**——域名只为证书可信服务，访问仍限局域网（同一 WiFi）。
+> **动机**：PWA 完整安装（独立 App 窗口、无浏览器地址栏）要求**安全上下文（HTTPS）**，明文 HTTP 下浏览器只给书签式快捷方式。Service Worker / PWA 安装仅允许 HTTPS 或 localhost，此为浏览器硬性规则。
+
+### 9.1 架构与运行时布局
+
+```
+手机 ──https://ai.jackqi.cn:443──> Caddy(TLS终结) ──> 127.0.0.1:3001 CloudCLI
+      │
+      ├ DNS: ai.jackqi.cn 的 A 记录 ← ddns-go 每 5 分钟跟随本机局域网 IP
+      └ 证书: Let's Encrypt（DNS-01 验证，经腾讯云 CAM API），acme.sh 计划任务自动续期
+```
+
+| 路径 | 内容 | 分发注意 |
+|------|------|----------|
+| `D:\Software\cloudcli-https\` | caddy.exe、ddns-go.exe、Caddyfile、ddns-go.yaml、certs\ | **勿分发**（ddns-go.yaml 含 API 密钥、certs 含私钥） |
+| `C:\Users\<user>\.acme.sh\` | acme.sh 安装、账户与证书源文件（含密钥） | 勿分发 |
+| 项目根 `.env` | 凭证**录入入口**（TENCENT_SECRET_ID/KEY） | 勿分发；运行时无脚本读取它（凭证已固化于上两处） |
+
+### 9.2 前置条件
+
+1. **域名**（腾讯云购买，购买流程强制实名；未实名 .cn 不给解析）。示例：`jackqi.cn`，用子域 `ai.jackqi.cn`
+2. **腾讯云 CAM API 密钥**：https://console.cloud.tencent.com/cam/capi → 新建密钥。规范做法是建子用户仅授 `QcloudDNSPodFullAccess` 再为其建密钥
+   - ⚠️ 老体系"DNSPod Token"（console.dnspod.cn → 密钥管理）**已被 acme.sh 新版淘汰**（`dns_dnspod` 插件已删除），不要走错门
+3. 项目根 `.env` 录入：`TENCENT_SECRET_ID=` / `TENCENT_SECRET_KEY=`（模板见仓库 `.env.example`）
+
+### 9.3 部署步骤（对应 `tools/sprint0/bin/`）
+
+1. **DNS 记录**：手动加一条 `ai` 的 A 记录 → 当前服务端 IP；或跳过手动，直接配 ddns-go 自动创建
+2. **ddns-go**：`ddns-go.exe -c ddns-go.yaml -l :9876 -f 300` → 浏览器 `127.0.0.1:9876` → 服务商选腾讯云、填 SecretId/Key、IPv4 取"网卡"WLAN、域名 `ai.jackqi.cn` → 保存即更新记录；`-f 300` = 每 5 分钟校正（换热点/换 WiFi 全自动跟随）
+   ⚠️ 不要设置"HTTP 绑定网卡"（`httpinterface`）相关选项——见 §9.5-⑧
+3. **证书**（先导入凭证环境变量 `Tencent_SecretId` / `Tencent_SecretKey`）：
+   ```bash
+   acme.sh --issue --dns dns_tencent -d ai.jackqi.cn --server letsencrypt
+   acme.sh --install-cert -d ai.jackqi.cn --ecc \
+     --fullchain-file <certs>/ai.jackqi.cn.fullchain.cer \
+     --key-file <certs>/ai.jackqi.cn.key \
+     --reloadcmd "<caddy> reload --config <Caddyfile>"
+   ```
+   ⚠️ **必须传全名 `--dns dns_tencent`**——踩坑实录 §9.5-①
+4. **Caddy**：`caddy.exe start --config Caddyfile`（内容：`ai.jackqi.cn:443 { tls <证书> <私钥>; reverse_proxy 127.0.0.1:3001 }`，顶部 `auto_https disable_redirects`——80 端口可能被 Hyper-V 排除）
+5. **双击 `enable-https.bat`**：防火墙放行 TCP 443（仅专用网络）+ 全部网络配置文件改"专用"（新网络默认 Public，否则规则不生效）+ hosts 钉定 `dnspod.tencentcloudapi.com` 的 IPv4（§9.5-⑧）
+6. **验证**：PC `curl https://ai.jackqi.cn` → 200；手机同 WiFi 打开 → 无警告锁标 → Chrome"添加到主屏幕"装成独立 App
+
+### 9.4 换机迁移指南（服务端坏了/退役，换新机）
+
+关键认知：**域名、DDNS、证书续期全部绑在"云账户身份"上，不绑机器**——所以迁移很轻。
+
+| 资产 | 迁移策略 |
+|------|----------|
+| 域名 + A 记录 | 不动；新机 ddns-go 配好后自动把 A 记录刷成新机 IP（切换的临门一脚） |
+| CAM 密钥（`.env`） | 直接复用（自己的账户） |
+| 证书/私钥 | **推荐不拷**：新机用同一 CAM 密钥重新签（免费，LE 每域名每周 5 张限额足够）；拷旧 `~/.acme.sh` 也可无缝续期 |
+| `D:\Software\cloudcli-https` 的 exe | 可拷；`ddns-go.yaml` 含自己密钥，拷给自己没问题 |
+| Claude Code 会话/项目 | 拷 `~/.claude\`（要历史才拷）+ 项目目录（路径尽量一致） |
+
+步骤：新机装 Claude Code + CC Switch（唯一的手工活）→ 拷项目与 `~/.claude\` → `bin\install-server.bat` → enable-https.bat → 重签证书 → 配 ddns-go → `bin\autostart-on.bat` → 验证 → 旧机 `bin\autostart-off.bat` 善后。
+
+### 9.5 踩坑实录（知识库精华，全是实测踩过）
+
+1. **acme.sh `--dns tencent` 必须传全名**：acme.sh 以 `_startswith $_currentRoot "dns"` 判定挑战类型（issue 流程）；传 `tencent` 不以 "dns" 开头 → 被误判为 http-01 → LE 去连 80 端口 → 域名 A 记录是私有 IP 被判 "no valid A records"。旧插件名 `dnspod` 恰好以 dns 开头纯属侥幸
+2. **DNSPod Token 体系已被淘汰**：acme.sh 新版删除 `dns_dnspod`，统一 `dns_tencent`（CAM SecretId/SecretKey）。老的 console.dnspod.cn Token 与腾讯云 CAM 密钥是两套体系，别混
+3. **PS 5.1 无 BOM 文件按系统 ANSI（GBK）解码**：UTF-8 中文 3 字节被 GBK 两两吞并时会把换行符一起吃掉 → 行合并 → 花括号悬空解析错。**所有 `.ps1` 必须 UTF-8 带 BOM**；`.bat` 必须纯 ASCII（中文提示下沉到 ps1），否则 GBK 码页机器上同样炸
+4. **PowerShell 字符串 `"$Port:"` 会被解析为作用域变量语法**（冒号后跟非法字符报错）→ 变量后紧跟冒号要写 `${Port}:`
+5. **`$ErrorActionPreference='Stop'` 时，原生命令的 stderr 重定向（`2>$null`）会变成终止错误** → 需要吞 stderr 时放进 `cmd /c "… 2>nul"` 内部执行
+6. **新版 npm 拒绝 `npm config set disturl`**（"not a valid npm option"）→ 需要 disturl 时直接维护用户 `.npmrc`
+7. **停服的 npm.taobao.org 镜像残留**（9 个环境变量）导致 node-gyp 拉头文件证书报错 → `install-server.ps1` 步骤 3 自动体检并经确认迁移 npmmirror
+8. **ddns-go 配置了 `httpinterface`（HTTP 绑定网卡）时，API 请求被绑到接口的全局 IPv6 上**，而本机 v6 到 API 目标路由不通 → 每次更新报 `dial tcp: address [本机v6]:0: no suitable address found` → **清空 ddns-go 配置里的 `httpinterface`**（留空让系统正常路由）即恢复；hosts 钉定 API 域名 IPv4（enable-https 步骤 3）作为额外保险可保留，但不是本问题根因
+9. **DNS 变更后沿途缓存最长 TTL 600s**（10 分钟）才一致：权威 NS 立即生效，公共/路由器 DNS 有滞后；手机开关飞行模式强制重新查询
+
+### 9.6 卸载（HTTPS 部分）
+
+`bin\autostart-off.bat` + `caddy stop` + 停 ddns-go + `Remove-NetFirewallRule -DisplayName "CloudCLI LAN HTTPS 443"` + 可选删 `D:\Software\cloudcli-https\` 与 `~/.acme.sh`（`acme.sh --remove -d ai.jackqi.cn`）。CloudCLI 本体卸载见 §8。
+
 ---
 
 ## 变更记录
 
 | 日期 | 说明 |
-|------|------|
 | 2026-09-05 | 初版：局域网部署（公网 Tailscale 阶段另行成文） |
 | 2026-09-05 | 新增"快速路径：脚本化安装"：`tools/sprint0/install-server.ps1` 与 `install-client.ps1` |
 | 2026-09-05 | 新增"服务的启动、停止与自启"：`start-server.bat` / `setup-autostart.ps1` / `run-server-hidden.ps1` + settings.json SessionStart hook 备选方案 |
+| 2026-09-08 | 新增 §9 HTTPS/域名版（ai.jackqi.cn：Caddy + acme.sh + ddns-go，PWA 可安装）；§6 排障表增补镜像源体检与 HTTPS 条目；工具脚本迁移至 `bin/`、新增总控入口 `start-here.bat`（菜单化全部操作）；新增镜像源自动体检（§9.5 踩坑实录同步沉淀） |

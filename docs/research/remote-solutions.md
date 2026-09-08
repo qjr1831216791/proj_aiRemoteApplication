@@ -168,6 +168,17 @@
 
 **部署分阶段**：先局域网（步骤见 [sprint0-cloudcli-lan-deploy.md](./sprint0-cloudcli-lan-deploy.md)），公网 Tailscale 阶段试用通过后另行补充。
 
+## 试用记录（Sprint 0）
+
+### 2026-09-08：部署完成，正式开始观察
+
+- **局域网 HTTP 部署完成**：手机/PC 浏览器访问 CloudCLI 正常，会话同步、shell、消息收发工作
+- **HTTPS/域名升级完成**：`https://ai.jackqi.cn`（Caddy + Let's Encrypt + ddns-go 动态解析），手机已可"添加到主屏幕"装成独立 App——PWA 需 HTTPS 的限制已通过个人域名方案解除（成本：域名 ~39 元/年 + 证书 0 元）
+- **已知现象（待观察）**：
+  - Shell 界面偶发 `Cannot resize a pty that has already exited`——会话退出后前端仍发 resize 指令所致，**无害**，刷新页面即消；上游缺陷，候选 issue 反馈
+  - 移动端布局基础可用但不算精致（试用观察项 2 持续）
+- **基础设施亮点**：换服务端 = 新机重跑脚本 + ddns-go 自动改解析，迁移成本低（详见部署文档 §9.4）
+
 ## 8. 参考资料
 
 ### 官方
