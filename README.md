@@ -17,7 +17,9 @@
 
 ## 快速开始
 
-待补充（技术栈确定后回填）。本地环境变量：`cp .env.example .env` 后填入真实值。
+当前处于 **Sprint 0 试用阶段**（v0.1.0）：用现成的 CloudCLI 验证"手机遥控开发机上的 Claude Code"，自研立项待试用结论。开发机双击 [tools/sprint0/start-here.bat](tools/sprint0/start-here.bat) 进入总控菜单，上路引导见 [tools/sprint0/README.md](tools/sprint0/README.md)。
+
+本地环境变量：`cp .env.example .env` 后填入真实值。
 
 ## 目录结构
 
