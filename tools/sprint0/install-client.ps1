@@ -8,12 +8,16 @@
     2. 在桌面创建 "AI 远程工作台.url" 快捷方式
     3. 用默认浏览器打开（-NoOpen 跳过）
 
-  无需管理员权限；不修改系统配置，可反复运行。
+  服务端地址来源（按优先级）：
+    a. -Url / -ServerIp 参数（含 install-client.bat 转入的 SERVER_URL）
+    b. 上次成功连接的地址（存于本目录 .last-server-url）——回车确认或输入新值
+    c. 交互输入；TCP 连通后自动保存，下次运行直接回车即确认
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\install-client.ps1 -Url http://192.168.1.100:3001
   powershell -ExecutionPolicy Bypass -File .\install-client.ps1 -ServerIp 192.168.1.100
   powershell -ExecutionPolicy Bypass -File .\install-client.ps1 -Url 192.168.1.100 -NoOpen
+  powershell -ExecutionPolicy Bypass -File .\install-client.ps1               # 交互式：回车确认上次地址
 #>
 [CmdletBinding()]
 param(
@@ -32,14 +36,32 @@ function Write-Ok   { param([string]$Message) Write-Host "    [OK] $Message"  -F
 function Write-Info { param([string]$Message) Write-Host "    [i ] $Message"  -ForegroundColor DarkGray }
 function Write-Bad  { param([string]$Message) Write-Host "    [X ] $Message"  -ForegroundColor Red }
 
-# ---------- 参数归一：支持 -Url / -ServerIp / 裸 IP ----------
-if (-not $Url) {
-    if ($ServerIp) { $Url = "http://${ServerIp}:$Port" }
+# ---------- 地址解析：-Url/-ServerIp 参数 > 上次记录（回车确认）> 交互输入 ----------
+$lastUrlFile = Join-Path $PSScriptRoot '.last-server-url'
+
+if (-not $Url -and -not $ServerIp) {
+    $last = ''
+    if (Test-Path $lastUrlFile) {
+        $last = (Get-Content $lastUrlFile -Raw -ErrorAction SilentlyContinue)
+        if ($last) { $last = $last.Trim() }
+    }
+    if ($last) {
+        Write-Step '检测到上次使用的服务端地址'
+        $typed = Read-Host "    直接回车确认 $last ，或输入新地址"
+        if ($typed -and $typed.Trim()) { $Url = $typed.Trim() } else { $Url = $last }
+    }
     else {
-        Write-Bad '请提供服务端地址：-Url http://192.168.x.x:3001 或 -ServerIp 192.168.x.x'
+        Write-Step '首次使用：请提供服务端地址'
+        Write-Host  "    地址在服务端运行 install-server.bat 后会打印，形如 http://192.168.1.100:$Port" -ForegroundColor DarkGray
+        $typed = Read-Host '    服务端地址（输入一次并连通后将记住，之后回车即确认）'
+        if ($typed -and $typed.Trim()) { $Url = $typed.Trim() }
+    }
+    if (-not $Url) {
+        Write-Bad '未输入地址，已退出'
         exit 1
     }
 }
+elseif ($ServerIp) { $Url = "http://${ServerIp}:$Port" }
 if ($Url -notmatch '^https?://') { $Url = "http://$Url" }
 try { $uri = [uri]$Url } catch { Write-Bad "URL 无法解析：$Url"; exit 1 }
 if ($uri.Port -eq 80) {
@@ -63,6 +85,10 @@ if (-not $t.TcpTestSucceeded) {
     exit 1
 }
 Write-Ok "TCP $($uri.Host):$($uri.Port) 可达"
+
+# 记住本次地址：下次运行直接回车确认即可
+[System.IO.File]::WriteAllText($lastUrlFile, $Url, (New-Object System.Text.UTF8Encoding($false)))
+Write-Info '已记住该地址（.last-server-url），下次运行回车即确认'
 
 try {
     $resp = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 8

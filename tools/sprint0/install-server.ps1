@@ -9,17 +9,20 @@
   执行内容（均可逆，回滚命令见部署文档 §8）：
     1. 检查/安装 Node.js >= 20（缺失时经 winget 安装 OpenJS.NodeJS.LTS）
     2. 检查 Claude Code（缺失即退出——CC Switch 前置必须手动完成）
-    3. npm 全局安装 @cloudcli-ai/cloudcli（-UseMirror 可换国内镜像）
+    3. 安装 @cloudcli-ai/cloudcli（已安装则跳过，仅刷新其余配置；
+       -Update 强制升级最新版；-UseMirror 可换国内镜像）
     4. powercfg 设置插电永不睡眠（standby-timeout-ac 0）
     5. 创建防火墙入站规则 "CloudCLI LAN <port>"（仅专用网络 Private）
     6. 将当前网络配置文件设为"专用"（域网络跳过）
     7. 探测局域网 IPv4，打印客户端访问地址
 
+  幂等设计：装好后重复运行 = 跳过已装组件、只刷新配置，不会重复安装。
   需要管理员权限（防火墙 / 电源 / 网络配置文件）。
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\install-server.ps1
   powershell -ExecutionPolicy Bypass -File .\install-server.ps1 -UseMirror -Port 3001
+  powershell -ExecutionPolicy Bypass -File .\install-server.ps1 -Update   # 升级 CloudCLI 到最新
 
 .NOTES
   决策依据：docs/research/remote-solutions.md §7（D0 先试用 / Q1 宿主=开发机 / Q2 Tailscale）。
@@ -27,7 +30,8 @@
 [CmdletBinding()]
 param(
     [int]$Port = 3001,
-    [switch]$UseMirror
+    [switch]$UseMirror,
+    [switch]$Update
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,22 +94,33 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
     exit 1
 }
 
-# ---------- 3. 安装 CloudCLI ----------
-Write-Step '步骤 3/7：npm 全局安装 CloudCLI'
+# ---------- 3. 安装/升级 CloudCLI（幂等：已装则跳过）----------
+Write-Step '步骤 3/7：安装 CloudCLI（已装则跳过，-Update 升级）'
 if ($UseMirror) {
     npm config set registry https://registry.npmmirror.com
     Write-Ok 'npm registry -> https://registry.npmmirror.com（国内镜像）'
 }
-npm install -g '@cloudcli-ai/cloudcli'
-if ($LASTEXITCODE -ne 0) {
-    Write-Bad "npm install 失败（exit $LASTEXITCODE）；网络慢可加 -UseMirror 重试"
-    exit 1
+$cloudcliInstalled = Get-Command cloudcli -ErrorAction SilentlyContinue
+if (-not $cloudcliInstalled) {
+    Refresh-Path
+    $cloudcliInstalled = Get-Command cloudcli -ErrorAction SilentlyContinue
 }
-if (-not (Get-Command cloudcli -ErrorAction SilentlyContinue)) { Refresh-Path }
-if (Get-Command cloudcli -ErrorAction SilentlyContinue) {
-    Write-Ok 'cloudcli 命令已可用'
+
+if ($cloudcliInstalled -and -not $Update) {
+    Write-Ok 'cloudcli 已安装，跳过安装（升级：加 -Update 重跑）'
 } else {
-    Write-Info 'cloudcli 已安装但当前会话 PATH 未刷新，新开一个终端即可使用'
+    $pkg = if ($Update) { '@cloudcli-ai/cloudcli@latest' } else { '@cloudcli-ai/cloudcli' }
+    npm install -g $pkg
+    if ($LASTEXITCODE -ne 0) {
+        Write-Bad "npm install 失败（exit $LASTEXITCODE）；网络慢可加 -UseMirror 重试"
+        exit 1
+    }
+    if (-not (Get-Command cloudcli -ErrorAction SilentlyContinue)) { Refresh-Path }
+    if (Get-Command cloudcli -ErrorAction SilentlyContinue) {
+        Write-Ok 'cloudcli 命令已可用'
+    } else {
+        Write-Info 'cloudcli 已安装但当前会话 PATH 未刷新，新开一个终端即可使用'
+    }
 }
 
 # ---------- 4. 电源常开 ----------

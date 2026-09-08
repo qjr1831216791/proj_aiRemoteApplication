@@ -28,6 +28,7 @@
    脚本自动完成：检查/安装 Node → 检查 Claude Code → 装 CloudCLI → 电源永不睡眠 → 防火墙放行 → 网络改"专用"。
    - 卡在哪一步会**停下来告诉你怎么办**（比如缺 Claude Code / CC Switch 没配好），照提示做完重跑即可。
    - npm 下载慢：右键编辑该文件，把 `set "PS_ARGS="` 改成 `set "PS_ARGS=-UseMirror"` 再双击。
+   - 重跑是安全的：已装好的组件自动跳过，只刷新电源/防火墙/网络配置；升级 CloudCLI 把 `PS_ARGS` 改成 `-Update`（可叠加 `-UseMirror`）再双击。
 2. **记下结尾打印的"客户端访问地址"**，形如 `http://192.168.x.x:3001`（这就是给其他设备用的）。
 3. **浏览器打开 `http://localhost:3001` → 设置 → 开启需要的工具**（默认全禁用是它的安全设计；建议先开文件浏览/编辑 + Git）。
 
@@ -40,11 +41,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run-server-hidden.ps1   # 
 
 ## 客户端上路（2 步）
 
-1. 把整个 `sprint0/` 文件夹拷到客户端电脑，**右键编辑 `install-client.bat`**，顶部填上服务端地址：
-   ```bat
-   set "SERVER_URL=http://192.168.x.x:3001"
-   ```
-2. **双击**。脚本会：验证服务端可达（不通会按顺序告诉你查什么）→ 桌面生成"AI 远程工作台"快捷方式 → 自动打开浏览器。
+1. 把整个 `sprint0/` 文件夹拷到客户端电脑，**双击 `install-client.bat`**：
+   - 首次运行会提示输入服务端地址（服务端安装结尾打印的那个，形如 `http://192.168.x.x:3001`），输入回车即可；
+   - 连接成功后自动记住（存于脚本同目录 `.last-server-url`），之后每次双击**直接回车**确认；
+   - 想预填固定地址：右键编辑 `install-client.bat`，顶部 `set "SERVER_URL=http://192.168.x.x:3001"`。
+2. 脚本会：验证服务端可达（不通会按顺序告诉你查什么）→ 桌面生成"AI 远程工作台"快捷方式 → 自动打开浏览器。
 
 ## 手机上路（0 步）
 
@@ -55,7 +56,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run-server-hidden.ps1   # 
 | 文件 | 哪台机器 | 什么时候用 |
 |------|----------|------------|
 | `install-server.bat` / `.ps1` | 服务端 | 装机**一次**（双击 .bat） |
-| `install-client.bat` / `.ps1` | 客户端 | 每台客户端**一次**（改地址后双击） |
+| `install-client.bat` / `.ps1` | 客户端 | 每台客户端**一次**（首次输地址；换地址时重跑） |
 | `start-server.bat` | 服务端 | 手动启动服务（双击；已在运行则直接开浏览器） |
 | `run-server-hidden.ps1` | 服务端 | 后台静默启动（自启任务/hook 内部调用，一般不直接碰） |
 | `setup-autostart.ps1` | 服务端 | 注册/移除开机自启（**一次**） |
@@ -73,6 +74,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run-server-hidden.ps1   # 
 | 想停止服务 | 前台窗口 Ctrl+C；后台实例执行 `Get-NetTCPConnection -LocalPort 3001 -State Listen \| ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }` |
 | 想完全卸载 | `npm uninstall -g @cloudcli-ai/cloudcli` + `setup-autostart.ps1 -Remove` + 删防火墙规则（详见部署文档 §8） |
 | 想换端口 | `install-server.ps1 -Port 3002` 重跑，客户端 URL 与防火墙规则同步改 |
+| 想升级/重装 CloudCLI | 服务端编辑 `install-server.bat`，`set "PS_ARGS=-Update"` 后重跑 |
+| 想换服务端地址 | 客户端双击 `install-client.bat`，提示处输入新地址（旧记录自动覆盖） |
 
 ## 试用期你要观察什么（1~2 周）
 

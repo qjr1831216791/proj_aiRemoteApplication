@@ -50,6 +50,9 @@ logs/
 Thumbs.db
 desktop.ini
 
+# Sprint 0 工具运行时状态（install-client 记住的服务端地址）
+tools/sprint0/.last-server-url
+
 # IDE
 .vscode/
 .idea/
