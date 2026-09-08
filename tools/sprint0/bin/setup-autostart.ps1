@@ -6,7 +6,8 @@
 .DESCRIPTION
   管理三个组件的登录自启，全部幂等（已在运行则自动跳过）：
     1. CloudCLI        -> run-server-hidden.ps1（隐藏窗口，端口守卫）
-    2. Caddy           -> caddy.exe start --config Caddyfile（HTTPS 反代 443 -> 3001）
+    2. Caddy           -> caddy.exe run --config Caddyfile（HTTPS 反代 443 -> 3001；
+                          必须长驻 run 而非 start，见组件定义处注释与 §9.5-⑩）
     3. ddns-go         -> ddns-go.exe（DDNS，ai.jackqi.cn 跟随本机 IP）
 
   用法（开关）：
@@ -54,7 +55,9 @@ $components = @(
     @{
         Name   = 'Caddy Sprint0 autostart'
         Exe    = 'powershell.exe'
-        Arg    = "-NoProfile -WindowStyle Hidden -Command `"& '$StackDir\caddy.exe' start --config '$StackDir\Caddyfile'`""
+        # 必须用长驻的 run 而非 start：start 会 fork 子进程后退出，计划任务结束时
+        # Windows 会把同作业的子进程一并杀死，导致 443 从未真正起来（§9.5-⑩）
+        Arg    = "-NoProfile -WindowStyle Hidden -Command `"& '$StackDir\caddy.exe' run --config '$StackDir\Caddyfile'`""
         Check  = (Join-Path $StackDir 'caddy.exe')
         Why    = (T "缺少 $StackDir\caddy.exe" "Missing $StackDir\caddy.exe")
     },

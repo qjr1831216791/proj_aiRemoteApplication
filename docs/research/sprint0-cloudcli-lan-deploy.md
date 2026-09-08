@@ -2,7 +2,7 @@
 
 > - **日期**：2026-09-05
 > - **前提**：仅局域网部署（手机/其他 PC 与开发机同一 WiFi），**公网（Tailscale）阶段本次不做**，作为后续独立步骤。
-> - **拓扑**：`[手机/PC 浏览器] ─局域网→ [Windows 开发机: CloudCLI(3001) + Claude Code(CC Switch)]`
+> - **拓扑**：`[手机/PC 浏览器] ─局域网→ [Windows 开发机: Caddy(443) → CloudCLI(3001) + Claude Code(CC Switch)]`（HTTPS 未部署时手机直连 3001，见 §9）
 > - **决策依据**：[remote-solutions.md](./remote-solutions.md) §7 决策记录（D0 先试用 / Q1 开发机 / Q2 Tailscale / Q3 需推送）
 > - **预计耗时**：全新环境约 30~40 分钟
 
@@ -15,8 +15,8 @@
 
 | 脚本 | 跑在哪 | 覆盖的手工章节 | 用法 |
 |------|--------|----------------|------|
-| `install-server.ps1` | **服务端**（运行 AI 实例的电脑，需管理员） | §0 Node 检查/安装、§1 安装 CloudCLI、§3.2 防火墙、§3.3 IP 探测、§4 电源常开 | `powershell -ExecutionPolicy Bypass -File .\install-server.ps1`（慢网加 `-UseMirror`，端口非默认加 `-Port`） |
-| `install-client.ps1` | **客户端**（远程操控的电脑，无需管理员） | §3.4 连通性验证 + 桌面快捷方式 | `powershell -ExecutionPolicy Bypass -File .\install-client.ps1 -Url http://<服务端IP>:3001` |
+| `bin\install-server.ps1` | **服务端**（运行 AI 实例的电脑，需管理员） | §0 Node 检查/安装、§1 安装 CloudCLI、§3.2 防火墙、§3.3 IP 探测、§4 电源常开 | `powershell -ExecutionPolicy Bypass -File .\bin\install-server.ps1`（慢网加 `-UseMirror`，端口非默认加 `-Port`） |
+| `bin\install-client.ps1` | **客户端**（远程操控的电脑，无需管理员） | §3.4 连通性验证 + 桌面快捷方式 | `powershell -ExecutionPolicy Bypass -File .\bin\install-client.ps1 -Url http://<服务端IP>:3001` |
 
 脚本管不到、仍需手动的三件事：① Claude Code + CC Switch 前置（脚本只检查，不代装）；② 页面内开启工具开关（§2.2）；③ 手机没有脚本——同 WiFi 浏览器直接输地址，可"添加到主屏幕"。
 
@@ -24,25 +24,25 @@
 
 | 启动器 | 用法 |
 |--------|------|
-| `install-server.bat` | 直接双击 → 自动弹 UAC 提权 → 执行 `install-server.ps1`；需要国内镜像时右键编辑，把 `PS_ARGS=` 改为 `PS_ARGS=-UseMirror` |
-| `install-client.bat` | 右键编辑顶部 `SERVER_URL=` 填入服务端地址（如 `http://192.168.x.x:3001`）→ 双击；为空时运行中手动输入亦可 |
+| `bin\install-server.bat` | 直接双击 → 自动弹 UAC 提权 → 执行 `install-server.ps1`；需要国内镜像时右键编辑，把 `PS_ARGS=` 改为 `PS_ARGS=-UseMirror` |
+| `bin\install-client.bat` | 右键编辑顶部 `SERVER_URL=` 填入服务端地址（如 `http://192.168.x.x:3001`）→ 双击；为空时运行中手动输入亦可 |
 
 ## 服务的启动、停止与自启
 
-**手动启动**：终端运行 `cloudcli`，保持窗口开启（窗口 = 服务生命周期）。或双击 `tools/sprint0/start-server.bat`——已在运行则直接打开浏览器，否则在当前窗口启动。
+**手动启动**：终端运行 `cloudcli`，保持窗口开启（窗口 = 服务生命周期）。或双击 `tools/sprint0/bin/start-server.bat`——已在运行则直接打开浏览器，否则在当前窗口启动。整栈（CloudCLI + Caddy + ddns-go）一键启停用总控菜单 `start-here.bat` 的选项 1/2。
 
-**停止**：前台实例 Ctrl+C 或关窗；后台/自启实例用（结束占用 3001 端口的进程）：
+**停止**：前台实例 Ctrl+C 或关窗；后台/自启实例双击 `bin\stop-server.bat`，或手动结束占用 3001 端口的进程：
 
 ```powershell
 Get-NetTCPConnection -LocalPort 3001 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 ```
 
-**推荐：登录自启**（CloudCLI 定位是基础设施，应常驻、与 claude 会话解耦）：
+**推荐：登录自启**（CloudCLI 定位是基础设施，应常驻、与 claude 会话解耦）。双击 `bin\autostart-on.bat` 开启、`bin\autostart-off.bat` 关闭（即菜单选项 7/8），等价命令行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1          # 注册（当前用户登录时隐藏窗口自启）
-powershell -NoProfile -ExecutionPolicy Bypass -File .\run-server-hidden.ps1   # 注册后立即启动一次，不等重新登录
-powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1 -Remove  # 移除
+powershell -ExecutionPolicy Bypass -File .\bin\setup-autostart.ps1          # 注册三组件登录自启（CloudCLI + Caddy + ddns-go）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1   # 注册后立即启动 CloudCLI 一次，不等重新登录
+powershell -ExecutionPolicy Bypass -File .\bin\setup-autostart.ps1 -Remove  # 全部移除
 ```
 
 - 幂等：`run-server-hidden.ps1` 检测到 3001 已监听即退出，重复触发无副作用。
@@ -59,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1 -Remove  # 移除
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"D:/document/RekTec/AIProj/proj_aiRemoteApplication/tools/sprint0/run-server-hidden.ps1\""
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"D:/Document/AI_CodeStudyProj/proj_aiRemoteApplication/tools/sprint0/bin/run-server-hidden.ps1\""
           }
         ]
       }
@@ -77,8 +77,6 @@ powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1 -Remove  # 移除
 ## 0. 前置条件自查
 
 > 架构事实：**客户端 = 浏览器，本机零安装**。客户端脚本只是"验证可达 + 建快捷方式"，跨多台电脑复用时把 `tools/sprint0/` 拷过去运行即可。
-
-## 0. 前置条件自查
 
 | # | 项目 | 检查命令 | 要求 |
 |---|------|----------|------|
@@ -128,7 +126,7 @@ npx @cloudcli-ai/cloudcli
    - ✅ Git 面板（查看 diff / 提交）
    - ⬜ 集成 shell 终端（PC 上有用；手机上意义不大，可先不开）
 3. **模型链路**：新建会话发一句消息，确认响应来自 CC Switch 当前供应商（可在会话里输入 `/status` 查看实际连接的 API 配置）。
-4. **文件浏览**：File Explorer 打开本仓库 `D:\document\RekTec\AIProj\proj_aiRemoteApplication`，确认文件树、语法高亮、编辑保存正常。
+4. **文件浏览**：File Explorer 打开本仓库 `D:\Document\AI_CodeStudyProj\proj_aiRemoteApplication`，确认文件树、语法高亮、编辑保存正常。
 
 ## 3. 局域网放行（手机/其他 PC 接入的关键，多数卡壳都在这）
 
@@ -252,8 +250,8 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
      --reloadcmd "<caddy> reload --config <Caddyfile>"
    ```
    ⚠️ **必须传全名 `--dns dns_tencent`**——踩坑实录 §9.5-①
-4. **Caddy**：`caddy.exe start --config Caddyfile`（内容：`ai.jackqi.cn:443 { tls <证书> <私钥>; reverse_proxy 127.0.0.1:3001 }`，顶部 `auto_https disable_redirects`——80 端口可能被 Hyper-V 排除）
-5. **双击 `enable-https.bat`**：防火墙放行 TCP 443（仅专用网络）+ 全部网络配置文件改"专用"（新网络默认 Public，否则规则不生效）+ hosts 钉定 `dnspod.tencentcloudapi.com` 的 IPv4（§9.5-⑧）
+4. **Caddy**：交互式终端可 `caddy.exe start --config Caddyfile`（内容：`ai.jackqi.cn:443 { tls <证书> <私钥>; reverse_proxy 127.0.0.1:3001 }`，顶部 `auto_https disable_redirects`——80 端口可能被 Hyper-V 排除）。⚠️ 计划任务里必须用长驻的 `run` 而非 `start`，原因见 §9.5-⑩（自启脚本已内置正确写法）
+5. **双击 `bin\enable-https.bat`**（即菜单选项 5）：防火墙放行 TCP 443（仅专用网络）+ 全部网络配置文件改"专用"（新网络默认 Public，否则规则不生效）+ hosts 钉定 `dnspod.tencentcloudapi.com` 的 IPv4（§9.5-⑧）
 6. **验证**：PC `curl https://ai.jackqi.cn` → 200；手机同 WiFi 打开 → 无警告锁标 → Chrome"添加到主屏幕"装成独立 App
 
 ### 9.4 换机迁移指南（服务端坏了/退役，换新机）
@@ -281,10 +279,21 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
 7. **停服的 npm.taobao.org 镜像残留**（9 个环境变量）导致 node-gyp 拉头文件证书报错 → `install-server.ps1` 步骤 3 自动体检并经确认迁移 npmmirror
 8. **ddns-go 配置了 `httpinterface`（HTTP 绑定网卡）时，API 请求被绑到接口的全局 IPv6 上**，而本机 v6 到 API 目标路由不通 → 每次更新报 `dial tcp: address [本机v6]:0: no suitable address found` → **清空 ddns-go 配置里的 `httpinterface`**（留空让系统正常路由）即恢复；hosts 钉定 API 域名 IPv4（enable-https 步骤 3）作为额外保险可保留，但不是本问题根因
 9. **DNS 变更后沿途缓存最长 TTL 600s**（10 分钟）才一致：权威 NS 立即生效，公共/路由器 DNS 有滞后；手机开关飞行模式强制重新查询
+10. **计划任务结束时 Windows 会连带杀死同作业的子进程**：自启任务里跑 `caddy start`（fork 子进程后父退出）→ 任务结束 → 子 caddy 被杀，443 从未真正起来。**自启任务必须直接运行长驻进程本体**（Caddy 用 `run`；CloudCLI 用 cmd 分离启动的 run-server-hidden.ps1）。症状特征：任务状态 Ready（已结束）而端口未监听
+11. **已运行的 PowerShell 脚本不会因文件被修改而更新**（脚本在启动时一次性加载）：改了 `menu.ps1`/其他脚本后，必须关掉旧窗口重新打开才能生效。症状特征：改完代码行为依旧——先怀疑旧进程
 
 ### 9.6 卸载（HTTPS 部分）
 
-`bin\autostart-off.bat` + `caddy stop` + 停 ddns-go + `Remove-NetFirewallRule -DisplayName "CloudCLI LAN HTTPS 443"` + 可选删 `D:\Software\cloudcli-https\` 与 `~/.acme.sh`（`acme.sh --remove -d ai.jackqi.cn`）。CloudCLI 本体卸载见 §8。
+`bin\autostart-off.bat`（关自启）+ 菜单选项 2（停整栈：CloudCLI + Caddy + ddns-go）+ `Remove-NetFirewallRule -DisplayName "CloudCLI LAN HTTPS 443"` + 可选删 `D:\Software\cloudcli-https\` 与 `~/.acme.sh`（`acme.sh --remove -d ai.jackqi.cn`）。CloudCLI 本体卸载见 §8。
+
+### 9.7 移动端/浏览器报错速查
+
+| 看到的现象 | 病因 | 处理 |
+|------------|------|------|
+| App 内显示 **"Offline, Please check your connection"** | 这是 PWA 的离线兜底页（Service Worker 缓存），表示**后端/Caddy 够不着**，不是手机断网 | 服务端菜单查状态；起服务后**完全关闭 App 重开**或下拉刷新（清掉缓存的离线页） |
+| 浏览器报 **找不到服务器 / DNS_PROBE** | DNS 缓存未过期（记录 TTL 最长 10 分钟） | PC：`ipconfig /flushdns`；手机：开关一次飞行模式；浏览器开无痕窗口复测 |
+| 浏览器**一直转圈超时** | 到服务端 IP 的连接被防火墙拦或服务没起 | 服务端菜单选 3 看状态；确认 enable-https 已跑、网络为"专用" |
+| 浏览器报**证书警告**（红叉） | 证书过期/续期失败，或访问的不是本方案的域名 | 服务端跑 `acme.sh --renew -d ai.jackqi.cn --ecc --force`，看报错 |
 
 ---
 
@@ -295,3 +304,5 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
 | 2026-09-05 | 新增"快速路径：脚本化安装"：`tools/sprint0/install-server.ps1` 与 `install-client.ps1` |
 | 2026-09-05 | 新增"服务的启动、停止与自启"：`start-server.bat` / `setup-autostart.ps1` / `run-server-hidden.ps1` + settings.json SessionStart hook 备选方案 |
 | 2026-09-08 | 新增 §9 HTTPS/域名版（ai.jackqi.cn：Caddy + acme.sh + ddns-go，PWA 可安装）；§6 排障表增补镜像源体检与 HTTPS 条目；工具脚本迁移至 `bin/`、新增总控入口 `start-here.bat`（菜单化全部操作）；新增镜像源自动体检（§9.5 踩坑实录同步沉淀） |
+| 2026-09-08 | 重启实战修复：计划任务子进程连带杀死（§9.5-⑩，Caddy 自启改 `run`）；菜单选项 1/2 升级为整栈启停；§9.5-⑪ 旧进程不热更新；新增 §9.7 移动端/浏览器报错速查表 |
+| 2026-09-08 | 全量复核（v0.1.0 发布前）：合并重复的 §0 标题；用法示例统一 `bin\` 前缀；修正示例中过时的仓库旧路径；§9.3-4 补 `run`/`start` 使用边界；停止/卸载指引改为指向菜单与 stop-server.bat |

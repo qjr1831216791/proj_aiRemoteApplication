@@ -47,7 +47,7 @@
 2. **记下结尾打印的"客户端访问地址"**，形如 `http://192.168.x.x:3001`（这就是给其他设备用的）。
 3. **浏览器打开 `http://localhost:3001` → 设置 → 开启需要的工具**（默认全禁用是它的安全设计；建议先开文件浏览/编辑 + Git）。
 
-**HTTPS 版（推荐，手机可装成 App）**：需要一个已实名域名（当前 `ai.jackqi.cn`）。依次：菜单 5（HTTPS 环境配置）→ 菜单 1（启动服务）→ 手机访问 `https://ai.jackqi.cn`。原理与排障见部署文档新增的 HTTPS 一节。
+**HTTPS 版（推荐，手机可装成 App）**：需要一个已实名域名（当前 `ai.jackqi.cn`）。依次：菜单 5（HTTPS 环境配置）→ 菜单 1（启动服务）→ 手机访问 `https://ai.jackqi.cn`。原理与排障见[部署文档 §9（HTTPS/域名版）](../../docs/research/sprint0-cloudcli-lan-deploy.md)。
 
 **开机常驻（可选但推荐）**——双击 `bin\autostart-on.bat` 开启，`bin\autostart-off.bat` 关闭：
 

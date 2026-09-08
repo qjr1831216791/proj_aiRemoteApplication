@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Sprint 0 总控菜单：输入选项完成全部功能（menu.bat 的实际实现）。
+  Sprint 0 总控菜单：输入选项完成全部功能（外层 start-here.bat 的实际实现）。
   Bilingual prompts follow the Windows display language; force with -Lang zh|en.
 
 .DESCRIPTION
@@ -91,11 +91,28 @@ while ($true) {
     switch ($choice.Trim()) {
         '1' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'run-server-hidden.ps1')
+            if (-not (Test-PortListening $httpsPort)) {
+                Start-Process -FilePath (Join-Path $StackDir 'caddy.exe') -ArgumentList 'run', '--config', (Join-Path $StackDir 'Caddyfile') -WindowStyle Hidden
+                Write-Host (T '[OK] Caddy 已启动。' '[OK] Caddy started.') -ForegroundColor Green
+            }
+            if (-not (Test-PortListening 9876)) {
+                Start-Process -FilePath (Join-Path $StackDir 'ddns-go.exe') -ArgumentList '-c', (Join-Path $StackDir 'ddns-go.yaml'), '-l', ':9876', '-f', '300' -WindowStyle Hidden
+                Write-Host (T '[OK] ddns-go 已启动。' '[OK] ddns-go started.') -ForegroundColor Green
+            }
             Start-Process "http://localhost:$port"
             Write-Host (T '[OK] 服务已启动（后台），浏览器已打开本机页面。' '[OK] Services started (background); opened local page in browser.') -ForegroundColor Green
         }
         '2' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'stop-server.ps1')
+            if (Test-PortListening $httpsPort) {
+                & (Join-Path $StackDir 'caddy.exe') stop | Out-Null
+                Write-Host (T '[OK] Caddy 已停止。' '[OK] Caddy stopped.') -ForegroundColor Green
+            }
+            $ddns = Get-Process -Name ddns-go -ErrorAction SilentlyContinue
+            if ($ddns) {
+                $ddns | Stop-Process -Force
+                Write-Host (T '[OK] ddns-go 已停止。' '[OK] ddns-go stopped.') -ForegroundColor Green
+            }
         }
         '3' {
             Show-Status
