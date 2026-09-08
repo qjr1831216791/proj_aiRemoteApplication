@@ -238,8 +238,9 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
 
 ### 9.3 部署步骤（对应 `tools/sprint0/bin/`）
 
+0. **一键装栈**：双击 `bin\install-https.bat`（管理员）——自动下载 `caddy.exe` / `ddns-go.exe`（GitHub Release 最新版，按资产名正则匹配，幂等可重跑；直连失败可 `-CaddyZip` / `-DdnsZip` 指向手动下载的 zip，升级加 `-Update`）、生成步骤 4 的 Caddyfile、代跑步骤 5 的 enable-https、拉起 ddns-go 并打开管理页。做完本步，下面只剩 2 的密钥配置与 3 的证书签发两件手工活
 1. **DNS 记录**：手动加一条 `ai` 的 A 记录 → 当前服务端 IP；或跳过手动，直接配 ddns-go 自动创建
-2. **ddns-go**：`ddns-go.exe -c ddns-go.yaml -l :9876 -f 300` → 浏览器 `127.0.0.1:9876` → 服务商选腾讯云、填 SecretId/Key、IPv4 取"网卡"WLAN、域名 `ai.jackqi.cn` → 保存即更新记录；`-f 300` = 每 5 分钟校正（换热点/换 WiFi 全自动跟随）
+2. **ddns-go**：（步骤 0 已拉起）浏览器 `127.0.0.1:9876` → 服务商选腾讯云、填 SecretId/Key、IPv4 取"网卡"WLAN、域名 `ai.jackqi.cn` → 保存即更新记录；`-f 300` = 每 5 分钟校正（换热点/换 WiFi 全自动跟随）
    ⚠️ 不要设置"HTTP 绑定网卡"（`httpinterface`）相关选项——见 §9.5-⑧
 3. **证书**（先导入凭证环境变量 `Tencent_SecretId` / `Tencent_SecretKey`）：
    ```bash
@@ -250,7 +251,7 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
      --reloadcmd "<caddy> reload --config <Caddyfile>"
    ```
    ⚠️ **必须传全名 `--dns dns_tencent`**——踩坑实录 §9.5-①
-4. **Caddy**：交互式终端可 `caddy.exe start --config Caddyfile`（内容：`ai.jackqi.cn:443 { tls <证书> <私钥>; reverse_proxy 127.0.0.1:3001 }`，顶部 `auto_https disable_redirects`——80 端口可能被 Hyper-V 排除）。⚠️ 计划任务里必须用长驻的 `run` 而非 `start`，原因见 §9.5-⑩（自启脚本已内置正确写法）
+4. **Caddy**：（Caddyfile 已由步骤 0 生成）交互式终端可 `caddy.exe start --config Caddyfile`（内容：`ai.jackqi.cn:443 { tls <证书> <私钥>; reverse_proxy 127.0.0.1:3001 }`，顶部 `auto_https disable_redirects`——80 端口可能被 Hyper-V 排除）。⚠️ 计划任务里必须用长驻的 `run` 而非 `start`，原因见 §9.5-⑩（自启脚本已内置正确写法）
 5. **双击 `bin\enable-https.bat`**（即菜单选项 5）：防火墙放行 TCP 443（仅专用网络）+ 全部网络配置文件改"专用"（新网络默认 Public，否则规则不生效）+ hosts 钉定 `dnspod.tencentcloudapi.com` 的 IPv4（§9.5-⑧）
 6. **验证**：PC `curl https://ai.jackqi.cn` → 200；手机同 WiFi 打开 → 无警告锁标 → Chrome"添加到主屏幕"装成独立 App
 
@@ -266,7 +267,7 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
 | `D:\Software\cloudcli-https` 的 exe | 可拷；`ddns-go.yaml` 含自己密钥，拷给自己没问题 |
 | Claude Code 会话/项目 | 拷 `~/.claude\`（要历史才拷）+ 项目目录（路径尽量一致） |
 
-步骤：新机装 Claude Code + CC Switch（唯一的手工活）→ 拷项目与 `~/.claude\` → `bin\install-server.bat` → enable-https.bat → 重签证书 → 配 ddns-go → `bin\autostart-on.bat` → 验证 → 旧机 `bin\autostart-off.bat` 善后。
+步骤：新机装 Claude Code + CC Switch（唯一的手工活）→ 拷项目与 `~/.claude\`（可顺带拷 `D:\Software\cloudcli-https` 的两个 exe，或由脚本重新下载）→ `bin\install-server.bat` → `bin\install-https.bat`（装栈 + 环境配置，已包含原 enable-https 步骤）→ 配 ddns-go → 重签证书 → `bin\autostart-on.bat` → 验证 → 旧机 `bin\autostart-off.bat` 善后。
 
 ### 9.5 踩坑实录（知识库精华，全是实测踩过）
 
@@ -306,3 +307,4 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
 | 2026-09-08 | 新增 §9 HTTPS/域名版（ai.jackqi.cn：Caddy + acme.sh + ddns-go，PWA 可安装）；§6 排障表增补镜像源体检与 HTTPS 条目；工具脚本迁移至 `bin/`、新增总控入口 `start-here.bat`（菜单化全部操作）；新增镜像源自动体检（§9.5 踩坑实录同步沉淀） |
 | 2026-09-08 | 重启实战修复：计划任务子进程连带杀死（§9.5-⑩，Caddy 自启改 `run`）；菜单选项 1/2 升级为整栈启停；§9.5-⑪ 旧进程不热更新；新增 §9.7 移动端/浏览器报错速查表 |
 | 2026-09-08 | 全量复核（v0.1.0 发布前）：合并重复的 §0 标题；用法示例统一 `bin\` 前缀；修正示例中过时的仓库旧路径；§9.3-4 补 `run`/`start` 使用边界；停止/卸载指引改为指向菜单与 stop-server.bat |
+| 2026-09-08 | §9.3/§9.4 部分脚本化：新增 `bin\install-https.bat` / `.ps1`（GitHub Release 自动下载 caddy.exe / ddns-go.exe、生成 Caddyfile、复用 enable-https、拉起 ddns-go；`-CaddyZip` / `-DdnsZip` 手动 zip 兜底、`-Update` 升级、幂等可重跑），§9.3 增设步骤 0，§9.4 迁移步骤同步替换 |
