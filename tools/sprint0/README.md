@@ -53,12 +53,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run-server-hidden.ps1   # 
 
 ## 文件清单（谁在哪台机器用）
 
+> 所有 `.ps1` 的提示语言**跟随 Windows 显示语言**（中文系统 → 中文，其余 → 英文），可加 `-Lang zh|en` 强制指定。
+> `.bat` 全部为纯 ASCII 薄启动器（真实逻辑与双语提示在对应 `.ps1`，UTF-8 带 BOM）——这是刻意设计：.bat 内混入中文在 GBK 码页机器上有换行被吞的解析风险。
+
 | 文件 | 哪台机器 | 什么时候用 |
 |------|----------|------------|
 | `install-server.bat` / `.ps1` | 服务端 | 装机**一次**（双击 .bat） |
 | `install-client.bat` / `.ps1` | 客户端 | 每台客户端**一次**（首次输地址；换地址时重跑） |
-| `start-server.bat` | 服务端 | 手动启动服务（双击；已在运行则直接开浏览器） |
-| `run-server-hidden.ps1` | 服务端 | 后台静默启动（自启任务/hook 内部调用，一般不直接碰） |
+| `start-server.bat` | 服务端 | 手动启动服务（双击；打印本机/移动端地址；已在运行则直接开浏览器） |
+| `stop-server.bat` / `.ps1` | 服务端 | 停止后台服务（双击；前台窗口直接 Ctrl+C 即可） |
+| `run-server-hidden.ps1` | 服务端 | 后台静默启动（自启任务/hook 内部调用，一般不直接碰；地址记入日志） |
 | `setup-autostart.ps1` | 服务端 | 注册/移除开机自启（**一次**） |
 | `README.md` | — | 本文件 |
 
@@ -71,11 +75,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run-server-hidden.ps1   # 
 | 客户端/手机打不开页面 | 按序查：① 服务端 `cloudcli` 起了吗（`start-server.bat`）② 防火墙规则（重跑 install-server）③ 是否同一 WiFi（别用访客网络）④ 路由器 AP 隔离。详表见部署文档 §6 |
 | 双击 `start-server.bat` 提示端口被占 | 多半后台实例已在跑，脚本会直接帮你开浏览器，无需处理 |
 | 服务端重启后服务没了 | 没注册自启：跑一次 `setup-autostart.ps1` |
-| 想停止服务 | 前台窗口 Ctrl+C；后台实例执行 `Get-NetTCPConnection -LocalPort 3001 -State Listen \| ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }` |
+| 想停止服务 | 前台窗口 Ctrl+C；后台隐藏实例双击 `stop-server.bat` |
 | 想完全卸载 | `npm uninstall -g @cloudcli-ai/cloudcli` + `setup-autostart.ps1 -Remove` + 删防火墙规则（详见部署文档 §8） |
 | 想换端口 | `install-server.ps1 -Port 3002` 重跑，客户端 URL 与防火墙规则同步改 |
 | 想升级/重装 CloudCLI | 服务端编辑 `install-server.bat`，`set "PS_ARGS=-Update"` 后重跑 |
 | 想换服务端地址 | 客户端双击 `install-client.bat`，提示处输入新地址（旧记录自动覆盖） |
+| npm install 报 npm.taobao.org 证书错误（ERR_TLS_CERT_ALTNAME_INVALID） | 机器残留了停服的旧淘宝镜像变量；重跑 `install-server.bat`，步骤 3 会检测并提示一键迁移 npmmirror |
 
 ## 试用期你要观察什么（1~2 周）
 

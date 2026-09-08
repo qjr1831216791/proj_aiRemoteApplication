@@ -190,6 +190,7 @@ powercfg /change standby-timeout-ac 0
 | 本机 localhost 能开，手机/其他 PC 打不开 | ① 网络配置文件是否"专用" → ② 防火墙规则是否只挂了 Public → ③ 启动输出里监听地址是 `0.0.0.0` 还是 `127.0.0.1`（后者需查 host 参数） → ④ 路由器 AP 隔离（PC 间互 ping 也不通即是） |
 | 端口冲突 | `netstat -ano | findstr 3001` 找到 PID，任务管理器结束或换端口 |
 | npx/npm 下载极慢或失败 | 换 npmmirror 镜像（§0），或改用全局安装重试 |
+| npm install 原生模块（better-sqlite3）编译失败，报 `npm.taobao.org` 证书错误 | 机器环境变量残留已停服的旧淘宝镜像（`NODEJS_ORG_MIRROR` 等约 9 个）：重跑 install-server，步骤 3 会检测并提示一键迁移；手动法 `setx NODEJS_ORG_MIRROR https://npmmirror.com/mirrors/node/`（其余 `NVMW_*`/`NODIST_*`/`IOJS_*` 同理），新开终端重试 |
 | 会话列表为空 | 先在终端对目标项目目录跑一次 `claude`；CloudCLI 按 `~/.claude/projects` 归组发现会话 |
 | 消息无响应/模型报错 | 回终端直接跑 `claude` 对照：终端也不通 = CC Switch/供应商问题，与 CloudCLI 无关 |
 | 手机时连时不连 | WiFi 频段切换（2.4G/5G 通常同网段无碍）、网卡节能（§4）、路由器 DHCP 租约 |
