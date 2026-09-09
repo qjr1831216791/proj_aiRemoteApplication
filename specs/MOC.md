@@ -8,7 +8,7 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- （暂无）
+- [004-tunnel-access](./004-tunnel-access/spec.md) — 内网穿透双通道：直连（DDNS，默认）⇄ 穿透（SakuraFrp 香港节点）用户可切换，隧道进程托管与守护、双向 DNS 切换指引（需求方委托决策，2026-09-09 置 reviewed）
 
 ### 🟠 实现中（in-progress）
 - （暂无）
