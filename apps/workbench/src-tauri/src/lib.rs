@@ -7,6 +7,7 @@
 
 mod consts;
 mod lang;
+mod orchestrator;
 mod probe;
 mod scripts;
 mod settings;

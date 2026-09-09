@@ -418,8 +418,9 @@ pub enum ExecOutcome {
     SpawnFailed(String),
 }
 
-/// 执行器接口：T8 编排依赖此 seam 注入 mock
-pub trait CommandExecutor {
+/// 执行器接口：T8 编排依赖此 seam 注入 mock。
+/// Send + Sync：编排器跨线程持有 Arc<dyn CommandExecutor>
+pub trait CommandExecutor: Send + Sync {
     /// 同步执行到退出或超时（stdio 按 spec 落日志）
     fn execute(&self, spec: &CommandSpec) -> ExecOutcome;
     /// 派发不等待（常驻服务进程：caddy run / ddns-go / run-server-hidden 的

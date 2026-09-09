@@ -124,8 +124,9 @@ pub fn classify(holders: &PortHolders, identity: &Identity) -> ProbeState {
     ProbeState::PortHeld { process_name }
 }
 
-/// 探测接口：`port_holders` 为采集（实现注入便于 mock），`probe` 复用纯 classify
-pub trait StatusProbe {
+/// 探测接口：`port_holders` 为采集（实现注入便于 mock），`probe` 复用纯 classify。
+/// Send + Sync：编排器（T8）跨线程持有 Arc<dyn StatusProbe>
+pub trait StatusProbe: Send + Sync {
     /// 采集指定端口的监听快照（Listen 套接字 + 各监听 PID 的 exe）
     fn port_holders(&self, port: u16) -> PortHolders;
 
