@@ -243,8 +243,8 @@ pub fn run() {
                 // 退出绝不无条件携带服务进程。
                 log::info!("ExitRequested(code={code:?})");
                 // spec 004 AC10：收摊语义覆盖隧道——frpc 与三组件一并退出
-                // （幂等：未运行时 kill 为无操作）
-                app.state::<tunnel::TunnelManager>().stop();
+                // （幂等：未运行时 kill 为无操作；state 类型与 manage 一致为 Arc 包裹）
+                app.state::<std::sync::Arc<tunnel::TunnelManager>>().stop();
                 let stopper: std::sync::Arc<dyn exit_flow::ServiceStopper> = {
                     let orch = app.state::<orchestrator::Orchestrator>();
                     std::sync::Arc::new(orch.inner().clone())

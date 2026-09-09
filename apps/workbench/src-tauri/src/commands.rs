@@ -197,9 +197,11 @@ use crate::tunnel::{
     TunnelStatus,
 };
 
-/// 隧道状态快照（启动兜底；此后以 `tunnel://status` 事件为准）
+/// 隧道状态快照（启动兜底；此后以 `tunnel://status` 事件为准）。
+/// State 泛型须与 lib.rs manage 的类型精确一致（Arc 包裹），
+/// 否则 Tauri 找不到状态（"state not managed"）。
 #[tauri::command]
-pub fn get_tunnel_status(mgr: tauri::State<'_, TunnelManager>) -> TunnelStatus {
+pub fn get_tunnel_status(mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>) -> TunnelStatus {
     mgr.status()
 }
 
@@ -208,7 +210,7 @@ pub fn get_tunnel_status(mgr: tauri::State<'_, TunnelManager>) -> TunnelStatus {
 #[tauri::command]
 pub async fn switch_channel(
     orch: tauri::State<'_, Orchestrator>,
-    mgr: tauri::State<'_, TunnelManager>,
+    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
     target: crate::settings::AccessChannel,
 ) -> Result<crate::settings::Settings, String> {
