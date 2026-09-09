@@ -8,10 +8,10 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2）
+- （暂无）
 
 ### 🟠 实现中（in-progress）
-- （暂无）
+- [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2）
 
 ### ✅ 已完成（done）
 - （暂无）

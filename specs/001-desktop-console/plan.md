@@ -63,7 +63,7 @@ flowchart LR
     TRAY --> ORCH
 ```
 
-- `src/`（前端）+ `src-tauri/`（Rust）置于仓库根，与 CLAUDE.md 目录树兼容（T4 回填描述）。
+- 桌面应用整体收拢在 **`apps/workbench/` 单一目录**（package.json / index.html / vite.config.ts / tsconfig.json / src/ 前端 / src-tauri/ Rust / node_modules / dist 全部在内，不污染仓库根）——2026-09-09 需求方要求应用自成一目录，且为将来多应用预留一层 `apps/<应用名>/`，当前应用命名 `workbench`（AI 远程工作台）。
 - `src-tauri/resources/bin/`：打包内置的 sprint0 `bin\` 脚本副本；运行时查找顺序：设置覆盖目录 → 内置副本（开发模式直接指向仓库 `tools/sprint0/bin`）。
 
 ### 3.2 关键时序
@@ -212,7 +212,7 @@ Rust 单测位于 `src-tauri/src/*.rs` 的 `#[cfg(test)]`；`cargo test` 为自�
 
 ## 9. 影响范围
 
-- 新增：`src/`（前端）、`src-tauri/`（Rust，含 `resources/bin` 脚本副本）、根 `package.json` 等工程文件、`scripts/build.ps1`（一键构建双形态分发产物，归入 CLAUDE.md 约定的生命周期脚本区）。
+- 新增：`apps/workbench/`（桌面应用单目录：`src/` 前端 + `src-tauri/` Rust，含 `resources/bin` 脚本副本与全部工程文件；`apps/` 层为多应用预留）、`scripts/build.ps1`（一键构建双形态分发产物，归入 CLAUDE.md 约定的生命周期脚本区）。
 - 文档同步：CLAUDE.md（目录树 + 常用命令，T4）、README（快速开始补桌面版入口）、CHANGELOG（Unreleased）、[ADR-0001](../../docs/adr/0001-tauri2-desktop-stack.md)/[ADR-0002](../../docs/adr/0002-control-data-plane-split.md)（已立）。
 - `tools/sprint0/`：不改（停止逻辑程序内等效实现，脚本保留为命令行兜底）。
 - `.env` / 密钥：零接触（决策 2）。
@@ -225,3 +225,5 @@ Rust 单测位于 `src-tauri/src/*.rs` 的 `#[cfg(test)]`；`cargo test` 为自�
 | 2026-09-08 | 打包/分发修订：§2 增选型行、§8 打包形态改双形态（embedBootstrapper + 便携 zip）、§7 增国内源风险、§9 增 `scripts/build.ps1` | 需求方补充"易于打包和分发"，spec 同步 v2.3 |
 | 2026-09-08 | §7 增 explorer 重启托盘图标风险与兜底 | 需求方重申托盘托管（AC10/AC18 已覆盖），边界加固，spec 同步 v2.4 |
 | 2026-09-08 | §2 增前端 i18n 选型行（零依赖词典 + t()，Rust/前端共用词条源）；§4 language 注释写死 auto 判定语义 | 需求方要求中英双语，spec 同步 v2.5（AC25） |
+| 2026-09-09 | §3.1/§9：应用工程由"仓库根 src/ + src-tauri/"改为收拢进 `app/` 单一目录 | 需求方要求"小程序在一个目录下，不分散" |
+| 2026-09-09 | §3.1/§9：目录再上收一层为 `apps/workbench/`（`apps/` 为多应用层） | 需求方指出未来会有多个程序/APP，需预留应用层 |

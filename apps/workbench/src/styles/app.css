@@ -1,0 +1,77 @@
+/* 骨架布局（T1）：卡片 + 按钮基类，T13/T14 在此之上扩展 */
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 100vh;
+}
+
+.app__title {
+  font-size: var(--fs-xl);
+  margin: 0;
+  color: var(--c-primary);
+}
+
+.app__subtitle {
+  margin: var(--sp-1) 0 0;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-4);
+}
+
+.card--placeholder {
+  color: var(--c-text-secondary);
+}
+
+.app__footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.lang-switch {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+
+.btn {
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-md);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+
+.btn--sm {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.btn--active {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+
+.btn--active:hover {
+  color: #fff;
+}

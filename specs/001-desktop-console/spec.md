@@ -2,10 +2,10 @@
 
 > 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: reviewed <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: in-progress <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 1
 - **创建日期**: 2026-09-08
-- **最后更新**: 2026-09-08（v2.5，双语规则写死 → AC25）
+- **最后更新**: 2026-09-09（进入实现，v2.5）
 
 ## 1. 背景与问题
 

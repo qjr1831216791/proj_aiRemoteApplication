@@ -1,0 +1,26 @@
+[package]
+name = "ai-remote-workbench"
+version = "0.2.0"
+description = "AI 远程工作台桌面控制台（CloudCLI/Caddy/ddns-go 生命周期控制面）"
+edition = "2021"
+
+[lib]
+name = "ai_remote_workbench_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 发布体积优化（约束 §5：安装包 ≤15MB）
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

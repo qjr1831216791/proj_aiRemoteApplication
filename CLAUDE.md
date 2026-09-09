@@ -58,7 +58,8 @@ proj_aiRemoteApplication/
 │   ├── NNN-<功能名>/      # 每个功能一个目录：spec.md + plan.md + tasks.md
 │   └── archive/           # 已验收 Spec 的归档
 ├── config/                # 环境配置：非敏感默认配置（模板 .env.example 在仓库根目录）
-├── src/                   # 源码（技术栈确定后细化）
+├── apps/                  # 应用层（一个应用一个子目录，互不外溢）
+│   └── workbench/         # AI 远程工作台桌面版（Sprint 1 起，Tauri 2）：src/ 前端 + src-tauri/ Rust
 ├── tests/                 # 测试
 ├── scripts/               # 生命周期命令（dev/build/test/deploy，日常入口）
 └── tools/                 # 开发辅助工具脚本（一次性任务，与生命周期脚本分离）

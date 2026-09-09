@@ -2,8 +2,8 @@
 
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: 未开始 <!-- 未开始 | 进行中 | 已完成 -->
-- **最后更新**: 2026-09-08
+- **状态**: 进行中 <!-- 未开始 | 进行中 | 已完成 -->
+- **最后更新**: 2026-09-09
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
@@ -11,7 +11,7 @@
 
 ## 阶段 1: 骨架与地基
 
-- [ ] T1 Tauri 2 工程脚手架：`create-tauri-app`（Vite + TS）接入 Preact；蓝白主题基础样式（设计令牌：色板/圆角/间距）；**zh/en 词条词典 + `t()` helper 骨架**（全 UI 文案自始双语，杜绝后期补翻）；窗口 `visible:false` 创建、页面就绪后 show；`npm run dev` 可出窗口（crates.io 访问慢则按 plan §7 配 rsproxy 镜像）（验收: 约束 §5）
+- [x] T1 Tauri 2 工程脚手架：`create-tauri-app`（Vite + TS）接入 Preact；蓝白主题基础样式（设计令牌：色板/圆角/间距）；**zh/en 词条词典 + `t()` helper 骨架**（全 UI 文案自始双语，杜绝后期补翻）；窗口 `visible:false` 创建、页面就绪后 show；`npm run dev` 可出窗口（crates.io 访问慢则按 plan §7 配 rsproxy 镜像）（验收: 约束 §5）<!-- 2026-09-09 完成：cargo check 绿（1m28s）；tauri dev 实测出窗口；工程收拢于 apps/workbench/（多应用层） -->
 - [ ] T2 单实例（`tauri-plugin-single-instance`，`Global\` 互斥体、**首个注册**）+ 托盘骨架（菜单占位：启动/停止/打开工作台/显示主界面/停止并退出/退出）+ `RunEvent::ExitRequested` 退出钩子挂接（依赖: T1）（验收: AC18 骨架）
 - [ ] T3 里程碑 1 内存实测：托盘 + 隐藏主窗 + 真实空页，任务管理器记录"程序 + 全部 msedgewebview2 子进程"合计（启动后 5 分钟采样），基线记入本文件备注（验收: 约束 §5；完成标志: 数据落档且 ≤150MB，超限则先减依赖再继续）
 - [ ] T4 文档回填：CLAUDE.md 目录树（src/ + src-tauri/ 职责）与"常用命令"（dev/build/test）、README 快速开始补桌面版入口、CHANGELOG Unreleased（验收: DoD 文档项）

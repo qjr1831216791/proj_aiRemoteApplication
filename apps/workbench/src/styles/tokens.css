@@ -1,0 +1,62 @@
+/* 蓝白清爽主题：设计令牌（spec §4.6）——所有组件只用令量，不写裸色值 */
+:root {
+  /* 主色（蓝） */
+  --c-primary: #2563eb;
+  --c-primary-hover: #1d4ed8;
+  --c-primary-soft: #dbeafe;
+  --c-primary-bg: #eff6ff;
+
+  /* 中性色（白/灰） */
+  --c-bg: #f8fafc;
+  --c-surface: #ffffff;
+  --c-border: #e2e8f0;
+  --c-text: #0f172a;
+  --c-text-secondary: #64748b;
+  --c-text-muted: #94a3b8;
+
+  /* 状态色 */
+  --c-ok: #16a34a;
+  --c-ok-soft: #dcfce7;
+  --c-warn: #d97706;
+  --c-warn-soft: #fef3c7;
+  --c-error: #dc2626;
+  --c-error-soft: #fee2e2;
+  --c-info: #2563eb;
+
+  /* 圆角 / 间距 / 阴影 */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --shadow-card: 0 1px 3px rgb(15 23 42 / 8%);
+
+  /* 字号 */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: var(--fs-md);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
