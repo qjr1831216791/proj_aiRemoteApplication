@@ -38,6 +38,9 @@ export function SettingsView(props: SettingsViewProps) {
   // 任务类开关在途标记（计划任务脚本最长 ~60s，期间禁用对应开关）
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [langBusy, setLangBusy] = useState(false);
+  // 穿透设置表单（spec 004 AC14；初始值取已存配置，空串 = 未配置）
+  const [tunnelId, setTunnelId] = useState(settings.tunnel?.tunnelId ?? "");
+  const [nodeDomain, setNodeDomain] = useState(settings.tunnel?.nodeDomain ?? "");
 
   /** 任务类自启开关：先执行计划任务命令，成功后持久化到设置文件 */
   const runAutostartToggle = async (key: "autostartServices" | "autostartApp", enable: boolean) => {
@@ -86,6 +89,34 @@ export function SettingsView(props: SettingsViewProps) {
     } finally {
       setLangBusy(false);
     }
+  };
+
+  /** 穿透配置保存（AC14/15）：校验 → 持久化；就绪判定实时生效（守护/切换入口读设置） */
+  const saveTunnel = async () => {
+    const id = tunnelId.trim();
+    const dom = nodeDomain.trim();
+    if (!/^\d+$/.test(id)) {
+      onToast(t("settings.tunnelIdInvalid", lang), "error");
+      return;
+    }
+    if (!dom) {
+      onToast(t("settings.tunnelNodeRequired", lang), "error");
+      return;
+    }
+    try {
+      onSettingsChange(await api.saveSettings({ tunnel: { tunnelId: id, nodeDomain: dom } }));
+      onToast(t("settings.tunnelSaved", lang), "success");
+    } catch (e) {
+      onToast(`${t("toast.saveFailed", lang)}: ${String(e)}`, "error");
+    }
+  };
+
+  /** 访问密钥脚本（AC16）：拉起控制台交互窗，密钥经脚本直写 .env 不进 IPC/日志 */
+  const openSetFrpKey = () => {
+    api
+      .runTool("set_frp_key", { update: false, mirror: false })
+      .then(() => onToast(t("settings.setFrpKeyDispatched", lang), "info"))
+      .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
   };
 
   const readonlyRows: { label: string; value: string }[] = [
@@ -142,6 +173,45 @@ export function SettingsView(props: SettingsViewProps) {
             />
           </div>
         </div>
+      </section>
+
+      {/* 穿透设置（spec 004 AC14/15/16） */}
+      <section class="card">
+        <h2 class="card__title">{t("settings.tunnel", lang)}</h2>
+        <p class="muted">{t("settings.tunnelDesc", lang)}</p>
+        <div class="settings__rows">
+          <div class="settings__row">
+            <div class="settings__row-text">
+              <span class="settings__label">{t("settings.tunnelId", lang)}</span>
+              <input
+                class="form-input"
+                placeholder={t("settings.tunnelIdPlaceholder", lang)}
+                value={tunnelId}
+                onInput={(e) => setTunnelId(e.currentTarget.value)}
+              />
+            </div>
+          </div>
+          <div class="settings__row">
+            <div class="settings__row-text">
+              <span class="settings__label">{t("settings.tunnelNodeDomain", lang)}</span>
+              <input
+                class="form-input"
+                placeholder={t("settings.tunnelNodePlaceholder", lang)}
+                value={nodeDomain}
+                onInput={(e) => setNodeDomain(e.currentTarget.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <div class="settings__actions">
+          <button class="btn btn--primary" onClick={() => void saveTunnel()}>
+            {t("settings.tunnelSave", lang)}
+          </button>
+          <button class="btn" onClick={openSetFrpKey}>
+            {t("settings.setFrpKey", lang)}
+          </button>
+        </div>
+        <p class="muted">{t("settings.setFrpKeyHint", lang)}</p>
       </section>
 
       {/* 语言（AC25：切换立即生效） */}

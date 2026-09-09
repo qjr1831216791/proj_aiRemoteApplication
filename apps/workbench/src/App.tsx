@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onNetChanged, onSettingsRepaired, onStatusChanged } from "./api";
+import { api, onNetChanged, onSettingsRepaired, onStatusChanged, onTunnelStatus } from "./api";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
   AccessUrls,
@@ -19,6 +19,7 @@ import type {
   NetStatus,
   ScriptsAvailability,
   Settings,
+  TunnelStatus,
 } from "./types";
 import { MainView } from "./components/MainView";
 import { SettingsView } from "./components/SettingsView";
@@ -41,6 +42,7 @@ export function App() {
   const [urls, setUrls] = useState<AccessUrls | null>(null);
   const [scripts, setScripts] = useState<ScriptsAvailability | null>(null);
   const [netStatus, setNetStatus] = useState<NetStatus | null>(null);
+  const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
   const [stopping, setStopping] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -80,11 +82,14 @@ export function App() {
       api.getUrls().then(setUrls).catch(() => {});
       api.scriptsAvailability().then(setScripts).catch(() => {});
       api.getNetStatus().then(setNetStatus).catch(() => {});
+      api.getTunnelStatus().then(setTunnelStatus).catch(() => {});
 
       // 状态事件：此后状态以事件为准（前端零轮询）
       track(await onStatusChanged(setStatuses));
       // 网络环境事件（spec 002）：变化才发（Rust 侧 15s 轮询去重）
       track(await onNetChanged(setNetStatus));
+      // 隧道状态事件（spec 004）：守护线程 5s 收敛驱动，变化才发
+      track(await onTunnelStatus(setTunnelStatus));
       // 设置损坏恢复：非阻塞提示（AC24）
       track(await onSettingsRepaired(() => pushToast(t("settings.repaired", lang), "info")));
     })();
@@ -160,6 +165,9 @@ export function App() {
           scripts={scripts}
           netStatus={netStatus}
           onNetRefresh={refreshNet}
+          settings={settings}
+          tunnelStatus={tunnelStatus}
+          onSettingsChange={setSettings}
           stopping={stopping}
           onStartAll={startAll}
           onStopAll={stopAll}

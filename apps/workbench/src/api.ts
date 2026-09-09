@@ -3,9 +3,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  AccessChannel,
   AccessUrls,
   ComponentId,
   ComponentStatus,
+  DnsAlignment,
   ExternalKind,
   LanguageSetting,
   NetStatus,
@@ -16,6 +18,7 @@ import type {
   TookOverPayload,
   ToolKind,
   ToolOpts,
+  TunnelStatus,
 } from "./types";
 
 export const api = {
@@ -49,6 +52,17 @@ export const api = {
     ifIndex: number,
     category: Extract<NetCategory, "private" | "public">,
   ) => invoke<void>("set_network_category", { name, ifIndex, category }),
+
+  /** 隧道状态快照（spec 004；此后以 tunnel://status 事件为准） */
+  getTunnelStatus: () => invoke<TunnelStatus>("get_tunnel_status"),
+  /** 通道切换（AC5/6）：前置校验失败 → Err（未配置/已处于目标通道） */
+  switchChannel: (target: AccessChannel) =>
+    invoke<Settings>("switch_channel", { target }),
+  /** 穿透启用开关（AC11） */
+  setTunnelEnabled: (enabled: boolean) =>
+    invoke<Settings>("set_tunnel_enabled", { enabled }),
+  /** DNS 对齐检测（AC12/13）：权威 CNAME/A 实况 */
+  checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
 };
 
 /** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */
@@ -61,6 +75,11 @@ export function onStatusChanged(
   cb: (statuses: ComponentStatus[]) => void,
 ): Promise<() => void> {
   return listen<ComponentStatus[]>("status://changed", (e) => cb(e.payload));
+}
+
+/** 隧道状态事件（spec 004：守护线程 5s 收敛驱动，变化才发） */
+export function onTunnelStatus(cb: (status: TunnelStatus) => void): Promise<() => void> {
+  return listen<TunnelStatus>("tunnel://status", (e) => cb(e.payload));
 }
 
 /** 设置损坏恢复事件（AC24：非阻塞提示） */

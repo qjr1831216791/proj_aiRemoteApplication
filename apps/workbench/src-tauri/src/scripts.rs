@@ -40,6 +40,8 @@ pub enum Script {
     InstallClient,
     /// ddns-go 管理页密码重置（交互式，无需管理员；spec 003）
     ResetDdnsPassword,
+    /// SakuraFrp 访问密钥写入 .env（交互式，无需管理员；spec 004）
+    SetFrpKey,
 }
 
 /// 窗口形态（spec §4.3）
@@ -64,6 +66,7 @@ impl Script {
             Script::EnableHttps => "enable-https.ps1",
             Script::InstallClient => "install-client.ps1",
             Script::ResetDdnsPassword => "reset-ddns-password.ps1",
+            Script::SetFrpKey => "set-frp-key.ps1",
         }
     }
 
@@ -75,7 +78,9 @@ impl Script {
             Script::InstallServer | Script::InstallHttps | Script::EnableHttps => {
                 Visibility::Elevated
             }
-            Script::InstallClient | Script::ResetDdnsPassword => Visibility::VisibleInteractive,
+            Script::InstallClient
+            | Script::ResetDdnsPassword
+            | Script::SetFrpKey => Visibility::VisibleInteractive,
         }
     }
 
@@ -91,6 +96,8 @@ impl Script {
             Script::InstallClient => Duration::from_secs(600),
             // 重置流程含 30s 端口就绪轮询；隐藏执行器不消费此值（可见窗 detached）
             Script::ResetDdnsPassword => Duration::from_secs(300),
+            // 交互输入等待无上限，给足余量；隐藏执行器不消费此值（可见窗 detached）
+            Script::SetFrpKey => Duration::from_secs(300),
         }
     }
 }
@@ -414,6 +421,8 @@ pub enum ToolKind {
     InstallClient,
     /// ddns-go 密码重置（reset-ddns-password.ps1，可见交互窗；spec 003）
     ResetDdnsPassword,
+    /// SakuraFrp 访问密钥写入 .env（set-frp-key.ps1，可见交互窗；spec 004）
+    SetFrpKey,
 }
 
 impl From<ToolKind> for Script {
@@ -424,6 +433,7 @@ impl From<ToolKind> for Script {
             ToolKind::EnableHttps => Script::EnableHttps,
             ToolKind::InstallClient => Script::InstallClient,
             ToolKind::ResetDdnsPassword => Script::ResetDdnsPassword,
+            ToolKind::SetFrpKey => Script::SetFrpKey,
         }
     }
 }

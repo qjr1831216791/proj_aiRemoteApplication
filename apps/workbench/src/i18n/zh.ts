@@ -115,6 +115,61 @@ export const zh = {
   "settings.tookOver": "已接管已存在的开机自启任务",
   "settings.repaired": "设置文件损坏，已恢复默认值",
 
+  // 穿透设置（spec 004 AC14/15/16）
+  "settings.tunnel": "穿透设置（SakuraFrp）",
+  "settings.tunnelDesc":
+    "配置穿透参数。访问密钥不经程序输入框：点「设置访问密钥」在弹出的控制台窗口输入，脚本直接写入本地 .env（不回显、不落日志）",
+  "settings.tunnelId": "隧道 ID",
+  "settings.tunnelIdPlaceholder": "SakuraFrp 隧道列表 ID 列的数字",
+  "settings.tunnelNodeDomain": "节点域名",
+  "settings.tunnelNodePlaceholder": "如 frp-can.com 或 cn-hk-nf-1.natfrp.cloud",
+  "settings.tunnelSave": "保存配置",
+  "settings.tunnelSaved": "穿透配置已保存",
+  "settings.tunnelIdInvalid": "隧道 ID 必须为纯数字",
+  "settings.tunnelNodeRequired": "节点域名不能为空",
+  "settings.setFrpKey": "设置访问密钥…",
+  "settings.setFrpKeyDispatched": "密钥设置窗口已打开，请在弹出的控制台中输入",
+  "settings.setFrpKeyHint":
+    "密钥获取：natfrp.com 用户中心 → 查看访问密钥；存放：栈目录 .env 的 SAKURA_FRP_KEY",
+
+  // 穿透通道（spec 004）
+  "tunnel.title": "访问通道",
+  "tunnel.channelLabel": "当前通道",
+  "tunnel.channelDirect": "直连（DDNS）",
+  "tunnel.channelTunnel": "穿透（SakuraFrp）",
+  "tunnel.switchToTunnel": "切换到穿透",
+  "tunnel.switchToDirect": "切回直连",
+  "tunnel.confirmTitleTunnel": "确认切换到穿透通道？",
+  "tunnel.confirmTitleDirect": "确认切回直连通道？",
+  "tunnel.confirmStepsTunnel":
+    "本机将：启动 frpc 隧道客户端，并停止 ddns-go 托管（两通道互斥）。随后需在腾讯云 DNS 控制台把 ai.jackqi.cn 的 A 记录改为 CNAME 指向节点域名（切换后本页会显示具体值与指引）。随时可切回直连。",
+  "tunnel.confirmStepsDirect":
+    "本机将：恢复 ddns-go 托管，并停止 frpc。随后需在腾讯云 DNS 控制台删除 ai.jackqi.cn 的 CNAME 记录（ddns-go 会自动重新写入 A 记录，本页指引消失即恢复完成）。",
+  "tunnel.confirm": "确认切换",
+  "tunnel.cancel": "取消",
+  "tunnel.switching": "切换中…",
+  "tunnel.switched": "通道已切换",
+  "tunnel.notConfigured": "穿透未配置，请先到「设置 → 穿透设置」完成配置",
+  "tunnel.statusLabel": "隧道状态",
+  "tunnel.state.notConfigured": "未配置",
+  "tunnel.state.disabled": "已停用",
+  "tunnel.state.inactive": "未启用",
+  "tunnel.state.starting": "连接中",
+  "tunnel.state.online": "在线",
+  "tunnel.state.offline": "离线",
+  "tunnel.enabledLabel": "穿透启用",
+  "tunnel.dnsGuideTunnel":
+    "DNS 待切换：在腾讯云 DNS 控制台删除 ai.jackqi.cn 的 A 记录，添加 CNAME 记录指向：{target}（公共解析生效最长需等一个 TTL，约 10 分钟）",
+  "tunnel.dnsGuideDirect":
+    "DNS 待恢复：在腾讯云 DNS 控制台删除 ai.jackqi.cn 的 CNAME 记录，重新添加 A 记录即可（ddns-go 会自动维护解析值）",
+  "tunnel.dnsMismatch":
+    "CNAME 目标不符：当前指向 {actual}，应改为指向 {target}，请在腾讯云 DNS 控制台修正",
+  "tunnel.dnsRecheck": "重新检测",
+  "tunnel.dnsChecking": "检测中…",
+  "tunnel.dnsFailed": "DNS 检测失败（网络或解析异常），请稍后重试",
+  "tunnel.dnsOkTunnel": "DNS 解析已对齐穿透通道",
+  "tunnel.dnsOkDirect": "DNS 解析已恢复直连",
+
   // 提示（toast）
   "toast.opFailed": "操作失败",
   "toast.saveFailed": "保存失败",

@@ -18,6 +18,15 @@ export interface ComponentStatus {
 export type LanguageSetting = "auto" | "zh" | "en";
 export type ExitAction = "keep" | "stop";
 
+/** 访问通道（spec 004）：直连为默认，穿透为 opt-in */
+export type AccessChannel = "direct" | "tunnel";
+
+/** 穿透配置（非敏感部分；访问密钥只存栈目录 .env，永不进入本结构） */
+export interface TunnelConfig {
+  tunnelId: string;
+  nodeDomain: string;
+}
+
 /** 全量设置（get_settings 载荷，camelCase 对齐 Rust serde） */
 export interface Settings {
   version: number;
@@ -28,6 +37,9 @@ export interface Settings {
   exitAction: ExitAction;
   openPageOnStart: boolean;
   scriptsDirOverride: string | null;
+  accessChannel: AccessChannel;
+  tunnel: TunnelConfig | null;
+  tunnelEnabled: boolean;
 }
 
 /** 补丁（save_settings 入参；只提交要改的字段） */
@@ -38,7 +50,33 @@ export interface SettingsPatch {
   linkStartServices?: boolean;
   exitAction?: ExitAction;
   openPageOnStart?: boolean;
+  accessChannel?: AccessChannel;
+  tunnel?: TunnelConfig;
+  tunnelEnabled?: boolean;
 }
+
+/** 隧道运行状态（tunnel://status 载荷；tag="state" camelCase） */
+export type TunnelStateKind =
+  | "notConfigured"
+  | "disabled"
+  | "inactive"
+  | "starting"
+  | "online"
+  | "offline";
+
+export interface TunnelStatus {
+  state: TunnelStateKind;
+  detail?: string;
+  since: number;
+}
+
+/** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase） */
+export type DnsAlignment =
+  | { kind: "alignedTunnel" }
+  | { kind: "alignedDirect" }
+  | { kind: "mismatchedCname"; actual: string }
+  | { kind: "noRecord" }
+  | { kind: "queryFailed" };
 
 /** 三端访问地址（get_urls 载荷） */
 export interface AccessUrls {
@@ -56,7 +94,8 @@ export type ToolKind =
   | "install_https"
   | "enable_https"
   | "install_client"
-  | "reset_ddns_password";
+  | "reset_ddns_password"
+  | "set_frp_key";
 
 /** run_tool 可选项（仅 install_server 消费） */
 export interface ToolOpts {

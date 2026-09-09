@@ -97,6 +97,30 @@
   color: var(--c-warn);
 }
 
+.notice--ok {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+/* 表单输入（spec 004 穿透设置区；沿 settings__label 同行布局） */
+.form-input {
+  margin-top: var(--sp-1);
+  width: 100%;
+  max-width: 360px;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--c-border, #d4d4d8);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  background: transparent;
+  color: inherit;
+}
+
+.form-input:focus {
+  outline: 2px solid var(--c-ok);
+  outline-offset: -1px;
+}
+
 .notice__detail {
   display: block;
   margin-top: var(--sp-1);

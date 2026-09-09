@@ -116,6 +116,61 @@ export const en = {
   "settings.tookOver": "Existing autostart tasks were taken over",
   "settings.repaired": "Settings file was corrupted; defaults restored",
 
+  // Tunnel settings (spec 004 AC14/15/16)
+  "settings.tunnel": "Tunnel settings (SakuraFrp)",
+  "settings.tunnelDesc":
+    "Configure tunnel parameters. The access key never goes through an app input: click \"Set access key\" and type it in the popped-up console window; the script writes it straight into the local .env (hidden input, never logged)",
+  "settings.tunnelId": "Tunnel ID",
+  "settings.tunnelIdPlaceholder": "The numeric ID from the SakuraFrp tunnel list",
+  "settings.tunnelNodeDomain": "Node domain",
+  "settings.tunnelNodePlaceholder": "e.g. frp-can.com or cn-hk-nf-1.natfrp.cloud",
+  "settings.tunnelSave": "Save configuration",
+  "settings.tunnelSaved": "Tunnel configuration saved",
+  "settings.tunnelIdInvalid": "Tunnel ID must be numeric",
+  "settings.tunnelNodeRequired": "Node domain must not be empty",
+  "settings.setFrpKey": "Set access key…",
+  "settings.setFrpKeyDispatched": "Key setup window opened; please type it in the console",
+  "settings.setFrpKeyHint":
+    "Get the key: natfrp.com user center → View Access Key; stored as SAKURA_FRP_KEY in the stack directory .env",
+
+  // Tunnel channel (spec 004)
+  "tunnel.title": "Access Channel",
+  "tunnel.channelLabel": "Current channel",
+  "tunnel.channelDirect": "Direct (DDNS)",
+  "tunnel.channelTunnel": "Tunnel (SakuraFrp)",
+  "tunnel.switchToTunnel": "Switch to tunnel",
+  "tunnel.switchToDirect": "Back to direct",
+  "tunnel.confirmTitleTunnel": "Switch to the tunnel channel?",
+  "tunnel.confirmTitleDirect": "Switch back to the direct channel?",
+  "tunnel.confirmStepsTunnel":
+    "This app will: start the frpc tunnel client and stop hosting ddns-go (the two channels are mutually exclusive). Afterwards, change the ai.jackqi.cn DNS record at Tencent Cloud from A to a CNAME pointing to the node domain (the exact value and guide will be shown here). You can switch back to direct at any time.",
+  "tunnel.confirmStepsDirect":
+    "This app will: resume hosting ddns-go and stop frpc. Afterwards, delete the CNAME record of ai.jackqi.cn at Tencent Cloud (ddns-go will rewrite the A record automatically; this guide disappears once restored).",
+  "tunnel.confirm": "Confirm switch",
+  "tunnel.cancel": "Cancel",
+  "tunnel.switching": "Switching…",
+  "tunnel.switched": "Channel switched",
+  "tunnel.notConfigured": "Tunnel not configured. Set it up under Settings → Tunnel first",
+  "tunnel.statusLabel": "Tunnel status",
+  "tunnel.state.notConfigured": "Not configured",
+  "tunnel.state.disabled": "Disabled",
+  "tunnel.state.inactive": "Inactive",
+  "tunnel.state.starting": "Connecting",
+  "tunnel.state.online": "Online",
+  "tunnel.state.offline": "Offline",
+  "tunnel.enabledLabel": "Tunnel enabled",
+  "tunnel.dnsGuideTunnel":
+    "DNS pending: at Tencent Cloud DNS, delete the A record of ai.jackqi.cn and add a CNAME record pointing to: {target} (public resolvers may take up to one TTL, ~10 minutes)",
+  "tunnel.dnsGuideDirect":
+    "DNS pending: at Tencent Cloud DNS, delete the CNAME record of ai.jackqi.cn and re-add an A record (ddns-go maintains the value automatically)",
+  "tunnel.dnsMismatch":
+    "CNAME mismatch: currently pointing to {actual}; it should point to {target}. Please fix it at Tencent Cloud DNS",
+  "tunnel.dnsRecheck": "Re-check",
+  "tunnel.dnsChecking": "Checking…",
+  "tunnel.dnsFailed": "DNS check failed (network or resolver error); please retry later",
+  "tunnel.dnsOkTunnel": "DNS resolution aligned with the tunnel channel",
+  "tunnel.dnsOkDirect": "DNS resolution restored for direct access",
+
   // Toasts
   "toast.opFailed": "Operation failed",
   "toast.saveFailed": "Save failed",
