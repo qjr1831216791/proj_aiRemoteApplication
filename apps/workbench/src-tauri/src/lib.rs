@@ -6,10 +6,11 @@
 //! - T5~T15：业务命令（设置/探测/编排/自启/界面）逐步接入
 
 mod lang;
+mod settings;
 mod single_instance;
 mod tray;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub fn run() {
     // ── 单实例（spec §4.5）───────────────────────────────────────────────
@@ -58,6 +59,10 @@ pub fn run() {
                 })
                 .build(),
         )
+        .invoke_handler(tauri::generate_handler![
+            settings::get_settings,
+            settings::save_settings,
+        ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
             // 走到这里仍是重复身份，说明主实例的激活窗口查找失败等异常路径——
@@ -66,6 +71,27 @@ pub fn run() {
                 log::error!("同会话重复实例未被插件拦截（主实例窗口查找失败），本实例退出");
                 std::process::exit(0);
             }
+
+            // ── 设置加载（T5，AC23/24）───────────────────────────────────
+            // 缺失 → 默认值；损坏 → 核心 load 已改名 .bad-<ts> 留档并回默认，
+            // 此处补发 settings://repaired 通知前端（T14 监听；若前端未就绪，
+            // 其首次 get_settings 读到的默认值即恢复结果，日志亦有留痕）。
+            let (settings_state, repaired_backup) =
+                settings::SettingsState::load_at(settings::settings_path());
+            if let Some(backup) = &repaired_backup {
+                log::warn!(
+                    "设置文件损坏：已留档为 {} 并回退默认值（AC24）",
+                    backup.display()
+                );
+            }
+            app.manage(settings_state);
+            if let Some(backup) = repaired_backup {
+                let _ = app.emit(
+                    settings::EVENT_REPAIRED,
+                    serde_json::json!({ "backupPath": backup.to_string_lossy() }),
+                );
+            }
+
             let l = lang::detect_system_lang();
             tray::setup(app, l)?;
             log::info!("托盘骨架就绪（语言：{l:?}）");
