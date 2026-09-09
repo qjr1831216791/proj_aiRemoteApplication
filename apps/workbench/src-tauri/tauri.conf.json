@@ -30,9 +30,13 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
+    "resources": ["resources/bin/*"],
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser"
       }
     }
   }
