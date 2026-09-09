@@ -30,6 +30,8 @@ export interface MainViewProps {
   scripts: ScriptsAvailability | null;
   /** 网络环境快照（spec 002；null = 尚无成功探测） */
   netStatus: NetStatus | null;
+  /** 主动刷新网络环境（切换派发成功后加速收敛，免等 15s 轮询） */
+  onNetRefresh: () => void;
   /** 一键停止在途（防重复点击） */
   stopping: boolean;
   onStartAll: () => void;
@@ -39,7 +41,10 @@ export interface MainViewProps {
 }
 
 export function MainView(props: MainViewProps) {
-  const { lang, statuses, urls, scripts, netStatus, stopping, onStartAll, onStopAll, onRetry, onToast } = props;
+  const {
+    lang, statuses, urls, scripts, netStatus, onNetRefresh,
+    stopping, onStartAll, onStopAll, onRetry, onToast,
+  } = props;
   // 当前态耗时（since → now）每秒刷新
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -56,11 +61,15 @@ export function MainView(props: MainViewProps) {
     return () => clearTimeout(id);
   }, [confirmIf]);
 
-  const switchNet = (ifIndex: number, category: "private" | "public") => {
+  const switchNet = (name: string, ifIndex: number, category: "private" | "public") => {
     setConfirmIf(null);
     api
-      .setNetworkCategory(ifIndex, category)
-      .then(() => onToast(t("net.dispatched", lang), "success"))
+      .setNetworkCategory(name, ifIndex, category)
+      .then(() => {
+        onToast(t("net.dispatched", lang), "success");
+        // UAC 批准后给执行留几秒，主动拉取加速收敛（免干等 15s 轮询）
+        setTimeout(() => onNetRefresh(), 3500);
+      })
       .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
   };
 
@@ -189,7 +198,7 @@ export function MainView(props: MainViewProps) {
                   </p>
                   <button
                     class="btn btn--sm btn--primary"
-                    onClick={() => switchNet(n.ifIndex, confirmCat)}
+                    onClick={() => switchNet(n.name, n.ifIndex, confirmCat)}
                   >
                     {confirmCat === "private" ? t("net.confirmPrivate", lang) : t("net.confirmPublic", lang)}
                   </button>

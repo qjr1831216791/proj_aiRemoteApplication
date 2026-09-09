@@ -120,16 +120,26 @@ pub fn parse_net_status(raw: &str) -> Result<NetStatus, String> {
 // ── 调整（提权参数构造）────────────────────────────────────────────────────
 
 /// 归类切换的提权参数串（ShellExecuteW lpParameters；AC5/AC6）。
-/// 非法目标归类 → Err（AC7 的命令校验分支）。结果不回流，以复测为准（plan §2）。
-pub fn set_category_params(if_index: u32, category: &str) -> Result<String, String> {
+/// 定位以**网络名优先、接口序号兜底**：InterfaceIndex 会随适配器重枚举漂移
+/// （真机复现：热点重连后旧序号查无对象、切换静默失败），网络名在活动连接
+/// 表内相对稳定；同名多接口视为同一网络一并设置。非法目标归类 → Err
+/// （AC7 的命令校验分支）。结果不回流，以复测为准（plan §2）。
+pub fn set_category_params(name: &str, if_index: u32, category: &str) -> Result<String, String> {
     let kw = match category {
         "private" => "Private",
         "public" => "Public",
         other => return Err(format!("非法目标归类：{other}（合法：private/public）")),
     };
+    if name.is_empty() && if_index == 0 {
+        return Err("缺少网络定位信息（网络名与接口序号均为空）".into());
+    }
+    // PS 单引号字面量：内部单引号按规则翻倍
+    let name_lit = name.replace('\'', "''");
     Ok(format!(
-        "-NoProfile -NonInteractive -WindowStyle Hidden -Command \
-         \"Set-NetConnectionProfile -InterfaceIndex {if_index} -NetworkCategory {kw}\""
+        "-NoProfile -NonInteractive -WindowStyle Hidden -Command \"\
+         $p = Get-NetConnectionProfile | Where-Object {{ $_.Name -eq '{name_lit}' }}; \
+         if (-not $p) {{ $p = Get-NetConnectionProfile | Where-Object {{ $_.InterfaceIndex -eq {if_index} }} }}; \
+         if ($p) {{ $p | Set-NetConnectionProfile -NetworkCategory {kw} }}\""
     ))
 }
 
@@ -333,11 +343,22 @@ mod tests {
 
     #[test]
     fn set_category_params_validate_and_map() {
-        assert!(set_category_params(7, "private").unwrap().contains("-InterfaceIndex 7 -NetworkCategory Private"));
-        assert!(set_category_params(0, "public").unwrap().contains("-NetworkCategory Public"));
-        assert!(set_category_params(7, "public").unwrap().contains("-WindowStyle Hidden"), "提权后不残留控制台");
-        let e = set_category_params(7, "auto").unwrap_err();
+        // 主定位按网络名（容忍 InterfaceIndex 漂移），序号兜底
+        let p = set_category_params("603", 14, "private").unwrap();
+        assert!(p.contains("$_.Name -eq '603'"), "{p}");
+        assert!(p.contains("InterfaceIndex -eq 14"), "{p}");
+        assert!(p.contains("-NetworkCategory Private"), "{p}");
+        assert!(p.contains("-WindowStyle Hidden"), "提权后不残留控制台：{p}");
+
+        // 网络名含单引号按 PS 规则翻倍
+        let p2 = set_category_params("odd'name", 0, "public").unwrap();
+        assert!(p2.contains("'odd''name'"), "{p2}");
+        assert!(p2.contains("-NetworkCategory Public"), "{p2}");
+
+        let e = set_category_params("603", 14, "auto").unwrap_err();
         assert!(e.contains("非法目标归类"), "AC7 命令校验分支：{e}");
+        let e2 = set_category_params("", 0, "private").unwrap_err();
+        assert!(e2.contains("缺少网络定位信息"), "{e2}");
     }
 
     // ── NetMonitor 状态机（脚本化探测输出驱动）─────────────────────────

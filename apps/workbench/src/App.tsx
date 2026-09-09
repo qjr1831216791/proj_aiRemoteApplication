@@ -99,6 +99,11 @@ export function App() {
   const startAll = () =>
     api.startAll().catch((e) => pushToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
 
+  /** 网络环境主动刷新（切换派发后加速收敛；spec 002） */
+  const refreshNet = () => {
+    api.getNetStatus().then(setNetStatus).catch(() => {});
+  };
+
   const stopAll = async () => {
     setStopping(true);
     try {
@@ -154,6 +159,7 @@ export function App() {
           urls={urls}
           scripts={scripts}
           netStatus={netStatus}
+          onNetRefresh={refreshNet}
           stopping={stopping}
           onStartAll={startAll}
           onStopAll={stopAll}

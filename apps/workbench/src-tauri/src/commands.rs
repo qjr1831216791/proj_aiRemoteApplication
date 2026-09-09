@@ -170,15 +170,17 @@ pub async fn get_net_status(
 }
 
 /// 网络归类调整（spec 002 AC5/AC6/AC7）：UAC 提权派发、立即返回，
-/// 生效以 `net://changed` 复测为准；非法归类/UAC 拒绝 → Err 明确提示
+/// 生效以 `net://changed` 复测为准；非法归类/UAC 拒绝 → Err 明确提示。
+/// 定位以网络名优先、接口序号兜底（序号随适配器重枚举漂移，真机实测）。
 #[tauri::command]
 pub async fn set_network_category(
     lang_state: tauri::State<'_, LanguageState>,
+    name: String,
     if_index: u32,
     category: String,
 ) -> Result<(), String> {
     let lang = lang_state.current();
-    let params = network::set_category_params(if_index, &category)?;
+    let params = network::set_category_params(&name, if_index, &category)?;
     tauri::async_runtime::spawn_blocking(move || {
         scripts::shell_execute(Some("runas"), "powershell.exe", &params)
     })

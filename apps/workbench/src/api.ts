@@ -43,9 +43,12 @@ export const api = {
 
   /** 网络环境快照（spec 002）：即时探测；null = 尚无成功探测 */
   getNetStatus: () => invoke<NetStatus | null>("get_net_status"),
-  /** 网络归类调整（spec 002 AC5/AC6）：UAC 提权派发，生效以 net://changed 复测为准 */
-  setNetworkCategory: (ifIndex: number, category: Extract<NetCategory, "private" | "public">) =>
-    invoke<void>("set_network_category", { ifIndex, category }),
+  /** 网络归类调整（spec 002 AC5/AC6）：UAC 提权派发，生效以 net://changed 复测为准；按网络名定位、序号兜底 */
+  setNetworkCategory: (
+    name: string,
+    ifIndex: number,
+    category: Extract<NetCategory, "private" | "public">,
+  ) => invoke<void>("set_network_category", { name, ifIndex, category }),
 };
 
 /** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */
