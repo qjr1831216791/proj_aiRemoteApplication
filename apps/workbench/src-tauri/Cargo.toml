@@ -12,10 +12,23 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-log = "2"
+# 单实例：Windows 实现为 {identifier}-sim 互斥体（无 Global\ 前缀，仅会话内唯一），
+# 跨会话唯一性由下方 windows crate 的 Global\ 互斥体补足（spec §4.5，见 src/single_instance.rs）
+tauri-plugin-single-instance = "2"
+log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Security", # CreateMutexW 的 SECURITY_ATTRIBUTES 参数所在模块
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 # 发布体积优化（约束 §5：安装包 ≤15MB）
 [profile.release]
