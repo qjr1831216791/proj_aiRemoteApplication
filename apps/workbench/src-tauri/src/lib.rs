@@ -5,7 +5,9 @@
 //!   关 X 最小化到托盘（AC18）、RunEvent::ExitRequested 退出钩子骨架
 //! - T5~T15：业务命令（设置/探测/编排/自启/界面）逐步接入
 
+mod consts;
 mod lang;
+mod probe;
 mod settings;
 mod single_instance;
 mod tray;

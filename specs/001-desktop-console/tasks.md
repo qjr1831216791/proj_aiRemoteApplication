@@ -19,7 +19,7 @@
 ## 阶段 2: 核心逻辑（测试先行）
 
 - [x] T5 `settings` 模块：Settings 结构、默认值、加载/补丁保存、损坏恢复（改名 `.bad-<ts>` + 回退默认 + `settings://repaired` 事件）——先写失败单测（验收: AC21/23/24 逻辑部分；完成标志: `cargo test settings` 绿）<!-- 2026-09-09 完成：红 10 failed（todo! 桩）→ 绿 13/13；camelCase schema + 三态 scriptsDirOverride（serde deserialize_with 区分 null/缺省）+ 原子写（.tmp-<pid> rename）+ 损坏留档 settings.json.bad-<ms>；get_settings/save_settings 命令 + lib.rs setup 加载与 settings://repaired 事件接线；注：spec.md AC24 写 .bak，plan §4/tasks 写 .bad-<ts>，按 plan 实现为 .bad-<ts>（冲突已记录） -->
-- [ ] T6 `probe` 模块：`StatusProbe` trait + Windows 实现（netstat2 端口 Listen + sysinfo PID→exe 身份匹配；区分 running / port-held(进程名) / stopped；LAN 可达性仅按监听地址展示）——mock 单测（验收: AC5/7；完成标志: `cargo test probe` 绿）
+- [x] T6 `probe` 模块：`StatusProbe` trait + Windows 实现（netstat2 端口 Listen + sysinfo PID→exe 身份匹配；区分 running / port-held(进程名) / stopped；LAN 可达性仅按监听地址展示）——mock 单测（验收: AC5/7；完成标志: `cargo test probe` 绿）<!-- 2026-09-09 完成：红 8 failed（todo! 桩）→ 绿 10/10（含真实监听集成：bind→netstat2 捕获→sysinfo 归 PID→drop 后 stopped）；classify 纯函数 + StatusProbe trait（WindowsProbe 采集层注入）；身份判据 cloudcli=node.exe 按名 / caddy、ddns-go=栈目录全路径（与 setup-autostart.ps1 Check 一致）；新增 consts.rs 实例常量（3001/443/9876、栈目录、域名、脚本契约路径） -->
 - [ ] T7 `scripts` 模块：ScriptLocator（设置覆盖 → 内置副本 → 开发态仓库路径，缺失返回禁用原因）；CommandBuilder（`-Lang` 对齐、`-NoProfile -NonInteractive`、CREATE_NO_WINDOW、stdio→日志文件、超时）；Elevator（ShellExecuteW runas 可见窗口）；exit code→UI 语义映射——命令行字符串断言单测（验收: AC19/20 逻辑部分、plan §5.2；完成标志: `cargo test scripts` 绿）
 - [ ] T8 `orchestrator` 启动侧：组件守卫（已运行跳过）、CloudCLI 走 `run-server-hidden.ps1`、Caddy/ddns-go 原生守卫拉起（stdout→日志）、starting→running 就绪轮询（2s）、60s 超时→failed 附 `%TEMP%\cloudcli.log` 尾部、在途操作跟踪、`status://changed` 事件——状态机单测（依赖: T5~T7）（验收: AC1/3/6 逻辑部分；完成标志: `cargo test orchestrator` 绿）
 
