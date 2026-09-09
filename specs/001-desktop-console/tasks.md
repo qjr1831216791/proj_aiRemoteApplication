@@ -35,7 +35,7 @@
 
 ## 阶段 5: 前端界面
 
-- [ ] T13 主界面：三组件状态卡（五态 + 端口/耗时/失败原因）、总开关（启动/停止，进行中禁用）、组件级「重试」、各端访问地址区（本机/局域网/域名，一键复制/打开）（依赖: T8）（验收: AC1/4/6 展示层）
+- [x] T13 主界面：三组件状态卡（五态 + 端口/耗时/失败原因）、总开关（启动/停止，进行中禁用）、组件级「重试」、各端访问地址区（本机/局域网/域名，一键复制/打开）（依赖: T8）（验收: AC1/4/6 展示层）<!-- 2026-09-09 完成：命令层先行（get_status/get_urls/start_all/stop_all/start_one/stop_one/open_external/scripts_availability/open_logs_dir + is_hidden_startup；status://changed 前台 2s 事件、settings://repaired 事件；编排失败 detail 双语经 lang::detail_texts）。MainView 事件驱动（mount get_status + 监听事件，零前端轮询）：五态卡（色条+徽章+端口+since 时长+失败/端口占用明细）、总开关进行中禁用且部分失败不出"启动成功"（AC6）、重试仅 failed/port-held、地址区三行复制/打开、停止带"会结束进行中的 AI 会话"提示；CopyButton 复用件。npm run build 零错误；cargo test 全套 118 + 1 ignored（本轮新增 16）。真机 dev 核验（13:15 新构建）：联动派发 run-server-hidden/caddy/ddns-go 实启，3001/443/9876 三端口 LISTENING，锁屏前整屏截图核验三卡运行中/地址区/低频操作折叠区渲染；停止按钮点击链因会话锁屏未做可视化核验（AC2 展示层留 T16 手工清单） -->
 - [ ] T14 设置页与语言体系：五项行为开关 + 语言设置（跟随系统/zh/en；切换**立即生效含托盘菜单重建**，并同步所有脚本 `-Lang`；`auto` 判定为纯函数——系统显示语言 zh→中文否则英文，单测覆盖）；端口/路径/域名只读卡（复制 + "修改须重跑安装脚本"指引）+ 打开日志目录（依赖: T5/T2/T7）（验收: AC21/22/25）
 - [ ] T15 低频操作区：安装/重装、升级 CloudCLI(-Update)、HTTPS 栈装机（install-https）、HTTPS 环境配置、客户端配置（可见交互窗）、ddns-go 管理页、打开工作台页面；UAC 拒绝/脚本失败的明确提示（依赖: T7）（验收: AC19/20）
 

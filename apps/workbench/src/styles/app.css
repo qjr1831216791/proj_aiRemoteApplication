@@ -1,13 +1,22 @@
-/* 骨架布局（T1）：卡片 + 按钮基类，T13/T14 在此之上扩展 */
+/* 布局与组件样式（T1 骨架 + T13/T14/T15 扩展）：只用 tokens.css 令牌，不写裸色值 */
 
 .app {
-  max-width: 720px;
+  max-width: 760px;
   margin: 0 auto;
   padding: var(--sp-5) var(--sp-4);
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
   min-height: 100vh;
+}
+
+/* ── 页头 + 导航 ─────────────────────────────────────────────── */
+.app__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
 }
 
 .app__title {
@@ -22,6 +31,40 @@
   font-size: var(--fs-sm);
 }
 
+.app__nav {
+  display: inline-flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+}
+
+.nav-btn {
+  border: none;
+  background: transparent;
+  color: var(--c-text-secondary);
+  border-radius: var(--r-sm);
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-md);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-btn:hover {
+  color: var(--c-primary);
+}
+
+.nav-btn--active {
+  background: var(--c-primary);
+  color: #fff;
+}
+
+.app__footer {
+  margin-top: auto;
+}
+
+/* ── 卡片与通用 ──────────────────────────────────────────────── */
 .card {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
@@ -30,21 +73,38 @@
   padding: var(--sp-4);
 }
 
-.card--placeholder {
+.card__title {
+  font-size: var(--fs-lg);
+  margin: 0 0 var(--sp-3);
+  color: var(--c-text);
+}
+
+.muted {
   color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+  margin: 0 0 var(--sp-3);
 }
 
-.app__footer {
-  margin-top: auto;
-  display: flex;
-  justify-content: flex-end;
+.notice {
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  margin: 0 0 var(--sp-3);
 }
 
-.lang-switch {
-  display: inline-flex;
-  gap: var(--sp-1);
+.notice--warn {
+  background: var(--c-warn-soft);
+  color: var(--c-warn);
 }
 
+.notice__detail {
+  display: block;
+  margin-top: var(--sp-1);
+  word-break: break-all;
+  user-select: text;
+}
+
+/* ── 按钮 ────────────────────────────────────────────────────── */
 .btn {
   border: 1px solid var(--c-border);
   background: var(--c-surface);
@@ -53,12 +113,40 @@
   padding: var(--sp-2) var(--sp-4);
   font-size: var(--fs-md);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   border-color: var(--c-primary);
   color: var(--c-primary);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--c-primary-hover);
+  color: #fff;
+}
+
+.btn--danger {
+  background: var(--c-surface);
+  border-color: var(--c-error);
+  color: var(--c-error);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--c-error-soft);
+  border-color: var(--c-error);
+  color: var(--c-error);
 }
 
 .btn--sm {
@@ -74,4 +162,391 @@
 
 .btn--active:hover {
   color: #fff;
+}
+
+/* ── 主界面：总开关 ──────────────────────────────────────────── */
+.master {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.master__actions {
+  display: inline-flex;
+  gap: var(--sp-2);
+}
+
+.master__hint {
+  margin: 0;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+}
+
+/* ── 主界面：状态卡 ──────────────────────────────────────────── */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-3);
+}
+
+/* 窄窗口不破版：三卡降为单列 */
+@media (max-width: 640px) {
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.status {
+  border-left: 3px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* 状态色（spec §4.6）：绿=运行中 / 灰=未运行 / 蓝=启动中 / 橙红=失败或端口被占 */
+.status--running {
+  border-left-color: var(--c-ok);
+}
+
+.status--starting {
+  border-left-color: var(--c-info);
+}
+
+.status--stopped {
+  border-left-color: var(--c-text-muted);
+}
+
+.status--failed,
+.status--port-held {
+  border-left-color: var(--c-error);
+}
+
+.status__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.status__name {
+  font-weight: 600;
+}
+
+.status__meta {
+  margin: 0;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.status__sep {
+  margin: 0 var(--sp-1);
+}
+
+.status__detail {
+  margin: 0;
+  color: var(--c-error);
+  font-size: var(--fs-sm);
+  word-break: break-all;
+  user-select: text;
+}
+
+.chip {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px var(--sp-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.chip--running {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.chip--starting {
+  background: var(--c-primary-soft);
+  color: var(--c-info);
+}
+
+.chip--stopped {
+  background: var(--c-border);
+  color: var(--c-text-secondary);
+}
+
+.chip--failed,
+.chip--port-held {
+  background: var(--c-error-soft);
+  color: var(--c-error);
+}
+
+/* ── 主界面：地址区 ──────────────────────────────────────────── */
+.addr__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.addr__row:last-child {
+  border-bottom: none;
+}
+
+.addr__label {
+  flex: 0 0 auto;
+  min-width: 4em;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.addr__url {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-all;
+  user-select: text;
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+}
+
+.addr__actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+
+/* ── 低频操作区（T15）───────────────────────────────────────── */
+.tools__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.tools__toggle .card__title {
+  margin: 0;
+}
+
+.tools__chev {
+  color: var(--c-text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.tools__chev--open {
+  transform: rotate(90deg);
+}
+
+.tools__body {
+  margin-top: var(--sp-3);
+}
+
+.tools__mirror {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  cursor: pointer;
+}
+
+.tools__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+@media (max-width: 640px) {
+  .tools__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tool {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  align-items: flex-start;
+}
+
+.tool__desc {
+  margin: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.tools .muted:last-child {
+  margin-bottom: 0;
+}
+
+/* ── 设置页（T14）───────────────────────────────────────────── */
+.settings__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings__row,
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.settings__row:last-child,
+.switch-row:last-child {
+  border-bottom: none;
+}
+
+.settings__row-text,
+.switch-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.settings__label {
+  font-weight: 600;
+}
+
+.settings__desc {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.settings__value {
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  word-break: break-all;
+  user-select: text;
+}
+
+.settings__actions {
+  margin-top: var(--sp-3);
+}
+
+/* 视觉开关（styled checkbox，无依赖红线内） */
+.switch {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--c-border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  margin: 0;
+}
+
+.switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--c-surface);
+  transition: transform 0.15s ease;
+}
+
+.switch:checked {
+  background: var(--c-primary);
+}
+
+.switch:checked::before {
+  transform: translateX(18px);
+}
+
+.switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.switch-row {
+  cursor: pointer;
+}
+
+.switch-row--disabled {
+  opacity: 0.7;
+}
+
+/* 分段单选（语言/退出行为） */
+.seg {
+  display: inline-flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+}
+
+.seg__btn {
+  border: none;
+  background: transparent;
+  color: var(--c-text-secondary);
+  border-radius: var(--r-sm);
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.seg__btn:hover {
+  color: var(--c-primary);
+}
+
+.seg__btn--active {
+  background: var(--c-primary);
+  color: #fff;
+}
+
+/* ── 非阻塞提示（toast）─────────────────────────────────────── */
+.toasts {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: min(420px, calc(100vw - 2 * var(--sp-4)));
+  z-index: 1000;
+}
+
+.toast {
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-card);
+  word-break: break-all;
+  user-select: text;
+}
+
+.toast--info {
+  background: var(--c-primary-soft);
+  color: var(--c-info);
+}
+
+.toast--success {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.toast--error {
+  background: var(--c-error-soft);
+  color: var(--c-error);
 }
