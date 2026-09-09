@@ -16,6 +16,7 @@ venv/
 # Build output
 dist/
 build/
+release/
 
 # Tauri / Rust
 **/src-tauri/target/
