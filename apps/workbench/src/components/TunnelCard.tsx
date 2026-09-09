@@ -192,7 +192,9 @@ export function TunnelCard(props: TunnelCardProps) {
   );
 }
 
-/** DNS 结论 → 提示条（kind 色 + 文案；AC12 检测一致后指引自然退场） */
+/** DNS 结论 → 提示条（kind 色 + 文案；AC12 检测一致后指引自然退场）。
+ * 「对齐」判定与当前通道配对才算完成：穿透通道下残留 A 记录 = 待切换
+ * （显示切换指引而非"已恢复直连"），反之亦然——避免通道盲区误导。 */
 function DnsNotice(props: {
   dns: DnsAlignment;
   channel: AccessChannel;
@@ -202,9 +204,21 @@ function DnsNotice(props: {
   const { dns, channel, target, lang } = props;
   switch (dns.kind) {
     case "alignedTunnel":
-      return <p class="notice notice--ok">{t("tunnel.dnsOkTunnel", lang)}</p>;
+      return channel === "tunnel" ? (
+        <p class="notice notice--ok">{t("tunnel.dnsOkTunnel", lang)}</p>
+      ) : (
+        <p class="notice notice--warn">
+          {t("tunnel.dnsGuideDirect", lang).replace("{target}", target)}
+        </p>
+      );
     case "alignedDirect":
-      return <p class="notice notice--ok">{t("tunnel.dnsOkDirect", lang)}</p>;
+      return channel === "direct" ? (
+        <p class="notice notice--ok">{t("tunnel.dnsOkDirect", lang)}</p>
+      ) : (
+        <p class="notice notice--warn">
+          {t("tunnel.dnsGuideTunnel", lang).replace("{target}", target)}
+        </p>
+      );
     case "mismatchedCname":
       return (
         <p class="notice notice--warn">

@@ -310,11 +310,11 @@ fn run_dns_probe(domain_root: &str, domain: &str) -> Result<DnsProbeResult, Stri
     let script = format!(
         r#"[Console]::OutputEncoding=[Text.Encoding]::UTF8;
 $ErrorActionPreference='SilentlyContinue';
-$ns=@(Resolve-DnsName -Name {root} -Type NS -Server 223.5.5.5 -ErrorAction SilentlyContinue | Where-Object {{$_.Type -eq 2}} | Select-Object -First 1).NameHost;
+$ns=@(Resolve-DnsName -Name {root} -Type NS -Server 223.5.5.5 -ErrorAction SilentlyContinue | Where-Object {{[string]$_.NameHost}} | Select-Object -First 1).NameHost;
 if(-not $ns){{ Write-Output '{{"ns":null,"cname":null,"hasA":false}}'; exit }};
-$cn=@(Resolve-DnsName -Name {dom} -Type CNAME -Server $ns -ErrorAction SilentlyContinue | Where-Object {{$_.Type -eq 5}} | Select-Object -First 1).NameHost;
-$aa=@(Resolve-DnsName -Name {dom} -Type A -Server $ns -ErrorAction SilentlyContinue | Where-Object {{$_.Type -eq 1}});
-[pscustomobject]@{{ns=$ns;cname=[string]$cn;hasA=($aa.Count -gt 0)}} | ConvertTo-Json -Compress"#,
+$cn=@(Resolve-DnsName -Name {dom} -Type CNAME -Server $ns -ErrorAction SilentlyContinue | Where-Object {{[string]$_.NameHost}} | Select-Object -First 1).NameHost;
+$aa=@(Resolve-DnsName -Name {dom} -Type A -Server $ns -ErrorAction SilentlyContinue | Where-Object {{[string]$_.IPAddress}});
+[pscustomobject]@{{ns=[string]$ns;cname=[string]$cn;hasA=($aa.Count -gt 0)}} | ConvertTo-Json -Compress"#,
         root = domain_root,
         dom = domain,
     );
