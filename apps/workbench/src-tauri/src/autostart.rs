@@ -164,7 +164,7 @@ pub fn set_services_autostart(
     let spec = setup_autostart(scripts_dir, lang, log_dir, !enable);
     match executor.execute(&spec) {
         ExecOutcome::Exited(0) => Ok(ServicesAutostartOutcome { took_over }),
-        outcome => Err(exec_error(Script::SetupAutostart, outcome)),
+        outcome => Err(exec_error(Script::SetupAutostart, outcome, lang)),
     }
 }
 
@@ -173,6 +173,7 @@ pub fn set_app_autostart(
     executor: &dyn CommandExecutor,
     exe_path: &Path,
     log_dir: &Path,
+    lang: Lang,
     enable: bool,
 ) -> Result<(), String> {
     let spec = if enable {
@@ -180,32 +181,30 @@ pub fn set_app_autostart(
     } else {
         app_task_remove_spec(log_dir)
     };
+    let texts = crate::lang::err_texts(lang);
     match executor.execute(&spec) {
         ExecOutcome::Exited(0) => Ok(()),
-        ExecOutcome::Exited(code) => Err(format!(
-            "程序自启任务{}失败（code={code}），详情见程序日志目录",
-            if enable { "注册" } else { "移除" }
-        )),
-        ExecOutcome::TimedOut => Err("程序自启任务操作超时（30s）".into()),
-        ExecOutcome::SpawnFailed(e) => Err(format!("程序自启任务无法执行：{e}")),
+        ExecOutcome::Exited(code) => Err(texts.app_task_failed(enable, code)),
+        ExecOutcome::TimedOut => Err(texts.app_task_timeout()),
+        ExecOutcome::SpawnFailed(e) => Err(texts.app_task_spawn_failed(&e)),
     }
 }
 
-/// 执行结果 → 错误文案（退出码语义经 interpret_exit 分派）
-fn exec_error(script: Script, outcome: ExecOutcome) -> String {
+/// 执行结果 → 错误文案（退出码语义经 interpret_exit 分派；双语经 lang 词条）
+fn exec_error(script: Script, outcome: ExecOutcome, lang: Lang) -> String {
+    let texts = crate::lang::err_texts(lang);
     match outcome {
         ExecOutcome::Exited(0) => unreachable!("成功路径不经此处"),
         ExecOutcome::Exited(code) => match interpret_exit(script, code) {
-            crate::scripts::ScriptOutcome::Unavailable(msg) => msg.to_string(),
-            crate::scripts::ScriptOutcome::Failed(code) => {
-                format!("脚本异常退出（code={code}），详情见程序日志目录")
-            }
+            // 经此路径的脚本仅 setup-autostart.ps1：Unavailable 即栈目录缺件语义
+            crate::scripts::ScriptOutcome::Unavailable(_) => texts.stack_dir_missing(),
+            crate::scripts::ScriptOutcome::Failed(code) => texts.script_exited(code),
             crate::scripts::ScriptOutcome::Success | crate::scripts::ScriptOutcome::TimedOut => {
                 String::new()
             }
         },
-        ExecOutcome::TimedOut => "脚本执行超时（已终止），详情见程序日志目录".into(),
-        ExecOutcome::SpawnFailed(e) => format!("脚本无法执行：{e}"),
+        ExecOutcome::TimedOut => texts.script_timed_out(),
+        ExecOutcome::SpawnFailed(e) => texts.script_spawn_failed(&e),
     }
 }
 
@@ -235,16 +234,16 @@ pub async fn set_autostart_services(
     settings: tauri::State<'_, crate::settings::SettingsState>,
     enable: bool,
 ) -> Result<TookOverPayload, String> {
-    let Some(dir) = ctx.scripts_dir.clone() else {
-        return Err("sprint0 脚本目录不可用（spec §4.5）：无法管理服务自启任务".into());
-    };
     let lang = crate::lang::resolve_setting(settings.current().language);
+    let Some(dir) = ctx.scripts_dir.clone() else {
+        return Err(crate::lang::err_texts(lang).scripts_dir_unavailable_autostart());
+    };
     let log_dir = ctx.log_dir.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
         set_services_autostart(&crate::scripts::ProcessExecutor, &dir, lang, &log_dir, enable)
     })
     .await
-    .map_err(|e| format!("自启任务执行异常结束：{e}"))??;
+    .map_err(|e| crate::lang::err_texts(lang).autostart_join_failed(&e.to_string()))??;
     Ok(TookOverPayload { took_over: out.took_over })
 }
 
@@ -253,15 +252,19 @@ pub async fn set_autostart_services(
 #[tauri::command]
 pub async fn set_autostart_app(
     ctx: tauri::State<'_, AutostartContext>,
+    lang_state: tauri::State<'_, crate::lang::LanguageState>,
     enable: bool,
 ) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| format!("无法定位自身可执行文件：{e}"))?;
+    let lang = lang_state.current();
+    let texts = crate::lang::err_texts(lang);
+    let exe =
+        std::env::current_exe().map_err(|e| texts.locate_exe_failed(&e.to_string()))?;
     let log_dir = ctx.log_dir.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        set_app_autostart(&crate::scripts::ProcessExecutor, &exe, &log_dir, enable)
+        set_app_autostart(&crate::scripts::ProcessExecutor, &exe, &log_dir, lang, enable)
     })
     .await
-    .map_err(|e| format!("自启任务执行异常结束：{e}"))?
+    .map_err(|e| texts.autostart_join_failed(&e.to_string()))?
 }
 
 // ── 单元测试（宪法 §1：先红后绿）────────────────────────────────────────────
@@ -438,17 +441,47 @@ mod tests {
         let dir = logs();
         // 开 → 执行注册命令
         let enable = MockExecutor::with_exits(&[ExecOutcome::Exited(0)]);
-        set_app_autostart(&enable, Path::new(r"D:\wb\wb.exe"), &dir, true).expect("注册应成功");
+        set_app_autostart(&enable, Path::new(r"D:\wb\wb.exe"), &dir, Lang::Zh, true)
+            .expect("注册应成功");
         assert!(enable.executed.lock().unwrap()[0].command_line().contains("Register-ScheduledTask"));
 
         // 关 → 执行移除命令
         let disable = MockExecutor::with_exits(&[ExecOutcome::Exited(0)]);
-        set_app_autostart(&disable, Path::new(r"D:\wb\wb.exe"), &dir, false).expect("移除应成功");
+        set_app_autostart(&disable, Path::new(r"D:\wb\wb.exe"), &dir, Lang::Zh, false)
+            .expect("移除应成功");
         assert!(disable.executed.lock().unwrap()[0].command_line().contains("Unregister-ScheduledTask"));
 
         // 失败映射
         let failing = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
-        assert!(set_app_autostart(&failing, Path::new(r"D:\wb\wb.exe"), &dir, true).is_err());
+        assert!(set_app_autostart(&failing, Path::new(r"D:\wb\wb.exe"), &dir, Lang::Zh, true).is_err());
+    }
+
+    #[test]
+    fn autostart_errors_follow_effective_lang() {
+        // T18（AC25）：自启失败 Err 随生效语言；zh 字样与历史一致、en 不混中文
+        let zh_fail = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
+        let err = set_app_autostart(&zh_fail, Path::new(r"D:\wb\wb.exe"), &logs(), Lang::Zh, true)
+            .unwrap_err();
+        assert!(err.contains("程序自启任务注册失败"), "{err}");
+
+        let en_fail = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
+        let err = set_app_autostart(&en_fail, Path::new(r"D:\wb\wb.exe"), &logs(), Lang::En, false)
+            .unwrap_err();
+        assert!(err.contains("Failed to remove"), "{err}");
+        assert!(!err.contains('失'), "英文词条不得混入中文：{err}");
+
+        // setup-autostart exit 1（栈目录缺件）经 exec_error 本地化
+        let en_setup = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
+        let err = set_services_autostart(
+            &en_setup,
+            Path::new(r"D:\scripts"),
+            Lang::En,
+            &logs(),
+            false,
+        )
+        .unwrap_err();
+        assert!(err.contains("missing caddy.exe"), "{err}");
+        assert!(!err.contains('缺'), "英文词条不得混入中文：{err}");
     }
 
     /// 真机演练（T11 手工验证项，`cargo test -- --ignored` 显式执行）：
@@ -470,9 +503,9 @@ mod tests {
 
         // 自身任务：注册 → 确认 → 移除 → 确认消失
         let exe = std::env::current_exe().unwrap();
-        set_app_autostart(&exec, &exe, &dir, true).expect("注册应成功");
+        set_app_autostart(&exec, &exe, &dir, Lang::Zh, true).expect("注册应成功");
         assert_eq!(task_exists(&exec, APP_TASK_NAME, &dir), Ok(true), "注册后任务应存在");
-        set_app_autostart(&exec, &exe, &dir, false).expect("移除应成功");
+        set_app_autostart(&exec, &exe, &dir, Lang::Zh, false).expect("移除应成功");
         assert_eq!(task_exists(&exec, APP_TASK_NAME, &dir), Ok(false), "移除后任务应消失");
     }
 }

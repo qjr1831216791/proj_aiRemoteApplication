@@ -11,8 +11,12 @@
 //! 单组件 10s 预算：超时记日志 + detail 给手动排查命令，放行不阻塞其余组件
 //! （AC2）。进程操作全部经 `ProcessOps` seam（taskkill/进程枚举也抽象），
 //! 单测断言调用顺序与参数。
+//!
+//! detail 文案经 [`crate::lang::stop_texts`] 双语化（AC25：用户可见路径
+//! zh/en 同源；调用方传生效语言，编排器取实时语言源）。
 
 use crate::consts::{CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT, DDNSGO_PORT, STACK_DIR};
+use crate::lang::StopTexts;
 use crate::probe::{paths_equal, StatusProbe};
 use crate::scripts::{CommandExecutor, CommandSpec, CREATE_NO_WINDOW, ExecOutcome};
 use std::path::{Path, PathBuf};
@@ -148,18 +152,17 @@ impl ProcessOps for SysinfoProcessOps {
 
 // ── 管线（纯函数化：依赖全注入；调用顺序即语义）──────────────────────────
 
-/// 手动排查命令提示（超时/复核失败时给用户）
-fn manual_hint(port: u16) -> String {
-    format!("手动排查：netstat -ano | findstr :{port} 定位 PID 后 taskkill /F /T /PID <PID>")
-}
-
 /// 预算检查：到期 → TimedOut（AC2：放行不阻塞）
-fn budget_expired(cfg: &StopConfig, deadline: Instant, port: u16) -> Option<StopOutcome> {
+fn budget_expired(
+    cfg: &StopConfig,
+    deadline: Instant,
+    port: u16,
+    texts: &StopTexts,
+) -> Option<StopOutcome> {
     if Instant::now() >= deadline {
-        Some(StopOutcome::TimedOut(format!(
-            "停止超时（单组件 {}s 预算耗尽，已放行不阻塞其余组件）。{}",
+        Some(StopOutcome::TimedOut(texts.timeout_released(
             cfg.component_timeout.as_secs(),
-            manual_hint(port)
+            port,
         )))
     } else {
         None
@@ -172,8 +175,9 @@ fn verify_port_released(
     port: u16,
     cfg: &StopConfig,
     deadline: Instant,
+    texts: &StopTexts,
 ) -> StopOutcome {
-    if let Some(t) = budget_expired(cfg, deadline, port) {
+    if let Some(t) = budget_expired(cfg, deadline, port, texts) {
         return t;
     }
     std::thread::sleep(cfg.port_grace);
@@ -186,10 +190,7 @@ fn verify_port_released(
         .iter()
         .find_map(|p| p.exe_name.clone())
         .unwrap_or_else(|| "unknown".into());
-    StopOutcome::Failed(format!(
-        "端口 {port} 复核未通过：仍被 {name} 监听。{}",
-        manual_hint(port)
-    ))
+    StopOutcome::Failed(texts.verify_failed(port, &name))
 }
 
 /// Caddy 优雅停命令（`<StackDir>\caddy.exe stop`，5s 超时，stdio→日志）
@@ -210,9 +211,10 @@ pub fn stop_cloudcli(
     probe: &dyn StatusProbe,
     procs: &dyn ProcessOps,
     cfg: &StopConfig,
+    texts: &StopTexts,
     deadline: Instant,
 ) -> StopOutcome {
-    if let Some(t) = budget_expired(cfg, deadline, CLOUDCLI_PORT) {
+    if let Some(t) = budget_expired(cfg, deadline, CLOUDCLI_PORT, texts) {
         return t;
     }
     // 1. 定位监听者
@@ -238,10 +240,7 @@ pub fn stop_cloudcli(
             .iter()
             .find_map(|p| p.exe_name.clone())
             .unwrap_or_else(|| "unknown".into());
-        return StopOutcome::Failed(format!(
-            "端口 {CLOUDCLI_PORT} 被非 CloudCLI 进程（{name}）占用：拒绝结束，未做任何改动。{}",
-            manual_hint(CLOUDCLI_PORT)
-        ));
+        return StopOutcome::Failed(texts.refuse_cloudcli(CLOUDCLI_PORT, &name));
     }
     // 3. 先收集进程树快照再动手（监听者先死会让 claude 会话子进程脱树成孤儿）
     let mut tree: Vec<u32> = Vec::new();
@@ -254,7 +253,7 @@ pub fn stop_cloudcli(
     }
     // 4. 逐杀：子先父后（叶向上）
     for &pid in &tree {
-        if let Some(t) = budget_expired(cfg, deadline, CLOUDCLI_PORT) {
+        if let Some(t) = budget_expired(cfg, deadline, CLOUDCLI_PORT, texts) {
             return t;
         }
         if let Err(e) = procs.kill(pid) {
@@ -262,7 +261,7 @@ pub fn stop_cloudcli(
         }
     }
     for &pid in &victims {
-        if let Some(t) = budget_expired(cfg, deadline, CLOUDCLI_PORT) {
+        if let Some(t) = budget_expired(cfg, deadline, CLOUDCLI_PORT, texts) {
             return t;
         }
         if let Err(e) = procs.kill(pid) {
@@ -270,7 +269,7 @@ pub fn stop_cloudcli(
         }
     }
     // 5. 端口复核
-    verify_port_released(probe, CLOUDCLI_PORT, cfg, deadline)
+    verify_port_released(probe, CLOUDCLI_PORT, cfg, deadline, texts)
 }
 
 /// Caddy 停止：caddy stop（5s）→ 443+路径校验兜底强杀 → 复核（spec §4.4）
@@ -279,10 +278,11 @@ pub fn stop_caddy(
     exec: &dyn CommandExecutor,
     procs: &dyn ProcessOps,
     cfg: &StopConfig,
+    texts: &StopTexts,
     log_dir: &Path,
     deadline: Instant,
 ) -> StopOutcome {
-    if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT) {
+    if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT, texts) {
         return t;
     }
     if probe.port_holders(CADDY_PORT).listen_addrs.is_empty() {
@@ -294,7 +294,7 @@ pub fn stop_caddy(
         ExecOutcome::Exited(0)
     );
     if graceful_ok {
-        match verify_port_released(probe, CADDY_PORT, cfg, deadline) {
+        match verify_port_released(probe, CADDY_PORT, cfg, deadline, texts) {
             StopOutcome::Stopped => return StopOutcome::Stopped,
             // 预算耗尽必须放行上报；端口仍占则落入兜底强杀
             t @ StopOutcome::TimedOut(_) => return t,
@@ -304,7 +304,7 @@ pub fn stop_caddy(
         log::warn!("caddy stop 未成功（假停风险，plan §7）：转入 443 端口兜底强杀");
     }
     // 2. 兜底：443 找监听进程 → 校验可执行路径为本栈 caddy.exe → 强杀
-    if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT) {
+    if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT, texts) {
         return t;
     }
     let holders = probe.port_holders(CADDY_PORT);
@@ -322,29 +322,26 @@ pub fn stop_caddy(
             .iter()
             .find_map(|p| p.exe_name.clone())
             .unwrap_or_else(|| "unknown".into());
-        return StopOutcome::Failed(format!(
-            "端口 {CADDY_PORT} 仍被占用且监听者（{name}）不是本栈 caddy.exe：拒绝强杀。{}",
-            manual_hint(CADDY_PORT)
-        ));
+        return StopOutcome::Failed(texts.refuse_caddy(CADDY_PORT, &name));
     };
     let pid = victim.pid;
     let tree = procs.descendants(pid);
     for child in &tree {
-        if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT) {
+        if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT, texts) {
             return t;
         }
         if let Err(e) = procs.kill(*child) {
             log::warn!("结束 caddy 子进程失败（pid={child}）：{e}");
         }
     }
-    if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT) {
+    if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT, texts) {
         return t;
     }
     if let Err(e) = procs.kill(pid) {
         log::warn!("结束 caddy 监听进程失败（pid={pid}）：{e}");
     }
     // 3. 端口复核
-    verify_port_released(probe, CADDY_PORT, cfg, deadline)
+    verify_port_released(probe, CADDY_PORT, cfg, deadline, texts)
 }
 
 /// ddns-go 停止：按可执行路径匹配（非进程名）强杀 → 复核（spec §4.4）
@@ -352,9 +349,10 @@ pub fn stop_ddnsgo(
     probe: &dyn StatusProbe,
     procs: &dyn ProcessOps,
     cfg: &StopConfig,
+    texts: &StopTexts,
     deadline: Instant,
 ) -> StopOutcome {
-    if let Some(t) = budget_expired(cfg, deadline, DDNSGO_PORT) {
+    if let Some(t) = budget_expired(cfg, deadline, DDNSGO_PORT, texts) {
         return t;
     }
     // 判据是可执行全路径（同名不同路径的进程不碰）
@@ -371,20 +369,17 @@ pub fn stop_ddnsgo(
             .iter()
             .find_map(|p| p.exe_name.clone())
             .unwrap_or_else(|| "unknown".into());
-        return StopOutcome::Failed(format!(
-            "端口 {DDNSGO_PORT} 被非本栈进程（{name}）占用：拒绝结束。{}",
-            manual_hint(DDNSGO_PORT)
-        ));
+        return StopOutcome::Failed(texts.refuse_ddnsgo(DDNSGO_PORT, &name));
     }
     for &pid in &pids {
-        if let Some(t) = budget_expired(cfg, deadline, DDNSGO_PORT) {
+        if let Some(t) = budget_expired(cfg, deadline, DDNSGO_PORT, texts) {
             return t;
         }
         if let Err(e) = procs.kill(pid) {
             log::warn!("结束 ddns-go 进程失败（pid={pid}）：{e}");
         }
     }
-    verify_port_released(probe, DDNSGO_PORT, cfg, deadline)
+    verify_port_released(probe, DDNSGO_PORT, cfg, deadline, texts)
 }
 
 // ── 单元测试（先红后绿：桩期 todo!()）──────────────────────────────────────
@@ -394,6 +389,11 @@ mod tests {
     use crate::orchestrator::test_support::*;
     use crate::probe::PortHolders;
     use super::*;
+
+    /// 中文词条（zh 与历史文案逐字一致，既有断言不变）
+    fn zh() -> crate::lang::StopTexts {
+        crate::lang::stop_texts(crate::lang::Lang::Zh)
+    }
 
     /// 快速配置：毫秒级预算（默认 10s 会拖慢单测）
     fn fast_cfg() -> StopConfig {
@@ -449,7 +449,7 @@ mod tests {
         let procs = MockProcessOps::with_log(log.clone());
         procs.set_descendants(100, &[101, 102]);
 
-        let outcome = stop_cloudcli(&probe, &procs, &fast_cfg(), deadline(&fast_cfg()));
+        let outcome = stop_cloudcli(&probe, &procs, &fast_cfg(), &zh(), deadline(&fast_cfg()));
         assert_eq!(outcome, StopOutcome::Stopped);
 
         let entries = log.snapshot();
@@ -484,7 +484,7 @@ mod tests {
         let log = probe.log();
         let procs = MockProcessOps::with_log(log.clone());
 
-        let outcome = stop_cloudcli(&probe, &procs, &fast_cfg(), deadline(&fast_cfg()));
+        let outcome = stop_cloudcli(&probe, &procs, &fast_cfg(), &zh(), deadline(&fast_cfg()));
         match outcome {
             StopOutcome::Failed(detail) => {
                 assert!(detail.contains("svchost.exe"), "应指出占用者：{detail}");
@@ -504,7 +504,7 @@ mod tests {
         let log = probe.log();
         let procs = MockProcessOps::with_log(log.clone());
 
-        let outcome = stop_cloudcli(&probe, &procs, &fast_cfg(), deadline(&fast_cfg()));
+        let outcome = stop_cloudcli(&probe, &procs, &fast_cfg(), &zh(), deadline(&fast_cfg()));
         match outcome {
             StopOutcome::Failed(detail) => {
                 assert!(detail.contains("复核未通过"), "{detail}");
@@ -529,7 +529,7 @@ mod tests {
             caddy_stop_timeout: CADDY_STOP_TIMEOUT, // 断言默认契约（mock 不耗时）
             ..fast_cfg()
         };
-        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, Path::new(r"D:\logs"), deadline(&cfg));
+        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg));
         assert_eq!(outcome, StopOutcome::Stopped);
 
         let executed = exec.executed.lock().unwrap();
@@ -556,7 +556,7 @@ mod tests {
         procs.set_descendants(200, &[201]);
 
         let cfg = fast_cfg();
-        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, Path::new(r"D:\logs"), deadline(&cfg));
+        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg));
         assert_eq!(outcome, StopOutcome::Stopped);
 
         let entries = log.snapshot();
@@ -583,7 +583,7 @@ mod tests {
         let procs = MockProcessOps::with_log(log.clone());
 
         let cfg = fast_cfg();
-        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, Path::new(r"D:\logs"), deadline(&cfg));
+        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg));
         match outcome {
             StopOutcome::Failed(detail) => {
                 assert!(detail.contains("caddy.exe"), "应指出占用者：{detail}");
@@ -603,7 +603,7 @@ mod tests {
         let procs = MockProcessOps::with_log(log.clone());
         procs.set_by_exe(r"D:\Software\cloudcli-https\ddns-go.exe", &[300, 301]);
 
-        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), deadline(&fast_cfg()));
+        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), deadline(&fast_cfg()));
         assert_eq!(outcome, StopOutcome::Stopped);
 
         let entries = log.snapshot();
@@ -628,7 +628,7 @@ mod tests {
         let log = probe.log();
         let procs = MockProcessOps::with_log(log.clone());
 
-        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), deadline(&fast_cfg()));
+        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), deadline(&fast_cfg()));
         match outcome {
             StopOutcome::Failed(detail) => {
                 assert!(detail.contains("other.exe"), "{detail}");
@@ -649,15 +649,15 @@ mod tests {
         let cfg = fast_cfg();
 
         assert_eq!(
-            stop_cloudcli(&probe, &procs, &cfg, deadline(&cfg)),
+            stop_cloudcli(&probe, &procs, &cfg, &zh(), deadline(&cfg)),
             StopOutcome::AlreadyStopped
         );
         assert_eq!(
-            stop_caddy(&probe, &exec, &procs, &cfg, Path::new(r"D:\logs"), deadline(&cfg)),
+            stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg)),
             StopOutcome::AlreadyStopped
         );
         assert_eq!(
-            stop_ddnsgo(&probe, &procs, &cfg, deadline(&cfg)),
+            stop_ddnsgo(&probe, &procs, &cfg, &zh(), deadline(&cfg)),
             StopOutcome::AlreadyStopped
         );
         let entries = log.snapshot();
@@ -680,7 +680,7 @@ mod tests {
             ..fast_cfg()
         };
 
-        let outcome = stop_cloudcli(&probe, &procs, &cfg, deadline(&cfg));
+        let outcome = stop_cloudcli(&probe, &procs, &cfg, &zh(), deadline(&cfg));
         match outcome {
             StopOutcome::TimedOut(detail) => {
                 assert!(detail.contains("netstat -ano | findstr :3001"), "{detail}");
@@ -702,8 +702,56 @@ mod tests {
         };
 
         let started = Instant::now();
-        let outcome = stop_cloudcli(&probe, &procs, &cfg, deadline(&cfg));
+        let outcome = stop_cloudcli(&probe, &procs, &cfg, &zh(), deadline(&cfg));
         assert_eq!(outcome, StopOutcome::Stopped);
         assert!(started.elapsed() >= Duration::from_millis(120), "应等待 grace 后再复核");
+    }
+
+    // ── T18：detail 双语（AC25：用户可见路径随生效语言）──────────────────
+
+    #[test]
+    fn refusal_details_follow_effective_lang() {
+        // 拒杀路径：En 词条生效且不混入中文；zh 路径见上方既有断言
+        let probe = ScriptedProbe::new();
+        probe.pin_holders(
+            CLOUDCLI_PORT,
+            holders(
+                &[addr([127, 0, 0, 1])],
+                &[(77, Some(r"C:\Windows\System32\svchost.exe"), Some("svchost.exe"))],
+            ),
+        );
+        let procs = MockProcessOps::new();
+        let en = crate::lang::stop_texts(crate::lang::Lang::En);
+
+        match stop_cloudcli(&probe, &procs, &fast_cfg(), &en, deadline(&fast_cfg())) {
+            StopOutcome::Failed(detail) => {
+                assert!(detail.contains("refusing to kill"), "{detail}");
+                assert!(detail.contains("netstat -ano | findstr :3001"), "{detail}");
+                assert!(!detail.contains('拒'), "英文词条不得混入中文：{detail}");
+            }
+            other => panic!("应为 Failed，实际 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn timeout_detail_follows_effective_lang() {
+        // 预算耗尽路径：En 词条生效（AC2 放行语义 + 排查命令）
+        let probe = ScriptedProbe::new();
+        probe.pin_holders(CLOUDCLI_PORT, node_holder(100));
+        let procs = MockProcessOps::new();
+        let cfg = StopConfig {
+            component_timeout: Duration::ZERO,
+            ..fast_cfg()
+        };
+        let en = crate::lang::stop_texts(crate::lang::Lang::En);
+
+        match stop_cloudcli(&probe, &procs, &cfg, &en, deadline(&cfg)) {
+            StopOutcome::TimedOut(detail) => {
+                assert!(detail.contains("Stop timed out"), "{detail}");
+                assert!(detail.contains("taskkill"), "{detail}");
+                assert!(!detail.contains('停'), "英文词条不得混入中文：{detail}");
+            }
+            other => panic!("应为 TimedOut，实际 {other:?}"),
+        }
     }
 }

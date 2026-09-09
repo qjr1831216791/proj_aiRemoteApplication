@@ -42,11 +42,14 @@ pub fn start_one(orch: tauri::State<'_, Orchestrator>, id: ComponentId) -> Resul
 /// 一键停止（AC2）：三组件并行（单组件 10s 预算）；失败组件汇总为 Err 交前端提示。
 /// 停止前自动取消/等待在途启动（spec §4.4 竞态消除，见 orchestrator.stop_one）。
 #[tauri::command]
-pub async fn stop_all(orch: tauri::State<'_, Orchestrator>) -> Result<(), String> {
+pub async fn stop_all(
+    orch: tauri::State<'_, Orchestrator>,
+    lang_state: tauri::State<'_, LanguageState>,
+) -> Result<(), String> {
     let orch = orch.inner().clone();
     let outcomes = tauri::async_runtime::spawn_blocking(move || orch.stop_all())
         .await
-        .map_err(|e| format!("停止任务异常结束：{e}"))?;
+        .map_err(|e| lang::err_texts(lang_state.current()).stop_join_failed(&e.to_string()))?;
     summarize_stop(outcomes)
 }
 
@@ -54,12 +57,13 @@ pub async fn stop_all(orch: tauri::State<'_, Orchestrator>) -> Result<(), String
 #[tauri::command]
 pub async fn stop_one(
     orch: tauri::State<'_, Orchestrator>,
+    lang_state: tauri::State<'_, LanguageState>,
     id: ComponentId,
 ) -> Result<(), String> {
     let orch = orch.inner().clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || orch.stop_one(id))
         .await
-        .map_err(|e| format!("停止任务异常结束：{e}"))?;
+        .map_err(|e| lang::err_texts(lang_state.current()).stop_join_failed(&e.to_string()))?;
     summarize_stop(vec![(id, outcome)])
 }
 
@@ -119,7 +123,7 @@ pub async fn run_tool(
         }
     })
     .await
-    .map_err(|e| format!("工具派发异常结束：{e}"))?
+    .map_err(|e| lang::err_texts(lang).tool_join_failed(&e.to_string()))?
     .map_err(|code| lang::shell_error_text(code, lang))
 }
 
@@ -147,7 +151,8 @@ pub fn open_logs_dir(
 ) -> Result<(), String> {
     let dir = &ctx.log_dir;
     // 首次打开前目录可能尚无文件：先建目录再定位
-    std::fs::create_dir_all(dir).map_err(|e| format!("日志目录无法创建：{e}"))?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| lang::err_texts(lang_state.current()).log_dir_create_failed(&e.to_string()))?;
     scripts::open_dir(dir).map_err(|code| lang::shell_error_text(code, lang_state.current()))
 }
 

@@ -435,11 +435,14 @@ impl Orchestrator {
             );
         }
         let deadline = Instant::now() + cfg.component_timeout;
+        // detail 双语（AC25）：停止管线文案随实时语言源
+        let texts = crate::lang::stop_texts(self.current_lang());
         let outcome = match id {
             ComponentId::CloudCli => crate::stop::stop_cloudcli(
                 self.probe.as_ref(),
                 self.procs.as_ref(),
                 cfg,
+                &texts,
                 deadline,
             ),
             ComponentId::Caddy => crate::stop::stop_caddy(
@@ -447,6 +450,7 @@ impl Orchestrator {
                 self.executor.as_ref(),
                 self.procs.as_ref(),
                 cfg,
+                &texts,
                 &self.cfg.log_dir,
                 deadline,
             ),
@@ -454,6 +458,7 @@ impl Orchestrator {
                 self.probe.as_ref(),
                 self.procs.as_ref(),
                 cfg,
+                &texts,
                 deadline,
             ),
         };

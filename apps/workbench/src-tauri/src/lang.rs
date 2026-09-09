@@ -4,7 +4,9 @@
 //! 的 `detectLang()`（navigator.language）同语义。判定核心为纯函数，单测覆盖。
 //! 词条同源约定：托盘 [`TrayTexts`] 与前端 `src/i18n/{zh,en}.ts` 的
 //! `common.*`/`tray.*` 键位语义一致，两边同步维护；
-//! [`DetailTexts`] 供编排器状态卡 detail 双语化（zh 与既有文案逐字一致以稳测试）。
+//! [`DetailTexts`] 供编排器状态卡 detail 双语化（zh 与既有文案逐字一致以稳测试）；
+//! [`StopTexts`] / [`ErrTexts`] 分别承接停止管线 detail 与命令层用户可见
+//! Err 文案（T18 收口，zh 同样与既有文案逐字一致）。
 
 /// 生效语言
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,7 +141,7 @@ pub fn set_language(
     })?;
     let effective = apply_language(&lang_state, setting);
     crate::tray::rebuild(&app, effective)
-        .map_err(|e| format!("托盘菜单重建失败（语言已切换，重启程序可恢复）：{e}"))?;
+        .map_err(|e| err_texts(effective).tray_rebuild_failed(&e.to_string()))?;
     log::info!(
         "语言切换：{setting:?} → 生效 {effective:?}（托盘已重建，脚本 -Lang 实时对齐）"
     );
@@ -248,6 +250,239 @@ impl DetailTexts {
         match self.lang {
             Lang::Zh => format!("日志暂不可读：{paths}"),
             Lang::En => format!("Logs not readable: {paths}"),
+        }
+    }
+}
+
+// ── 停止管线 detail 文案（stop.rs 的双语源；zh 与既有文案逐字一致）──────────
+
+/// 停止管线 detail 生成器（AC2/AC7 拒杀与超时路径的用户可见文案）。
+pub struct StopTexts {
+    lang: Lang,
+}
+
+/// 按生效语言取停止管线文案
+pub fn stop_texts(lang: Lang) -> StopTexts {
+    StopTexts { lang }
+}
+
+impl StopTexts {
+    /// 手动排查命令提示（超时/复核失败时给用户）
+    pub fn manual_hint(&self, port: u16) -> String {
+        match self.lang {
+            Lang::Zh => format!(
+                "手动排查：netstat -ano | findstr :{port} 定位 PID 后 taskkill /F /T /PID <PID>"
+            ),
+            Lang::En => format!(
+                "Manual check: run `netstat -ano | findstr :{port}` to find the PID, then `taskkill /F /T /PID <PID>`"
+            ),
+        }
+    }
+
+    /// 单组件停止预算耗尽（AC2：放行不阻塞其余组件）
+    pub fn timeout_released(&self, secs: u64, port: u16) -> String {
+        match self.lang {
+            Lang::Zh => format!(
+                "停止超时（单组件 {secs}s 预算耗尽，已放行不阻塞其余组件）。{}",
+                self.manual_hint(port)
+            ),
+            Lang::En => format!(
+                "Stop timed out (per-component budget of {secs}s exhausted; released so other components are not blocked). {}",
+                self.manual_hint(port)
+            ),
+        }
+    }
+
+    /// 端口复核未通过（杀完仍被监听）
+    pub fn verify_failed(&self, port: u16, name: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!(
+                "端口 {port} 复核未通过：仍被 {name} 监听。{}",
+                self.manual_hint(port)
+            ),
+            Lang::En => format!(
+                "Port {port} recheck failed: still listened on by {name}. {}",
+                self.manual_hint(port)
+            ),
+        }
+    }
+
+    /// CloudCLI 监听者身份不符，拒杀（AC7 同源判据）
+    pub fn refuse_cloudcli(&self, port: u16, name: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!(
+                "端口 {port} 被非 CloudCLI 进程（{name}）占用：拒绝结束，未做任何改动。{}",
+                self.manual_hint(port)
+            ),
+            Lang::En => format!(
+                "Port {port} is held by a non-CloudCLI process ({name}); refusing to kill, nothing was changed. {}",
+                self.manual_hint(port)
+            ),
+        }
+    }
+
+    /// Caddy 兜底路径校验不符（非本栈 caddy.exe），拒杀
+    pub fn refuse_caddy(&self, port: u16, name: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!(
+                "端口 {port} 仍被占用且监听者（{name}）不是本栈 caddy.exe：拒绝强杀。{}",
+                self.manual_hint(port)
+            ),
+            Lang::En => format!(
+                "Port {port} is still occupied and the listener ({name}) is not this stack's caddy.exe; refusing to force-kill. {}",
+                self.manual_hint(port)
+            ),
+        }
+    }
+
+    /// ddns-go 端口被本栈以外进程占用，拒杀
+    pub fn refuse_ddnsgo(&self, port: u16, name: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!(
+                "端口 {port} 被非本栈进程（{name}）占用：拒绝结束。{}",
+                self.manual_hint(port)
+            ),
+            Lang::En => format!(
+                "Port {port} is held by a process outside this stack ({name}); refusing to kill. {}",
+                self.manual_hint(port)
+            ),
+        }
+    }
+}
+
+// ── 命令层错误文案（autostart.rs / commands.rs 用户可见 Err 的双语源）────────
+
+/// 命令层错误文案生成器（自启开关/停止汇总/工具派发/日志目录等 Err 路径）。
+/// zh 与既有文案逐字一致（历史断言依赖），en 为同义对照。
+pub struct ErrTexts {
+    lang: Lang,
+}
+
+/// 按生效语言取命令层错误文案
+pub fn err_texts(lang: Lang) -> ErrTexts {
+    ErrTexts { lang }
+}
+
+impl ErrTexts {
+    /// setup-autostart.ps1 exit 1：栈目录缺 caddy.exe / ddns-go.exe（sprint0 契约）
+    pub fn stack_dir_missing(&self) -> String {
+        match self.lang {
+            Lang::Zh => "栈目录缺少 caddy.exe / ddns-go.exe".into(),
+            Lang::En => "stack directory is missing caddy.exe / ddns-go.exe".into(),
+        }
+    }
+
+    /// 脚本目录不可用时的自启开关禁用原因（spec §4.5）
+    pub fn scripts_dir_unavailable_autostart(&self) -> String {
+        match self.lang {
+            Lang::Zh => "sprint0 脚本目录不可用（spec §4.5）：无法管理服务自启任务".into(),
+            Lang::En => {
+                "sprint0 scripts directory unavailable (spec §4.5): cannot manage service autostart tasks".into()
+            }
+        }
+    }
+
+    /// 自启任务后台线程 join 失败
+    pub fn autostart_join_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("自启任务执行异常结束：{err}"),
+            Lang::En => format!("Autostart task execution ended abnormally: {err}"),
+        }
+    }
+
+    /// current_exe() 失败（无法定位自身）
+    pub fn locate_exe_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("无法定位自身可执行文件：{err}"),
+            Lang::En => format!("Cannot locate the app's own executable: {err}"),
+        }
+    }
+
+    /// 程序自身任务注册/移除非零退出
+    pub fn app_task_failed(&self, enable: bool, code: i32) -> String {
+        match self.lang {
+            Lang::Zh => format!(
+                "程序自启任务{}失败（code={code}），详情见程序日志目录",
+                if enable { "注册" } else { "移除" }
+            ),
+            Lang::En => format!(
+                "Failed to {} the app autostart task (code={code}); see the app log directory",
+                if enable { "register" } else { "remove" }
+            ),
+        }
+    }
+
+    /// 程序自身任务操作超时
+    pub fn app_task_timeout(&self) -> String {
+        match self.lang {
+            Lang::Zh => "程序自启任务操作超时（30s）".into(),
+            Lang::En => "App autostart task operation timed out (30s)".into(),
+        }
+    }
+
+    /// 程序自身任务命令无法执行
+    pub fn app_task_spawn_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("程序自启任务无法执行：{err}"),
+            Lang::En => format!("Cannot run the app autostart task command: {err}"),
+        }
+    }
+
+    /// 自启脚本非零退出（无特定 exit 1 语义时）
+    pub fn script_exited(&self, code: i32) -> String {
+        match self.lang {
+            Lang::Zh => format!("脚本异常退出（code={code}），详情见程序日志目录"),
+            Lang::En => format!("Script exited unexpectedly (code={code}); see the app log directory"),
+        }
+    }
+
+    /// 自启脚本超时被杀
+    pub fn script_timed_out(&self) -> String {
+        match self.lang {
+            Lang::Zh => "脚本执行超时（已终止），详情见程序日志目录".into(),
+            Lang::En => "Script timed out (process terminated); see the app log directory".into(),
+        }
+    }
+
+    /// 自启脚本无法执行
+    pub fn script_spawn_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("脚本无法执行：{err}"),
+            Lang::En => format!("Cannot run the script: {err}"),
+        }
+    }
+
+    /// 停止后台线程 join 失败
+    pub fn stop_join_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("停止任务异常结束：{err}"),
+            Lang::En => format!("Stop task ended abnormally: {err}"),
+        }
+    }
+
+    /// 工具派发后台线程 join 失败
+    pub fn tool_join_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("工具派发异常结束：{err}"),
+            Lang::En => format!("Tool dispatch ended abnormally: {err}"),
+        }
+    }
+
+    /// 日志目录创建失败
+    pub fn log_dir_create_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("日志目录无法创建：{err}"),
+            Lang::En => format!("Cannot create the log directory: {err}"),
+        }
+    }
+
+    /// 语言切换后托盘菜单重建失败（语言已落盘，重启可恢复）
+    pub fn tray_rebuild_failed(&self, err: &str) -> String {
+        match self.lang {
+            Lang::Zh => format!("托盘菜单重建失败（语言已切换，重启程序可恢复）：{err}"),
+            Lang::En => format!(
+                "Failed to rebuild the tray menu (language switched; restart the app to restore): {err}"
+            ),
         }
     }
 }
@@ -375,5 +610,110 @@ mod tests {
         assert!(shell_error_text(5, Lang::En).to_lowercase().contains("uac"));
         assert!(shell_error_text(2, Lang::Zh).contains("ShellExecuteW"));
         assert!(shell_error_text(31, Lang::En).contains("31"));
+    }
+
+    // ── T18：停止管线 detail 双语（zh 与既有文案逐字一致）────────────────
+
+    #[test]
+    fn stop_texts_zh_matches_legacy_wording() {
+        // stop.rs 既有断言（复核未通过/拒绝/netstat/taskkill）依赖这些字样
+        let t = stop_texts(Lang::Zh);
+        assert!(t.manual_hint(3001).contains("netstat -ano | findstr :3001"));
+        assert!(t.timeout_released(10, 443).contains("停止超时（单组件 10s 预算耗尽"));
+        assert!(t.verify_failed(3001, "x.exe").contains("复核未通过"));
+        assert!(t.refuse_cloudcli(3001, "svchost.exe").contains("拒绝结束"));
+        assert!(t.refuse_caddy(443, "x.exe").contains("拒绝强杀"));
+        assert!(t.refuse_ddnsgo(9876, "x.exe").contains("拒绝结束"));
+        for s in [
+            t.timeout_released(10, 443),
+            t.verify_failed(1, "x"),
+            t.refuse_cloudcli(1, "x"),
+            t.refuse_caddy(1, "x"),
+            t.refuse_ddnsgo(1, "x"),
+        ] {
+            assert!(s.contains("taskkill"), "应附手动排查命令：{s}");
+        }
+    }
+
+    #[test]
+    fn stop_texts_en_full_set_without_chinese() {
+        let t = stop_texts(Lang::En);
+        assert!(t.manual_hint(3001).contains("netstat -ano | findstr :3001"));
+        assert!(t.timeout_released(10, 443).contains("Stop timed out"));
+        assert!(t.verify_failed(3001, "x.exe").contains("recheck failed"));
+        assert!(t.refuse_cloudcli(3001, "x.exe").contains("refusing to kill"));
+        assert!(t.refuse_caddy(443, "x.exe").contains("refusing to force-kill"));
+        assert!(t.refuse_ddnsgo(9876, "x.exe").contains("refusing to kill"));
+        for s in [
+            t.manual_hint(443),
+            t.timeout_released(10, 443),
+            t.verify_failed(1, "x"),
+            t.refuse_cloudcli(1, "x"),
+            t.refuse_caddy(1, "x"),
+            t.refuse_ddnsgo(1, "x"),
+        ] {
+            assert!(!s.contains('端'), "英文文案不得混入中文：{s}");
+        }
+    }
+
+    // ── T18：命令层错误文案双语（autostart/commands 用户可见 Err）────────
+
+    #[test]
+    fn err_texts_zh_matches_legacy_wording() {
+        // autostart.rs / commands.rs 既有断言依赖这些字样
+        let t = err_texts(Lang::Zh);
+        assert_eq!(t.stack_dir_missing(), "栈目录缺少 caddy.exe / ddns-go.exe");
+        assert!(t.scripts_dir_unavailable_autostart().contains("无法管理服务自启任务"));
+        assert_eq!(t.autostart_join_failed("X"), "自启任务执行异常结束：X");
+        assert_eq!(t.locate_exe_failed("X"), "无法定位自身可执行文件：X");
+        assert!(t.app_task_failed(true, 2).contains("程序自启任务注册失败（code=2）"));
+        assert!(t.app_task_failed(false, 2).contains("程序自启任务移除失败"));
+        assert!(t.app_task_timeout().contains("30s"));
+        assert!(t.app_task_spawn_failed("X").starts_with("程序自启任务无法执行"));
+        assert!(t.script_exited(2).contains("脚本异常退出（code=2）"));
+        assert!(t.script_timed_out().contains("已终止"));
+        assert!(t.script_spawn_failed("X").starts_with("脚本无法执行"));
+        assert_eq!(t.stop_join_failed("X"), "停止任务异常结束：X");
+        assert_eq!(t.tool_join_failed("X"), "工具派发异常结束：X");
+        assert_eq!(t.log_dir_create_failed("X"), "日志目录无法创建：X");
+        assert!(t.tray_rebuild_failed("X").starts_with("托盘菜单重建失败"));
+    }
+
+    #[test]
+    fn err_texts_en_full_set_without_chinese() {
+        let t = err_texts(Lang::En);
+        assert!(t.stack_dir_missing().contains("missing caddy.exe"));
+        assert!(t.scripts_dir_unavailable_autostart().contains("unavailable"));
+        assert!(t.autostart_join_failed("X").contains("ended abnormally"));
+        assert!(t.locate_exe_failed("X").contains("executable"));
+        assert!(t.app_task_failed(true, 2).contains("register"));
+        assert!(t.app_task_failed(false, 2).contains("remove"));
+        assert!(t.app_task_timeout().contains("timed out"));
+        assert!(t.app_task_spawn_failed("X").starts_with("Cannot run"));
+        assert!(t.script_exited(2).contains("code=2"));
+        assert!(t.script_timed_out().contains("timed out"));
+        assert!(t.script_spawn_failed("X").starts_with("Cannot run the script"));
+        assert!(t.stop_join_failed("X").contains("ended abnormally"));
+        assert!(t.tool_join_failed("X").contains("ended abnormally"));
+        assert!(t.log_dir_create_failed("X").starts_with("Cannot create"));
+        assert!(t.tray_rebuild_failed("X").starts_with("Failed to rebuild"));
+        for s in [
+            t.stack_dir_missing(),
+            t.scripts_dir_unavailable_autostart(),
+            t.autostart_join_failed("X"),
+            t.locate_exe_failed("X"),
+            t.app_task_failed(true, 2),
+            t.app_task_timeout(),
+            t.app_task_spawn_failed("X"),
+            t.script_exited(2),
+            t.script_timed_out(),
+            t.script_spawn_failed("X"),
+            t.stop_join_failed("X"),
+            t.tool_join_failed("X"),
+            t.log_dir_create_failed("X"),
+            t.tray_rebuild_failed("X"),
+        ] {
+            assert!(!s.contains('失'), "英文文案不得混入中文：{s}");
+        }
     }
 }
