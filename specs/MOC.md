@@ -5,7 +5,7 @@
 ## 按状态导航
 
 ### 🟡 草稿（draft）
-- （暂无）
+- [002-network-profile](./002-network-profile/spec.md) — 网络防火墙归类反馈与调整：换网被拦截主动提示 + 用户决策改公用/专用（风险提示先行）
 
 ### 🔵 已确认（reviewed）
 - （暂无）
@@ -24,10 +24,12 @@
 | 迭代 | Spec | 交付目标 |
 |------|------|----------|
 | Sprint 1 | [001-desktop-console](./001-desktop-console/spec.md) | Windows 桌面程序：一键启停三组件、自启托管（含菜单 7/8 回归）、显式收摊、sprint0 全能力入口（**v0.2.0** 已发布，2026-09-09） |
+| Sprint 2 | [002-network-profile](./002-network-profile/spec.md) | 网络防火墙归类：被拦截主动反馈 + 公用/专用调整入口（用户决策，风险提示先行） |
 
 ## 按主题导航
 
 - 桌面工作台：[001-desktop-console](./001-desktop-console/spec.md)
+- 网络环境：[002-network-profile](./002-network-profile/spec.md)
 
 <!-- 功能域增多后按主题分区，例如：-->
 <!-- - 用户体系：[001-xxx](./001-xxx/spec.md) · [003-xxx](./003-xxx/spec.md) -->
