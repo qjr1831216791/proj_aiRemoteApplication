@@ -5,6 +5,7 @@
 > **用途**：tasks.md 文末"手工验收清单"的可执行展开（宪法 §1 窄例外：GUI 交互类 AC 以手工清单覆盖）。
 > 每条含 **前置 / 操作 / 预期 / 证据记录**；标注 **自动化背书**（单测名 / 真机日志，可免重复验证的口径）与 **纯人工**（必须人手人眼的部分：UAC 点击、注销重登、手机访问、视觉与语言切换核验）。
 > 全部执行完并记录后，回到 [tasks.md](./tasks.md) 勾选 T16 与文末清单。
+> §4 为 T18 汇编的 **AC 逐条验证对照表**（自动化 / 真机 / 剩余手工三列证据）——手工项全部通过后据其翻 done。
 
 ## 0. 环境与准备
 
@@ -17,7 +18,7 @@
   - 设置文件：`%APPDATA%\ai-remote-workbench\settings.json`
 - **建议顺序**：AC23/24 → AC1 → AC3 → AC4 → AC7 → AC6 → AC2 → AC5（并入 AC1 场景）→ AC8/9 → AC10/11 → AC12 → AC13~AC18 → AC19/20 → AC21/22/25 → 加固（托盘）。可按场景合并，但每条证据独立记录。
 - **自动化基线**（先跑一遍确认绿，再做手工项）：
-  - `cargo test`（apps/workbench/src-tauri）：**118 passed + 1 ignored**（2026-09-09 复跑实证；模块分组：settings 13 / probe 11 / scripts 18 / orchestrator / stop / exit_flow 7 / autostart 16 / startup 5 / lang 等）
+  - `cargo test`（apps/workbench/src-tauri）：**125 passed + 1 ignored**（2026-09-09 复跑实证；模块分组：orchestrator 22 / scripts 19 / autostart 15+1 ignored / stop 14 / settings 13 / lang 12 / probe 11 / exit_flow 7 / urls 5 / startup 5 / commands 3）
   - `npm run build`（apps/workbench）：零错误（2026-09-09 实证）
 
 ## 1. 总览：自动化背书与纯人工分布
@@ -222,3 +223,54 @@
 - 全部通过 → tasks.md：勾选 T16 与文末清单各条，异常记录直接写在对应行尾。
 - 任一不通过 → 记录现象与复现步骤，回到对应模块修复（逻辑类补单测），修复后重验该条。
 - 完成后按 DoD 检查表收尾（tasks.md 文末）。
+
+## 4. AC 逐条验证对照表（T18 汇总 · done 判定依据）
+
+> 2026-09-09 T18 汇编。三列口径：**自动化** = `cargo test` 常驻用例（模块数与关键用例名，全套 125 passed + 1 ignored）；**真机** = 各批次执行注记中的非交互实证（日志/端口/进程口径）；**剩余手工** = 本手册 §2 条目（执行后方可勾 spec.md 的 AC）。**不确定的证据一律标"待查"，未查证不写"已过"。**
+
+| AC | 自动化测试证据 | 真机实证证据 | 剩余手工项 |
+|----|----------------|--------------|------------|
+| AC1 启动轮询至就绪 | orchestrator 22 项：`start_cloudcli_runs_script_then_reaches_running`、`start_all_covers_every_component`、`script_exit1_maps_to_unavailable_hint`（exit 1→"cloudcli 不可用"）、`start_timeout_marks_failed_with_log_tail`（60s 超时+日志尾部） | T13：联动派发后 3001/443/9876 三端口 LISTENING（整屏截图核验）；T17 路径1：安装版联动补齐 caddy 2.0s / ddns-go 2.0s / cloudcli 4.1s 就绪 | §2 AC1（点「启动」计时 + 界面文案 + 拔 cloudcli 失败分支） |
+| AC2 停止与端口释放 | stop 14 项：树杀顺序 `cloudcli_collects_tree_before_killing_then_verifies`、复核失败 `cloudcli_verify_failure_reports_manual_commands`、caddy 兜底 `caddy_stop_failure_falls_back_to_path_checked_kill`、10s 超时放行 `exhausted_budget_times_out_with_manual_hint`；orchestrator `stop_one_runs_pipeline_and_updates_state`、`stop_all_isolates_component_failure` | T9：CloudCLI+Caddy 真实启停全链路通过（脚本 exit 0→就绪→树杀/优雅停→双端口释放）；ddns-go 刻意跳过（外部 DNS 副作用） | §2 AC2（点「停止」+ netstat 复核；ddns-go 停止链由此补） |
+| AC3 幂等补齐 | orchestrator `start_skips_already_running_component`、`start_guard_marks_port_held_without_spawning` | T12：已在运行的 caddy/ddns-go 跳过；T16 注记②：重启程序日志"守卫跳过（AC3 幂等）"完成接管、无重复进程 | §2 AC3（任务管理器 PID 对比） |
+| AC4 外部停止感知 ≤10s | orchestrator `poller_refreshes_periodically_until_shutdown` + `config_defaults_follow_plan`（前台轮询 2s ≤ 5s 常量断言）；probe 11 项（探测口径） | —（轮询为后台行为，无界面可截） | §2 AC4（强杀 ddns-go 计时观察） |
+| AC5 外部通道启动接管 | probe 11 项：`classify_running_when_exe_name_matches` / `classify_running_when_exe_path_matches` / `trait_probe_composes_collect_and_classify`（含真实监听集成 `windows_probe_real_listener_lifecycle`） | T9/T13：脚本与外部启动的进程被如实识别为运行中 | §2 AC5（start-server.bat 场景复演） |
+| AC6 部分失败+组件重试 | orchestrator `script_exit1_maps_to_unavailable_hint`（单组件失败其余成功）、`native_dispatch_failure_marks_failed`；前端"部分失败不出启动成功、重试仅 failed/port-held"（T13 注记，构建零错误） | — | §2 AC6（占 443 场景 + 界面观察 + 重试转绿） |
+| AC7 端口被占双口径 | probe `classify_port_held_shows_process_name`、`classify_port_held_fallback_names`；orchestrator `start_guard_marks_port_held_without_spawning` | T9：caddy 双栈监听重复 PID 致误判 port-held 的真机 bug 已修复 + 回归单测 `exe_of_pids_survives_duplicate_pids` | §2 AC7（界面告警色核验） |
+| AC8 自启接管 | autostart 15 项：`enable_services_runs_script_and_detects_takeover`、`service_task_names_align_with_sprint0_script`、`app_register_spec_contract` | T11 真机 roundtrip（--ignored 实跑）：三条 Sprint0 任务只读验证存在 → 自身任务注册/移除 → 确认消失，Sprint0 三任务原状未动 | §2 AC8/9（任务计划程序 UI 核对 + 程序内开关） |
+| AC9 自启移除 | autostart `disable_services_passes_remove_without_queries`（-Remove、零查询、进程不受影响语义） | 同上（roundtrip 含移除路径） | §2 AC8/9 |
+| AC10 程序自启静默入托盘 | autostart `app_register_spec_contract`（--hidden / ExecutionTimeLimit Zero / 登录触发）；startup `hidden_flag_parsed_from_args`、`hidden_startup_suppresses_main_window` | T12：生产 exe --hidden 启动无主窗、托盘在、进程存活；T17 路径1：--hidden 启动托盘窗口类 `tray_icon_app` 存在 | §2 AC10/11（**注销重登**，纯人工） |
+| AC11 自启联动补齐 | startup `link_start_enabled_starts_all_components`、`plan_combines_args_and_link_setting`（hidden × link 正交） | T13：联动实启三组件；T17 路径1：安装版联动补齐三组件全 LISTENING | §2 AC10/11（**注销重登**） |
+| AC12 联动关闭零派发 | startup `link_start_disabled_starts_nothing`（零派发断言） | T17 路径2：便携包 linkStartServices=false → 零派发、三端口静默 | §2 AC12（**注销重登**，纯人工） |
+| AC13 退出保留服务 | exit_flow 7 项：`gate_is_one_shot_and_keep_does_not_arm`、`decide_semantics_three_branches`（keep 分支零收摊） | T2：关 X 后进程存活（同语义旁证；无手机访问记录） | §2 AC13（**手机/另机访问**，纯人工） |
+| AC14 停止并退出（收摊） | exit_flow `shutdown_total_timeout_is_30s`、`shutdown_total_timeout_releases_exit`（30s 硬顶放行）；stop 管线全项（见 AC2） | T9：停止链路真机已过（收摊=stop_all 同管线；30s 放行场景未真机构造） | §2 AC14（托盘点击 + 构造停不掉场景验证放行） |
+| AC15 退出即停止（设置反转） | exit_flow `decide_semantics_three_branches`（exitAction=stop → 收摊） | — | §2 AC15（设置切换 + 托盘退出） |
+| AC16 程序强杀服务存活 | 架构保证：组件不挂 kill-on-close Job（ADR-0002）；`arc_orchestrator_is_shareable_for_blocking` 等 | **2026-09-09 进程级实证**（tasks.md T16 注记②）：三组件运行中 taskkill 程序 → 3001/443/9876 监听 PID 原样存活 → 重启程序接管无重复进程 | §2 AC16（界面状态显示一眼） |
+| AC17 关机不收摊 | exit_flow `exit_requested_without_intent_skips_shutdown`（无意图零收摊，语义核心） | —（关机实弹无法自动化） | §2 AC17（**关机/注销实弹**，纯人工） |
+| AC18 关 X 最小化到托盘 | —（纯 GUI，宪法窄例外） | **T2 真机已证**：关 X → 隐藏到托盘、进程存活、托盘 UIA 可见 | §2 AC18（复核一次即可） |
+| AC19 低频操作入口 | scripts 19 项：`visible_params_keep_window_open_and_interactive`（-NoExit 结尾可读）、`tool_plan_install_server_default_and_options`（-Update/-UseMirror 透传）、`tool_plan_https_and_client_visibility`（runas/可见窗分派）；urls 5 项（地址映射） | T15：折叠区 7 项渲染核验（锁屏前整屏截图）；T17：安装/便携双形态脚本目录命中 | §2 AC19/20（**UAC 实弹点击** + install-https 结尾可读性） |
+| AC20 UAC 拒绝/失败提示 | lang `shell_error_text_maps_uac_decline`（SE_ERR_ACCESSDENIED→明确提示）；scripts `interpret_exit_maps_sprint0_codes`（exit code→UI 语义） | —（UAC 弹窗无法无人值守） | §2 AC19/20（UAC 点「否」路径） |
+| AC21 行为开关持久化 | settings 13 项：`defaults_match_plan_schema`（五默认值）、`apply_patch_only_touched_fields`、`state_patch_persists_and_updates_memory`、`save_is_atomic_and_leaves_no_temp_files` | T17 路径3：覆盖安装后设置逐字保留（持久化旁证） | §2 AC21/22/25（逐项修改 + 重启保持） |
+| AC22 端口/路径只读 | probe `component_ids_ports_and_names`、`expected_identity_matches_deployment`（3001/443/9876、栈目录常量）；urls `build_urls_shapes_align_with_sprint0_menu`（地址三形态） | T13：只读卡渲染核验（截图） | §2 AC21/22/25（复制按钮 + 指引文案人眼） |
+| AC23 默认值启动 | settings `load_missing_file_returns_defaults`、`defaults_match_plan_schema` | T17 路径1：安装版首启默认联动开（旁证） | §2 AC23/24（删设置文件复演） |
+| AC24 损坏恢复留档 | settings `corrupt_file_repaired_with_bad_backup`（.bad-* 留档）、`state_load_reports_corrupt_repair`、`save_is_atomic_and_leaves_no_temp_files`（原子写） | **T14 真机实证**（12:29）：损坏设置留档回退成功 | §2 AC23/24（复演一次） |
+| AC25 双语跟随/切换 | lang 12 项：`chinese_primary_lang_resolves_zh`/`non_chinese_resolves_en`（auto 纯函数）、`apply_language_updates_shared_state_explicit_first`（显式优先）、`tray_texts_complete_for_both_langs`；orchestrator `lang_source_overrides_config_for_script_and_detail`（切换即时含 -Lang/detail）；scripts `run_server_hidden_spec_shape`（-Lang 对齐）；T18 补齐 stop/autostart/err 词条 7 项新断言 | T2：语言探测 Zh 实测；T17 路径3：language=en 持久化生效 | §2 AC21/22/25（**语言切换人眼核验**：首启中文/切英即时/显式优先/删除回退） |
+| 加固：托盘 explorer 重启 | tray-icon TaskbarCreated 机制（plan §7，库层保证） | 2026-09-09 进程级实证（T16 注记③）：explorer 强杀重启 → 程序存活、托盘窗口类仍在；图标视觉恢复因锁屏未人眼核验 | §2 加固（托盘）（图标可见性人眼） |
+
+**非 AC 的约束项佐证**（spec 目标/约束 §5）：
+
+| 约束 | 证据 |
+|------|------|
+| 常驻内存 ≤150MB | T3 备注：任务管理器口径 97.9MB（T13~T15 接入后建议复核一次） |
+| 安装包 ≤15MB | T17 备注：setup.exe 2.79MB / zip 1.44MB |
+| 双形态分发三路径 + 设置保留 | T17 备注：安装/便携/覆盖升级三路径进程级验证全过；产物落 `release/` |
+| 脚本对外行为不变 | T17：resources/bin 为 SHA256 比对的只读副本（manifest.json 清单），tools/sprint0 原件未动 |
+
+**统计与判定口径**（2026-09-09，T16 手工项执行前）：
+
+- **逻辑层已由自动化全覆盖**：25 条 AC 全部有自动化用例或架构级断言背书（AC18 为唯一纯 GUI 项，已有 T2 真机实证）。
+- **自动化 + 真机双证**（手工仅复核/一眼）：AC3/5/8/9/16/18/23/24（8 条）。
+- **自动化过、真机部分、待手工观察**：AC1/2/4/6/7/10/11/12/14（9 条，其中 AC10/11/12 的"注销重登"与 AC14 的托盘收摊点击为核心缺口）。
+- **自动化过、纯人工未做**：AC13（手机访问）、AC15、AC17（关机实弹）、AC19/20（UAC 实弹）、AC21/22/25（语言/视觉人眼）+ 加固托盘图标（6 类，对应手册 §1 的纯人工标注）。
+- **待查项**：无（本表全部证据可在 tasks.md 注记与本手册 §1 溯源）。
+- **done 判定**：上表"剩余手工项"列全部执行通过（记录回写 §2 各条）后，25 条 AC 即满足"自动化 + 手工双轨验证"，可翻 done。
