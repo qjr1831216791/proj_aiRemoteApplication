@@ -15,6 +15,7 @@ mod probe;
 mod scripts;
 mod settings;
 mod single_instance;
+mod startup;
 mod stop;
 mod tray;
 
@@ -73,6 +74,7 @@ pub fn run() {
             exit_flow::quit,
             autostart::set_autostart_services,
             autostart::set_autostart_app,
+            startup::is_hidden_startup,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -102,6 +104,17 @@ pub fn run() {
                     serde_json::json!({ "backupPath": backup.to_string_lossy() }),
                 );
             }
+
+            // ── 启动参数解析（T12：--hidden 静默入托盘，AC10）────────────────
+            let argv: Vec<String> = std::env::args().collect();
+            let startup_plan = startup::plan_from(
+                &argv,
+                app.state::<settings::SettingsState>()
+                    .current()
+                    .link_start_services,
+            );
+            // 前端 show 门控数据源（就绪后经 is_hidden_startup 查询）
+            app.manage(startup::StartupState::from_plan(&startup_plan));
 
             // ── 生效语言（AC25：显式选择优先于系统显示语言）──────────────────
             let (language_setting, scripts_override) = {
@@ -151,6 +164,9 @@ pub fn run() {
 
             tray::setup(app, effective_lang)?;
             log::info!("托盘就绪（语言：{effective_lang:?}）");
+
+            // ── 登录联动（T12：AC11/12）——置末尾：全部子系统就绪后再拉服务 ──
+            startup::apply_link_start(&orch, &startup_plan);
             Ok(())
         })
         .on_window_event(|window, event| {

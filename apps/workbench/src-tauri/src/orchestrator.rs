@@ -1110,6 +1110,25 @@ mod tests {
         orch.statuses().into_iter().find(|s| s.id == id).unwrap()
     }
 
+    /// 轮询等待组件状态满足谓词（消除跨线程事件时序竞态：
+    /// start_one 为线程化，B 组件的首个事件批次可能先于 A 组件置 Starting
+    /// 发出、携带 A 的旧状态；断言 A 的时间线前须先等 A 离开初态）
+    fn wait_for_state(
+        orch: &Orchestrator,
+        id: ComponentId,
+        pred: impl Fn(ComponentState) -> bool,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            if pred(state_of(orch, id).state) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        false
+    }
+
     // ── 常量与 schema ───────────────────────────────────────────────────
 
     #[test]
@@ -1290,9 +1309,17 @@ mod tests {
             "panic: config parse failed",
         );
 
-        for id in [ComponentId::CloudCli, ComponentId::DdnsGo] {
-            orch.start_one(id).unwrap();
-        }
+        // 顺序化消除竞态：先等 CloudCli 离开初态（Starting 已置位）再启动
+        // DdnsGo——否则 DdnsGo 的首个事件批次可能携带 CloudCli 的旧 Stopped，
+        // 令其时间线多出前导 Stopped（线程化 start_one 的固有交错，非行为缺陷）
+        orch.start_one(ComponentId::CloudCli).unwrap();
+        assert!(wait_for_state(
+            &orch,
+            ComponentId::CloudCli,
+            |s| s != ComponentState::Stopped,
+            Duration::from_secs(2)
+        ));
+        orch.start_one(ComponentId::DdnsGo).unwrap();
         assert!(orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)));
         assert!(orch.wait_start_idle(ComponentId::DdnsGo, Duration::from_secs(2)));
 

@@ -8,12 +8,18 @@ import { detectLang, t, type Lang } from "./i18n";
 export function App() {
   const [lang, setLang] = useState<Lang>(() => detectLang());
 
-  // 窗口以 visible:false 创建，页面就绪后显形（规避 WebView2 首帧白屏，plan §3.1）
+  // 窗口以 visible:false 创建，页面就绪后显形（规避 WebView2 首帧白屏，plan §3.1）；
+  // --hidden 启动（登录自启，T12/AC10）时保持隐藏：show 前经 Rust 侧查询门控
   useEffect(() => {
     if ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
-      import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
-        getCurrentWindow().show(),
-      );
+      Promise.all([
+        import("@tauri-apps/api/core"),
+        import("@tauri-apps/api/window"),
+      ]).then(([{ invoke }, { getCurrentWindow }]) => {
+        invoke<boolean>("is_hidden_startup").then((hidden) => {
+          if (!hidden) getCurrentWindow().show();
+        });
+      });
     }
   }, []);
 

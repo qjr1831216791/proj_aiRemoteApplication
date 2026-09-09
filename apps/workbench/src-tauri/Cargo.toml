@@ -8,6 +8,13 @@ edition = "2021"
 name = "ai_remote_workbench_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# 生产构建标志（官方模板要求，DO NOT REMOVE）：
+# tauri-macros 以 `cfg!(not(feature = "custom-protocol"))` 判定 dev——
+# 缺此声明时 exe（含 release 编译）一律加载 devUrl(localhost:5173) 而非内嵌
+# dist 资产，页面空白、前端 show 链路失效（T12 真机演练实测踩坑）。
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
