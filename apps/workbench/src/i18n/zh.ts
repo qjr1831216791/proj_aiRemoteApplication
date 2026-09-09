@@ -60,6 +60,8 @@ export const zh = {
   "tools.enableHttpsDesc": "enable-https.ps1（管理员：防火墙/hosts）",
   "tools.installClient": "客户端配置",
   "tools.installClientDesc": "install-client.ps1（其他电脑/手机，交互式）",
+  "tools.resetDdnsPassword": "重置 ddns-go 密码",
+  "tools.resetDdnsPasswordDesc": "忘记密码时用（弹窗输入新密码，无需管理员）",
   "tools.openDdnsAdmin": "ddns-go 管理页",
   "tools.openDdnsAdminDesc": "DNS 解析与密钥管理",
   "tools.openWorkbench": "打开工作台页面",

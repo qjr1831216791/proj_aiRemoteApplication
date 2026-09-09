@@ -2,7 +2,7 @@
 
 > 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: draft <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: reviewed <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 2
 - **创建日期**: 2026-09-09
 - **最后更新**: 2026-09-09（初稿）

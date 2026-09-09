@@ -55,7 +55,8 @@ export type ToolKind =
   | "install_server"
   | "install_https"
   | "enable_https"
-  | "install_client";
+  | "install_client"
+  | "reset_ddns_password";
 
 /** run_tool 可选项（仅 install_server 消费） */
 export interface ToolOpts {

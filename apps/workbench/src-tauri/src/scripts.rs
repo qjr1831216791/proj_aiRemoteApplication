@@ -38,6 +38,8 @@ pub enum Script {
     EnableHttps,
     /// 客户端配置（交互式，无需管理员）
     InstallClient,
+    /// ddns-go 管理页密码重置（交互式，无需管理员；spec 003）
+    ResetDdnsPassword,
 }
 
 /// 窗口形态（spec §4.3）
@@ -61,6 +63,7 @@ impl Script {
             Script::InstallHttps => "install-https.ps1",
             Script::EnableHttps => "enable-https.ps1",
             Script::InstallClient => "install-client.ps1",
+            Script::ResetDdnsPassword => "reset-ddns-password.ps1",
         }
     }
 
@@ -72,7 +75,7 @@ impl Script {
             Script::InstallServer | Script::InstallHttps | Script::EnableHttps => {
                 Visibility::Elevated
             }
-            Script::InstallClient => Visibility::VisibleInteractive,
+            Script::InstallClient | Script::ResetDdnsPassword => Visibility::VisibleInteractive,
         }
     }
 
@@ -86,6 +89,8 @@ impl Script {
             Script::InstallHttps => Duration::from_secs(1800),
             Script::EnableHttps => Duration::from_secs(120),
             Script::InstallClient => Duration::from_secs(600),
+            // 重置流程含 30s 端口就绪轮询；隐藏执行器不消费此值（可见窗 detached）
+            Script::ResetDdnsPassword => Duration::from_secs(300),
         }
     }
 }
@@ -407,6 +412,8 @@ pub enum ToolKind {
     EnableHttps,
     /// 客户端配置（install-client.ps1，可见交互窗）
     InstallClient,
+    /// ddns-go 密码重置（reset-ddns-password.ps1，可见交互窗；spec 003）
+    ResetDdnsPassword,
 }
 
 impl From<ToolKind> for Script {
@@ -416,6 +423,7 @@ impl From<ToolKind> for Script {
             ToolKind::InstallHttps => Script::InstallHttps,
             ToolKind::EnableHttps => Script::EnableHttps,
             ToolKind::InstallClient => Script::InstallClient,
+            ToolKind::ResetDdnsPassword => Script::ResetDdnsPassword,
         }
     }
 }
@@ -864,6 +872,20 @@ mod tests {
         assert!(client.params.contains("install-client.ps1"));
         assert!(client.params.contains("-NoExit"), "交互脚本窗口结束后保留：{}", client.params);
         assert!(!client.params.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive");
+    }
+
+    #[test]
+    fn tool_plan_reset_ddns_password_is_interactive_visible() {
+        // spec 003：密码重置为用户级操作（无 UAC），经可见交互窗执行
+        let dir = script_dir("tool3");
+        let plan = tool_plan(ToolKind::ResetDdnsPassword, ToolOpts::default(), &dir, Lang::Zh);
+        assert_eq!(plan.script, Script::ResetDdnsPassword);
+        assert!(!plan.elevated, "ddns-go 为用户进程，重置无需 UAC");
+        assert_eq!(Script::ResetDdnsPassword.visibility(), Visibility::VisibleInteractive);
+        assert!(plan.params.contains("reset-ddns-password.ps1"), "{}", plan.params);
+        assert!(plan.params.contains("-Lang zh"), "-Lang 对齐程序语言：{}", plan.params);
+        assert!(plan.params.contains("-NoExit"), "窗口结束后保留可读：{}", plan.params);
+        assert!(!plan.params.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive：{}", plan.params);
     }
 
     // ── 退出码语义 ─────────────────────────────────────────────────────

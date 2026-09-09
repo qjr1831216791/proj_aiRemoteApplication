@@ -61,6 +61,8 @@ export const en = {
   "tools.enableHttpsDesc": "enable-https.ps1 (admin: firewall / hosts)",
   "tools.installClient": "Client Setup",
   "tools.installClientDesc": "install-client.ps1 (other PC/phone, interactive)",
+  "tools.resetDdnsPassword": "Reset ddns-go Password",
+  "tools.resetDdnsPasswordDesc": "Forgot your password? Reset it (type in the popup, no admin)",
   "tools.openDdnsAdmin": "ddns-go Admin Page",
   "tools.openDdnsAdminDesc": "DNS records and credentials",
   "tools.openWorkbench": "Open Workbench Page",

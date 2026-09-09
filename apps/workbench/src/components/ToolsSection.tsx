@@ -72,6 +72,13 @@ export function ToolsSection(props: ToolsSectionProps) {
       run: () => runTool("install_client", false),
     },
     {
+      id: "reset_ddns_password",
+      label: "tools.resetDdnsPassword",
+      desc: "tools.resetDdnsPasswordDesc",
+      needsScripts: true,
+      run: () => runTool("reset_ddns_password", false),
+    },
+    {
       id: "ddns_admin",
       label: "tools.openDdnsAdmin",
       desc: "tools.openDdnsAdminDesc",

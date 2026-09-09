@@ -51,6 +51,7 @@ $ScriptSubset = @(
     'install-https.ps1'       # HTTPS 栈装机（UAC）
     'enable-https.ps1'        # HTTPS 环境配置（UAC）
     'install-client.ps1'      # 客户端配置（交互式）
+    'reset-ddns-password.ps1' # ddns-go 密码重置（交互式，spec 003）
 )
 
 function Write-Step { param([string]$Msg) Write-Host "`n==> $Msg" -ForegroundColor Cyan }
