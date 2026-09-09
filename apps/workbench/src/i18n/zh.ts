@@ -132,7 +132,7 @@ export const zh = {
   "settings.setFrpKeyHint":
     "密钥获取：natfrp.com 用户中心 → 查看访问密钥；存放：栈目录 .env 的 SAKURA_FRP_KEY",
   "settings.frpcDeploy":
-    "frpc 客户端部署（换机/新环境）：下载 frpc_windows_amd64（面板「软件下载」页，或 https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe ，SHA256 前缀 b70526…），放入栈目录并命名 frpc.exe。未部署时直连不受影响，切换穿透会被拦截提示",
+    "frpc 客户端已随程序内置（版本 0.51.0-sakura-14），换机无需单独下载；若资源缺失，可从面板「软件下载」页下载 frpc Windows amd64，放入安装目录 resources\\bin 或栈目录并命名 frpc.exe",
 
   // 穿透通道（spec 004）
   "tunnel.title": "访问通道",

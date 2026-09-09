@@ -10,7 +10,7 @@
 
 ## 阶段 1: 准备与依赖
 
-- [x] T1 frpc 部署：定制版 `0.51.0-sakura-14`（SHA256 `b70526…5234`）落栈目录 `D:\Software\cloudcli-https\frpc.exe`，`frpc -v` 验证通过；不入仓库/打包（沿 caddy/ddns-go 惯例，plan §4.3 已修正）（依赖: 无）（验收: 二进制可执行、版本合规）
+- [x] T1 frpc 部署：定制版 `0.51.0-sakura-14`（SHA256 `b70526…5234`）**入库随包分发**（`resources/bin/frpc.exe` → tauri bundle.resources，需求方决策"开箱自带"），运行时资源目录优先/栈目录回退；`frpc -v` 验证通过（依赖: 无）（验收: 二进制可执行、版本合规、进包）
 - [ ] T2 `.env` 约定落地：根 `.env.example` 登记 `SAKURA_FRP_KEY`；栈目录 `.env` 指引文案定稿（依赖: 无）（验收: AC7 配置引导文案素材就绪）
 - [ ] T3 SakuraFrp 建隧道操作指引文案定稿（香港建站节点 → HTTPS 类型 + 本地 `127.0.0.1:443` + 绑定 `ai.jackqi.cn` + HTTP 重定向开关），需求方按指引完成建隧道与 `.env` 写入（依赖: 无）（验收: AC1 前置——需求方持有隧道 ID 与节点域名）
 

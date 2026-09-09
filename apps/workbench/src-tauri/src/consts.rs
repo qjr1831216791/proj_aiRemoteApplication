@@ -34,7 +34,7 @@ pub const CLOUDCLI_EXE_NAME: &str = "node.exe";
 
 // ── 穿透通道（spec 004 §4：与栈目录部署知识对齐，二进制不入库不入打包）──────
 
-/// frpc 可执行名（栈目录，plan §4.3：不入仓库/打包，沿 caddy/ddns-go 惯例）
+/// frpc 可执行名（随包分发于 resources/bin，栈目录回退；spec 004 plan §4.3）
 pub const FRPC_EXE_NAME: &str = "frpc.exe";
 /// 访问密钥所在环境文件（栈目录 `.env`，spec 004 §4.2）
 pub const FRPC_ENV_FILE: &str = ".env";

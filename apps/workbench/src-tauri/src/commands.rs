@@ -209,6 +209,7 @@ pub fn get_tunnel_status(mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>) -
 /// 持久化。「先起新再停旧」序保证起新失败时旧通道无恙（tunnel.rs 状态机注释）。
 #[tauri::command]
 pub async fn switch_channel(
+    ctx: tauri::State<'_, AutostartContext>,
     orch: tauri::State<'_, Orchestrator>,
     mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
@@ -218,7 +219,7 @@ pub async fn switch_channel(
 
     let cur = settings.current();
     // 前置就绪：穿透配置（settings.tunnel）∧ frpc 二进制 ∧ 访问密钥（AC7/AC14）
-    let ops = WindowsFrpcOps;
+    let ops = WindowsFrpcOps::new(ctx.scripts_dir.clone());
     let tunnel_ready = cur.tunnel.is_some() && ops.exe_exists() && ops.access_key().is_some();
     let actions = switch_actions(cur.access_channel, target, tunnel_ready).map_err(|e| match e {
         SwitchReject::NotConfigured { .. } => {

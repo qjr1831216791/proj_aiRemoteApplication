@@ -193,10 +193,11 @@ pub fn run() {
             let _net_poller = net_monitor.spawn_poller();
 
             // ── 穿透通道（spec 004）：frpc 管理器 + 守护线程 ────────────────
+            // frpc 随包分发（resources/bin），ops 用已解析的脚本目录定位；
             // 通道源/事件出口接 AppHandle（装配层适配，tunnel.rs 保持无 Tauri 依赖）；
             // 守护线程每 5s 收敛「期望通道×开关 ↔ frpc 实况」（AC3/8/11）
             let tunnel_mgr = std::sync::Arc::new(tunnel::TunnelManager::new(
-                std::sync::Arc::new(tunnel::WindowsFrpcOps),
+                std::sync::Arc::new(tunnel::WindowsFrpcOps::new(scripts_dir.clone())),
                 std::sync::Arc::new(AppChannelSource { app: app.handle().clone() }),
                 std::sync::Arc::new(TauriTunnelEmitter { app: app.handle().clone() }),
             ));

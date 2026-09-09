@@ -212,16 +212,37 @@ pub trait FrpcOps: Send + Sync {
     fn log_tail(&self, max_lines: usize) -> Option<String>;
 }
 
-/// Windows 真实实现（栈目录固定路径）
-pub struct WindowsFrpcOps;
+/// Windows 真实实现。frpc 随安装包分发（resources/bin，spec 004 plan §4.3 修订）：
+/// 解析顺序 = 资源目录优先（开箱自带）→ 栈目录回退（既有部署兼容）。
+pub struct WindowsFrpcOps {
+    /// 资源 bin 目录（exe 同级 resources/bin 或开发态 src-tauri/resources/bin；
+    /// None = 定位失败，仅剩栈目录回退）
+    bin_dir: Option<PathBuf>,
+}
 
 impl WindowsFrpcOps {
-    fn exe_path(&self) -> PathBuf {
-        PathBuf::from(STACK_DIR).join(FRPC_EXE_NAME)
+    pub fn new(bin_dir: Option<PathBuf>) -> Self {
+        Self { bin_dir }
     }
+
+    /// 候选路径（有序：资源目录 → 栈目录）
+    fn candidate_paths(&self) -> Vec<PathBuf> {
+        let mut v = Vec::new();
+        if let Some(dir) = &self.bin_dir {
+            v.push(dir.join(FRPC_EXE_NAME));
+        }
+        v.push(PathBuf::from(STACK_DIR).join(FRPC_EXE_NAME));
+        v
+    }
+
+    fn resolve_exe(&self) -> Option<PathBuf> {
+        self.candidate_paths().into_iter().find(|p| p.is_file())
+    }
+
     fn env_path(&self) -> PathBuf {
         PathBuf::from(STACK_DIR).join(FRPC_ENV_FILE)
     }
+
     fn log_path(&self) -> PathBuf {
         PathBuf::from(STACK_DIR).join(FRPC_LOG_FILE)
     }
@@ -229,7 +250,7 @@ impl WindowsFrpcOps {
 
 impl FrpcOps for WindowsFrpcOps {
     fn exe_exists(&self) -> bool {
-        self.exe_path().is_file()
+        self.resolve_exe().is_some()
     }
 
     fn access_key(&self) -> Option<String> {
@@ -241,6 +262,9 @@ impl FrpcOps for WindowsFrpcOps {
         use std::os::windows::process::CommandExt;
         use std::process::{Command, Stdio};
 
+        let exe = self
+            .resolve_exe()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "frpc.exe 未找到"))?;
         let log = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -248,7 +272,7 @@ impl FrpcOps for WindowsFrpcOps {
         let stderr = log.try_clone()?;
         // CREATE_NO_WINDOW（沿 network.rs/scripts.rs 先例）：frpc 是控制台程序，
         // 不隐藏会闪黑窗。密钥只进进程参数（已知暴露面，plan §7），不进本函数日志。
-        Command::new(self.exe_path())
+        Command::new(exe)
             .args(["-f", &format!("{key}:{tunnel_id}")])
             .stdout(Stdio::from(log))
             .stderr(Stdio::from(stderr))
@@ -259,13 +283,21 @@ impl FrpcOps for WindowsFrpcOps {
 
     fn kill(&self) -> std::io::Result<()> {
         use sysinfo::{ProcessesToUpdate, System};
-        let expect = self.exe_path().to_string_lossy().into_owned();
         let mut sys = System::new();
         sys.refresh_processes(ProcessesToUpdate::All, true);
         let mut killed = 0;
         for (_pid, proc) in sys.processes() {
-            let Some(exe) = proc.exe() else { continue };
-            if crate::probe::paths_equal(&exe.to_string_lossy(), &expect) {
+            // 按可执行名匹配（frpc.exe 全局唯一，覆盖资源目录与栈目录两种来源；
+            // exe 取不到时 sysinfo 的 name 即文件名，同口径命中）
+            let name = proc.name().to_string_lossy();
+            let by_exe = proc
+                .exe()
+                .map(|exe| {
+                    crate::probe::file_name_of(&exe.to_string_lossy())
+                        .is_some_and(|n| n.eq_ignore_ascii_case(FRPC_EXE_NAME))
+                })
+                .unwrap_or(false);
+            if by_exe || name.eq_ignore_ascii_case(FRPC_EXE_NAME) {
                 proc.kill();
                 killed += 1;
             }
@@ -279,12 +311,14 @@ impl FrpcOps for WindowsFrpcOps {
 
     fn is_running(&self) -> bool {
         use sysinfo::{ProcessesToUpdate, System};
-        let expect = self.exe_path().to_string_lossy().into_owned();
         let mut sys = System::new();
         sys.refresh_processes(ProcessesToUpdate::All, true);
         sys.processes().iter().any(|(_pid, proc)| {
             proc.exe()
-                .map(|exe| crate::probe::paths_equal(&exe.to_string_lossy(), &expect))
+                .map(|exe| {
+                    crate::probe::file_name_of(&exe.to_string_lossy())
+                        .is_some_and(|n| n.eq_ignore_ascii_case(FRPC_EXE_NAME))
+                })
                 .unwrap_or(false)
                 || proc.name().to_string_lossy().eq_ignore_ascii_case(FRPC_EXE_NAME)
                 // exe 取不到时按文件名兜底（与 probe.rs 身份降级口径一致）
