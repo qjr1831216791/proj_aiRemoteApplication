@@ -27,6 +27,7 @@
 | 阶段 | 里程碑 | 对应 Spec |
 |------|--------|-----------|
 | Sprint 0（已完成 v0.1.0） | 远程方案调研 + CloudCLI 试用基建（局域网/HTTPS 全脚本化），试用观察中，结论回填调研报告后走三岔口决策 | 免 Spec（`tools/sprint0/` + `docs/research/`） |
+| Sprint 1（已完成 v0.2.0） | 桌面控制台：sprint0 全能力 GUI 化（托盘常驻、一键启停、自启托管、可控退出、中英双语、双形态分发） | [001-desktop-console](../specs/001-desktop-console/spec.md) |
 | M0 原型 | 跑通核心链路 | （待定，Sprint 0 结论后立项） |
 | M1 | | |
 

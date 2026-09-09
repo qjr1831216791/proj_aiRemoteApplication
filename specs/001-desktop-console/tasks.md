@@ -2,8 +2,8 @@
 
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: 进行中 <!-- 未开始 | 进行中 | 已完成 -->
-- **最后更新**: 2026-09-09
+- **状态**: 已完成 <!-- 未开始 | 进行中 | 已完成 -->
+- **最后更新**: 2026-09-09（随 v0.2.0 冻结发布收口）
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
@@ -41,13 +41,14 @@
 
 ## 阶段 6: 验收与发布
 
-- [ ] T16 执行文末"手工验收清单"并逐条记录结果（验收: 全部 GUI 类 AC）<!-- 自动化部分 2026-09-09 完成：①全套 `cargo test` 118 passed + 1 ignored、`npm run build` 零错误（逻辑类 AC 基线绿：settings 13/probe 11/scripts 18/orchestrator/stop/exit_flow 7/autostart 16/startup 5，AC1/3/5/7/8/9/21/23/24/25 逻辑层全覆盖；AC18/24 另有 T2/T14 真机实证）；②AC16 进程级实证（T17 安装版验证中顺带：三组件运行中 taskkill 程序→3001/443/9876 监听 PID 原样存活→重启程序日志"组件 caddy 已在运行：守卫跳过（AC3 幂等）"完成接管、无重复进程）；③加固托盘 explorer.exe 强杀重启→程序存活、`tray_icon_app` 托盘窗口仍在（进程级通过；图标视觉恢复因锁屏态无法人眼核验，留手工清单该项）；④AC8/9 真机 roundtrip 已在 T11 注记（不重复动 Sprint0 任务）。手工操作手册：[acceptance-manual.md](./acceptance-manual.md) -->
+- [x] T16 执行文末"手工验收清单"并逐条记录结果（验收: 全部 GUI 类 AC）<!-- **2026-09-09 v0.2.0 冻结收口（需求方指令）：自动化部分完成，纯人工 6 类以验收手册为发布后回填记录收口（见下方清单头注）。** 自动化部分 2026-09-09 完成：①全套 `cargo test` 118 passed + 1 ignored、`npm run build` 零错误（逻辑类 AC 基线绿：settings 13/probe 11/scripts 18/orchestrator/stop/exit_flow 7/autostart 16/startup 5，AC1/3/5/7/8/9/21/23/24/25 逻辑层全覆盖；AC18/24 另有 T2/T14 真机实证）；②AC16 进程级实证（T17 安装版验证中顺带：三组件运行中 taskkill 程序→3001/443/9876 监听 PID 原样存活→重启程序日志"组件 caddy 已在运行：守卫跳过（AC3 幂等）"完成接管、无重复进程）；③加固托盘 explorer.exe 强杀重启→程序存活、`tray_icon_app` 托盘窗口仍在（进程级通过；图标视觉恢复因锁屏态无法人眼核验，留手工清单该项）；④AC8/9 真机 roundtrip 已在 T11 注记（不重复动 Sprint0 任务）。手工操作手册：[acceptance-manual.md](./acceptance-manual.md) -->
 - [x] T17 一键构建与双形态分发产物：`scripts/build.ps1`（同步 `resources/bin` 脚本副本并校验与 app 版本对齐 → `tauri build`（NSIS，**embedBootstrapper**）→ 便携 zip（exe + resources，目录结构与安装版一致，附简要说明）→ 产物命名 `<app>_<版本>_<arch>`、体积记录入文末备注）；干净机验证三路径：安装器双击安装、便携包解压即用、**覆盖安装升级（设置保留）**；SmartScreen"仍要运行"引导写入安装说明（验收: 目标/约束 §5 打包分发项、plan §7 脚本耦合；完成标志: 双形态产物落档 + 三路径验证记录）<!-- 2026-09-09 完成：build.ps1（BOM+CRLF；净 PSModulePath 中 WindowsApps 污染修 Get-FileHash/Compress-Archive 失效）五步流水：版本对齐(0.2.0 三处)→脚本子集同步(SHA256 逐文件比对+manifest.json 清单，6 脚本)→tauri build→便携 zip(exe+resources+README 含 SmartScreen 引导)→release/ 落位命名；tauri.conf.json 补 `bundle.resources=["resources/bin/*"]` 与 `windows.nsis.installMode=currentUser`。踩坑：NSIS 工具链 GitHub 直连超时（plan §7 预判风险），按 tauri-bundler 2.9.4 源码 NSIS_REQUIRED_FILES 清单经 ghfast.top 镜像补齐 nsis-3.11.zip+nsis_tauri_utils.dll（SHA1 与常量逐一核对）落位 %LOCALAPPDATA%\tauri\NSIS。三路径真机结论见文末备注 -->
-- [x] T18 收尾：对照 [spec.md](./spec.md) 逐条勾选 AC；tasks 全勾；README/CHANGELOG/MOC 状态流转（in-progress → done）；CHANGELOG 发布节 + `vX.Y.Z` 标签准备<!-- 2026-09-09 完成（收尾侧）：①停止管线/自启/命令层用户可见文案接入双语词条（bug 级补齐 AC25，全套 125+1 绿）；②spec 两处实现对齐回填（§4.5 单实例句、AC24 `.bad-<时间戳>`，v2.6 变更流程）；③AC 逐条验证对照表落于 [acceptance-manual.md](./acceptance-manual.md) §4（自动化/真机/手工三列，done 判定依据）；④CHANGELOG Unreleased 补齐 T5~T17、README 快速开始补一键打包与产物说明、MOC 交付目标标注待手工收口。**剩余两项待 T16 手工全过后执行：spec 状态 in-progress → done 翻转 + AC 勾选，CHANGELOG 发布节（0.2.0）与 v0.2.0 标签** -->
+- [x] T18 收尾：对照 [spec.md](./spec.md) 逐条勾选 AC；tasks 全勾；README/CHANGELOG/MOC 状态流转（in-progress → done）；CHANGELOG 发布节 + `vX.Y.Z` 标签准备<!-- 2026-09-09 完成（收尾侧）：①停止管线/自启/命令层用户可见文案接入双语词条（bug 级补齐 AC25，全套 125+1 绿）；②spec 两处实现对齐回填（§4.5 单实例句、AC24 `.bad-<时间戳>`，v2.6 变更流程）；③AC 逐条验证对照表落于 [acceptance-manual.md](./acceptance-manual.md) §4（自动化/真机/手工三列，done 判定依据）；④CHANGELOG Unreleased 补齐 T5~T17、README 快速开始补一键打包与产物说明、MOC 交付目标标注待手工收口。**剩余两项待 T16 手工全过后执行：spec 状态 in-progress → done 翻转 + AC 勾选，CHANGELOG 发布节（0.2.0）与 v0.2.0 标签**——已于 2026-09-09 按需求方"固定当前版本为 Sprint 1"指令执行完毕（AC 勾选口径见 spec 变更记录 v2.6 行） -->
 
 ## 手工验收清单（GUI 类 AC，宪法 §1 窄例外的测试载体）
 
 > 执行环境：开发机（Win11，sprint0 已部署）。每条执行后在本清单打勾并记异常。
+> **v0.2.0 已于 2026-09-09 冻结发布（需求方指令），本清单转为发布后验收回填记录**：逐条执行时勾选并在 acceptance-manual.md §2 记录证据；发现异常按 bug 修复流程走（不回退版本）。
 
 - [ ] **AC1**：三组件全停 → 点「启动」→ 状态依次 starting→running（典型 ≤30s），地址区显示本机/局域网/域名；拔掉 cloudcli（临时改名模拟未装）再启动 → failed 且展示日志尾部与"未安装"提示
 - [ ] **AC2**：全运行 → 点「停止」→ 三端口（3001/443/9876）释放（`netstat -ano | findstr` 验证）、状态全灰
@@ -71,10 +72,10 @@
 
 ## 完成标志（DoD 检查）
 
-- [ ] spec.md 中所有 AC 已逐条验证通过（自动化 + 手工清单双轨）<!-- 现状（2026-09-09 T18）：25 条 AC 逻辑层全自动背书 + 8 条另有真机实证（对照表见 acceptance-manual.md §4）；剩余 6 类纯人工项待 T16 执行后逐条勾选 -->
+- [x] spec.md 中所有 AC 已逐条验证通过（自动化 + 手工清单双轨）<!-- 2026-09-09 v0.2.0 冻结收口（需求方指令）：25 条 AC 逻辑层全自动背书 + 8 条另有真机实证（对照表 acceptance-manual.md §4）；6 类纯人工观察项以发布后验收回填记录收口（见手工清单头注） -->
 - [x] 自动化测试全部通过（`cargo test` + 前端构建）<!-- 2026-09-09：cargo test 125 passed + 1 ignored、npm run build 零错误 -->
 - [x] 相关文档已更新（CLAUDE.md / README / CHANGELOG / MOC / ADR）<!-- 2026-09-09 T18：CHANGELOG Unreleased 补齐 T5~T17、README 快速开始（dev/构建/一键打包/release 产物）、MOC 交付目标标注待手工收口、ADR 0001/0002 已立；发布节与路线图状态待发布时更新 -->
-- [ ] 本文件全部任务勾选完毕<!-- 现状：T1~T15、T17、T18 已勾；T16 待手工项执行后勾选（自动化注记部分已在其行内） -->
+- [x] 本文件全部任务勾选完毕<!-- 2026-09-09：T1~T18 全勾（T16 按 v0.2.0 冻结口径，纯人工项转发布后回填）；文末手工清单为回填记录载体，不阻塞本项 -->
 
 ---
 

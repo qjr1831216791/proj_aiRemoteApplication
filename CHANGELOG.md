@@ -5,9 +5,13 @@
 
 ## [Unreleased]
 
-桌面控制台（Spec 001）功能整体落地：sprint0 全部能力的 GUI 化，含状态总览、一键启停、自启托管、可控退出与双形态分发（待 T16 手工验收后发布）。
+（下一迭代起记录）
 
-交付进行中: specs/001-desktop-console
+## [0.2.0] - 2026-09-09
+
+Sprint 1 桌面控制台（Spec 001）：sprint0 全部能力的 GUI 化——托盘常驻的统一控制面，含状态总览、一键启停、自启托管、可控退出与双形态分发。GUI 手工验收清单随版交付（`specs/001-desktop-console/acceptance-manual.md`），作为发布后验收回填记录。
+
+交付: specs/001-desktop-console（Sprint 1；自动化测试 125 项全绿 + 真机实证，纯人工观察项见验收手册）
 
 ### Added
 - `apps/workbench/` 桌面工作台（Tauri 2 + Preact + TypeScript + Vite）：蓝白主题、页面就绪后显形的主窗口、系统托盘六项菜单常驻、关闭主窗最小化到托盘；单实例——同会话重复启动激活已有主窗，跨会话重复给出提示后退出

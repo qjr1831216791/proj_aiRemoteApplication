@@ -21,7 +21,7 @@ Sprint 0（v0.1.0）已交付脚本化试用基建：用现成的 CloudCLI 验�
 
 本地环境变量：`cp .env.example .env` 后填入真实值。
 
-**桌面工作台**（Sprint 1，[specs/001-desktop-console](specs/001-desktop-console/spec.md)，待手工验收后发布）：托盘常驻的图形控制台，接管上述脚本的总控职责——三组件状态与一键启停、自启托管、可控退出、低频操作入口，中英双语。**不想敲命令就双击 [apps/workbench/start-here.bat](apps/workbench/start-here.bat)**：数字菜单覆盖开发运行 / 测试 / 前端构建 / 一键打包等日常动作。手动等价命令：
+**桌面工作台**（Sprint 1 交付，v0.2.0，[specs/001-desktop-console](specs/001-desktop-console/spec.md)）：托盘常驻的图形控制台，接管上述脚本的总控职责——三组件状态与一键启停、自启托管、可控退出、低频操作入口，中英双语。**不想敲命令就双击 [apps/workbench/start-here.bat](apps/workbench/start-here.bat)**：数字菜单覆盖开发运行 / 测试 / 前端构建 / 一键打包等日常动作。手动等价命令：
 
 ```bash
 cd apps/workbench
