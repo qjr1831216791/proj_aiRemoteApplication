@@ -11,7 +11,15 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
-import type { AccessUrls, ComponentId, ComponentState, ComponentStatus, ScriptsAvailability } from "../types";
+import type {
+  AccessUrls,
+  ComponentId,
+  ComponentState,
+  ComponentStatus,
+  NetCategory,
+  NetStatus,
+  ScriptsAvailability,
+} from "../types";
 import { CopyButton } from "./CopyButton";
 import { ToolsSection } from "./ToolsSection";
 
@@ -20,6 +28,8 @@ export interface MainViewProps {
   statuses: ComponentStatus[];
   urls: AccessUrls | null;
   scripts: ScriptsAvailability | null;
+  /** 网络环境快照（spec 002；null = 尚无成功探测） */
+  netStatus: NetStatus | null;
   /** 一键停止在途（防重复点击） */
   stopping: boolean;
   onStartAll: () => void;
@@ -29,13 +39,30 @@ export interface MainViewProps {
 }
 
 export function MainView(props: MainViewProps) {
-  const { lang, statuses, urls, scripts, stopping, onStartAll, onStopAll, onRetry, onToast } = props;
+  const { lang, statuses, urls, scripts, netStatus, stopping, onStartAll, onStopAll, onRetry, onToast } = props;
   // 当前态耗时（since → now）每秒刷新
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // 网络归类切换的两步确认（5s 未确认自动还原，spec 002 AC5 风险说明先行）
+  const [confirmIf, setConfirmIf] = useState<number | null>(null);
+  const [confirmCat, setConfirmCat] = useState<"private" | "public" | null>(null);
+  useEffect(() => {
+    if (confirmIf === null) return;
+    const id = setTimeout(() => setConfirmIf(null), 5000);
+    return () => clearTimeout(id);
+  }, [confirmIf]);
+
+  const switchNet = (ifIndex: number, category: "private" | "public") => {
+    setConfirmIf(null);
+    api
+      .setNetworkCategory(ifIndex, category)
+      .then(() => onToast(t("net.dispatched", lang), "success"))
+      .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
+  };
 
   const starting = statuses.some((s) => s.state === "starting");
   const anyRunning = statuses.some((s) => s.state === "running");
@@ -110,6 +137,72 @@ export function MainView(props: MainViewProps) {
         ))}
       </section>
 
+      {/* 网络环境（spec 002）：被拦截反馈 + 用户决策的归类调整 */}
+      <section class="card">
+        <h2 class="card__title">{t("net.title", lang)}</h2>
+        {netStatus?.alert ? (
+          <p class="notice notice--warn">
+            {t("net.alert", lang).replace(
+              "{names}",
+              netStatus.networks
+                .filter((n) => n.category === "public")
+                .map((n) => n.name)
+                .join("、"),
+            )}
+          </p>
+        ) : null}
+        {netStatus === null || netStatus.networks.length === 0 ? (
+          <p class="muted">{t("net.noNetworks", lang)}</p>
+        ) : (
+          netStatus.networks.map((n) => (
+            <div key={n.ifIndex}>
+              <div class="net__row">
+                <span class="net__name">{n.name}</span>
+                <span class={netChipClass(n.category)}>{t(netCatKey(n.category), lang)}</span>
+                <span class="net__spacer" />
+                {n.category === "public" ? (
+                  <button
+                    class="btn btn--sm"
+                    onClick={() => {
+                      setConfirmIf(n.ifIndex);
+                      setConfirmCat("private");
+                    }}
+                  >
+                    {t("net.setPrivate", lang)}
+                  </button>
+                ) : n.category === "private" ? (
+                  <button
+                    class="btn btn--sm"
+                    onClick={() => {
+                      setConfirmIf(n.ifIndex);
+                      setConfirmCat("public");
+                    }}
+                  >
+                    {t("net.setPublic", lang)}
+                  </button>
+                ) : null}
+              </div>
+              {confirmIf === n.ifIndex && confirmCat ? (
+                <div class="net__confirm">
+                  <p class="net__risk">
+                    {confirmCat === "private" ? t("net.riskPrivate", lang) : t("net.riskPublic", lang)}
+                  </p>
+                  <button
+                    class="btn btn--sm btn--primary"
+                    onClick={() => switchNet(n.ifIndex, confirmCat)}
+                  >
+                    {confirmCat === "private" ? t("net.confirmPrivate", lang) : t("net.confirmPublic", lang)}
+                  </button>
+                  <button class="btn btn--sm" onClick={() => setConfirmIf(null)}>
+                    {t("net.cancel", lang)}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))
+        )}
+      </section>
+
       {/* 地址区 */}
       <section class="card">
         <h2 class="card__title">{t("addr.title", lang)}</h2>
@@ -146,6 +239,32 @@ export function MainView(props: MainViewProps) {
 function stateLabel(state: ComponentState, lang: Lang): string {
   const key: DictKey = state === "port-held" ? "common.portHeld" : `common.${state}`;
   return t(key, lang);
+}
+
+/** 网络归类 → chip 配色（公用橙警 / 专用绿 / 域与未知灰） */
+function netChipClass(category: NetCategory): string {
+  switch (category) {
+    case "public":
+      return "chip chip--net-public";
+    case "private":
+      return "chip chip--net-private";
+    default:
+      return "chip chip--net-domain";
+  }
+}
+
+/** 网络归类 → 词典标签 */
+function netCatKey(category: NetCategory): DictKey {
+  switch (category) {
+    case "public":
+      return "net.catPublic";
+    case "private":
+      return "net.catPrivate";
+    case "domain":
+      return "net.catDomain";
+    default:
+      return "net.catUnknown";
+  }
 }
 
 /** 耗时格式化：48s / 3m24s / 1h05m（语言无关） */

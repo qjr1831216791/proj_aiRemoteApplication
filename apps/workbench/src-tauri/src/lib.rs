@@ -11,6 +11,7 @@ mod commands;
 mod consts;
 mod exit_flow;
 mod lang;
+mod network;
 mod orchestrator;
 mod probe;
 mod scripts;
@@ -89,6 +90,9 @@ pub fn run() {
             commands::run_tool,
             commands::scripts_availability,
             commands::open_logs_dir,
+            // spec 002：网络环境反馈与归类调整
+            commands::get_net_status,
+            commands::set_network_category,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -177,6 +181,11 @@ pub fn run() {
             // PollerHandle 无 Drop 停止语义，轮询线程随进程退出而止
             let _poller = orch.spawn_poller();
 
+            // ── 网络环境监测（spec 002）：15s 轮询，变化才发 net://changed ──
+            let net_monitor = build_net_monitor(app.handle().clone());
+            app.manage(net_monitor.clone());
+            let _net_poller = net_monitor.spawn_poller();
+
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
 
@@ -245,6 +254,22 @@ fn build_orchestrator(
     #[cfg(not(windows))]
     {
         let _ = (app, cfg);
+        unreachable!("本项目仅面向 Windows（ADR-0001）")
+    }
+}
+
+/// 网络环境监测装配（平台探测层注入；Windows-only，ADR-0001，spec 002）
+fn build_net_monitor(app: tauri::AppHandle) -> network::NetMonitor {
+    #[cfg(windows)]
+    {
+        network::NetMonitor::new(
+            std::sync::Arc::new(network::PsNetProbe),
+            std::sync::Arc::new(network::TauriNetEmitter::new(app)),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
         unreachable!("本项目仅面向 Windows（ADR-0001）")
     }
 }

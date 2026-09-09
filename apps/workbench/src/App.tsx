@@ -9,13 +9,14 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onSettingsRepaired, onStatusChanged } from "./api";
+import { api, onNetChanged, onSettingsRepaired, onStatusChanged } from "./api";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
   AccessUrls,
   ComponentId,
   ComponentStatus,
   LanguageSetting,
+  NetStatus,
   ScriptsAvailability,
   Settings,
 } from "./types";
@@ -39,6 +40,7 @@ export function App() {
   const [statuses, setStatuses] = useState<ComponentStatus[]>([]);
   const [urls, setUrls] = useState<AccessUrls | null>(null);
   const [scripts, setScripts] = useState<ScriptsAvailability | null>(null);
+  const [netStatus, setNetStatus] = useState<NetStatus | null>(null);
   const [stopping, setStopping] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -77,9 +79,12 @@ export function App() {
       api.getStatus().then(setStatuses).catch(() => {});
       api.getUrls().then(setUrls).catch(() => {});
       api.scriptsAvailability().then(setScripts).catch(() => {});
+      api.getNetStatus().then(setNetStatus).catch(() => {});
 
       // 状态事件：此后状态以事件为准（前端零轮询）
       track(await onStatusChanged(setStatuses));
+      // 网络环境事件（spec 002）：变化才发（Rust 侧 15s 轮询去重）
+      track(await onNetChanged(setNetStatus));
       // 设置损坏恢复：非阻塞提示（AC24）
       track(await onSettingsRepaired(() => pushToast(t("settings.repaired", lang), "info")));
     })();
@@ -148,6 +153,7 @@ export function App() {
           statuses={statuses}
           urls={urls}
           scripts={scripts}
+          netStatus={netStatus}
           stopping={stopping}
           onStartAll={startAll}
           onStopAll={stopAll}

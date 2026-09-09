@@ -8,6 +8,7 @@
 
 use crate::autostart::AutostartContext;
 use crate::lang::{self, LanguageState};
+use crate::network::{self, NetMonitor, NetStatus};
 use crate::orchestrator::{ComponentStatus, Orchestrator};
 use crate::probe::ComponentId;
 use crate::scripts::{self, ToolKind, ToolOpts};
@@ -154,6 +155,36 @@ pub fn open_logs_dir(
     std::fs::create_dir_all(dir)
         .map_err(|e| lang::err_texts(lang_state.current()).log_dir_create_failed(&e.to_string()))?;
     scripts::open_dir(dir).map_err(|code| lang::shell_error_text(code, lang_state.current()))
+}
+
+/// 网络环境快照（spec 002 AC1/AC2）：即时探测（成功同时刷新监测器缓存，
+/// 变化经 `net://changed` 去重发声）；探测失败回上次状态，无缓存则 None（AC4）
+#[tauri::command]
+pub async fn get_net_status(
+    monitor: tauri::State<'_, NetMonitor>,
+) -> Result<Option<NetStatus>, String> {
+    let m = monitor.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || m.refresh())
+        .await
+        .map_err(|e| format!("网络探测线程失败：{e}"))
+}
+
+/// 网络归类调整（spec 002 AC5/AC6/AC7）：UAC 提权派发、立即返回，
+/// 生效以 `net://changed` 复测为准；非法归类/UAC 拒绝 → Err 明确提示
+#[tauri::command]
+pub async fn set_network_category(
+    lang_state: tauri::State<'_, LanguageState>,
+    if_index: u32,
+    category: String,
+) -> Result<(), String> {
+    let lang = lang_state.current();
+    let params = network::set_category_params(if_index, &category)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        scripts::shell_execute(Some("runas"), "powershell.exe", &params)
+    })
+    .await
+    .map_err(|e| format!("提权派发线程失败：{e}"))?
+    .map_err(|code| lang::shell_error_text(code, lang))
 }
 
 // ── 单元测试（纯逻辑：停止汇总）────────────────────────────────────────────

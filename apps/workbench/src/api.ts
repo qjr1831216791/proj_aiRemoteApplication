@@ -8,6 +8,8 @@ import type {
   ComponentStatus,
   ExternalKind,
   LanguageSetting,
+  NetStatus,
+  NetCategory,
   ScriptsAvailability,
   Settings,
   SettingsPatch,
@@ -38,7 +40,18 @@ export const api = {
   setAutostartServices: (enable: boolean) =>
     invoke<TookOverPayload>("set_autostart_services", { enable }),
   setAutostartApp: (enable: boolean) => invoke<void>("set_autostart_app", { enable }),
+
+  /** 网络环境快照（spec 002）：即时探测；null = 尚无成功探测 */
+  getNetStatus: () => invoke<NetStatus | null>("get_net_status"),
+  /** 网络归类调整（spec 002 AC5/AC6）：UAC 提权派发，生效以 net://changed 复测为准 */
+  setNetworkCategory: (ifIndex: number, category: Extract<NetCategory, "private" | "public">) =>
+    invoke<void>("set_network_category", { ifIndex, category }),
 };
+
+/** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */
+export function onNetChanged(cb: (status: NetStatus) => void): Promise<() => void> {
+  return listen<NetStatus>("net://changed", (e) => cb(e.payload));
+}
 
 /** 状态事件（Rust 侧 2s 轮询器驱动；前端不另做轮询） */
 export function onStatusChanged(

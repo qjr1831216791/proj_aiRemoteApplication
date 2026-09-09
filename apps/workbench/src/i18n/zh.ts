@@ -70,6 +70,23 @@ export const zh = {
   "tools.uacHint": "带「管理员」标记的操作会弹出 UAC 授权窗口",
   "tools.dispatched": "已派发：请在弹出的窗口中按提示完成操作",
 
+  // 网络环境（spec 002：被拦截反馈 + 用户决策的归类调整）
+  "net.title": "网络环境",
+  "net.alert": "网络「{names}」被 Windows 归类为公用：443 防火墙放行仅对专用网络生效，其他设备可能无法通过域名访问。可在下方将其设为专用（请确认为你信任的网络）。",
+  "net.setPrivate": "设为专用",
+  "net.setPublic": "设为公用",
+  "net.confirmPrivate": "确认改为专用",
+  "net.confirmPublic": "确认改为公用",
+  "net.cancel": "取消",
+  "net.riskPrivate": "专用网络下本机在当前局域网内可被发现（网络发现/共享面扩大）。请仅在信任的网络（如个人热点、家庭网络）这样做。",
+  "net.riskPublic": "改回公用将减少局域网暴露面；若 443 规则仅限专用网络，其他设备将无法通过域名访问。",
+  "net.catPublic": "公用",
+  "net.catPrivate": "专用",
+  "net.catDomain": "域网络",
+  "net.catUnknown": "未知",
+  "net.noNetworks": "未检测到活动网络",
+  "net.dispatched": "已发起：UAC 通过后约 15s 内自动刷新状态",
+
   // 设置页
   "settings.behavior": "行为设置",
   "settings.autostartServices": "服务开机自启",

@@ -281,6 +281,56 @@
   color: var(--c-error);
 }
 
+/* ── 主界面：网络环境（spec 002）────────────────────────────── */
+.net__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+}
+
+.net__name {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.net__spacer {
+  flex: 1;
+}
+
+.chip--net-public {
+  background: var(--c-warn-soft);
+  color: var(--c-warn);
+}
+
+.chip--net-private {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.chip--net-domain {
+  background: var(--c-border);
+  color: var(--c-text-secondary);
+}
+
+.net__confirm {
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-bg);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.net__risk {
+  flex: 1;
+  margin: 0;
+  color: var(--c-warn);
+  font-size: var(--fs-sm);
+}
+
 /* ── 主界面：地址区 ──────────────────────────────────────────── */
 .addr__row {
   display: flex;

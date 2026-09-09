@@ -71,6 +71,23 @@ export const en = {
   "tools.uacHint": "Actions marked (admin) show a UAC prompt",
   "tools.dispatched": "Dispatched: follow the prompts in the opened window",
 
+  // Network environment (spec 002: blocked-access feedback + user-decided profile switch)
+  "net.title": "Network",
+  "net.alert": "Network \"{names}\" is categorized as Public by Windows: the firewall rule only allows TCP 443 on Private networks, so other devices may be unable to reach the domain. You can set it to Private below (only do this on a network you trust).",
+  "net.setPrivate": "Set Private",
+  "net.setPublic": "Set Public",
+  "net.confirmPrivate": "Confirm: set Private",
+  "net.confirmPublic": "Confirm: set Public",
+  "net.cancel": "Cancel",
+  "net.riskPrivate": "On a Private network this PC becomes discoverable in the current LAN (wider discovery/sharing surface). Only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
+  "net.riskPublic": "Switching back to Public reduces LAN exposure; if the 443 rule is Private-only, other devices will be unable to reach the domain.",
+  "net.catPublic": "Public",
+  "net.catPrivate": "Private",
+  "net.catDomain": "Domain",
+  "net.catUnknown": "Unknown",
+  "net.noNetworks": "No active network detected",
+  "net.dispatched": "Requested: status refreshes automatically within ~15s after UAC approval",
+
   // Settings
   "settings.behavior": "Behavior",
   "settings.autostartServices": "Autostart services at logon",

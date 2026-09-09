@@ -70,6 +70,24 @@ export interface ScriptsAvailability {
   reason: string | null;
 }
 
+/** 网络归类（spec 002：Windows NetworkCategory 映射） */
+export type NetCategory = "public" | "private" | "domain" | "unknown";
+
+/** 一条活动网络 */
+export interface NetworkEntry {
+  name: string;
+  ifIndex: number;
+  category: NetCategory;
+}
+
+/** 网络环境快照（get_net_status / net://changed 载荷；null = 尚无成功探测） */
+export interface NetStatus {
+  rulePresent: boolean;
+  rulePrivateOnly: boolean;
+  networks: NetworkEntry[];
+  alert: boolean;
+}
+
 /** set_autostart_services 返回载荷 */
 export interface TookOverPayload {
   tookOver: boolean;
