@@ -298,37 +298,38 @@ pub fn ddns_go_run(log_dir: &Path) -> CommandSpec {
 
 // ── 提权/可见窗口启动（AC19/20）────────────────────────────────────────────
 
-/// 参数串加引号（含空格才加，保持命令行简洁）
-fn quote(s: &str) -> String {
-    if s.contains(' ') {
-        format!("\"{s}\"")
-    } else {
-        s.to_string()
+/// 脚本结束后的收尾提示（配合 -NoExit 让窗口停留，输出可读）
+fn finished_hint(lang: Lang) -> &'static str {
+    match lang {
+        Lang::Zh => "—— 脚本已结束，请核对上方输出后关闭本窗口 ——",
+        Lang::En => "---- script finished; review the output above, then close this window ----",
     }
 }
 
 /// 可见窗口脚本参数串（ShellExecuteW lpParameters）。
-/// -NoExit：窗口在脚本结束后保留（AC19：install-https 结尾手工步骤完整可读）；
-/// 交互式脚本（Read-Host）不加 -NonInteractive。
+/// 必须经 `-Command "& '<脚本>' <参数>"` 包装：`-File` 模式下脚本体内的 `exit`
+/// 会直接终止 powershell.exe（-NoExit 拦不住，实测四个脚本的失败分支窗口瞬关）；
+/// `&` 调用下 exit 仅退出脚本作用域，-NoExit 保留窗口，成功/失败输出均完整可读
+/// （AC19：install-https 结尾手工步骤完整可读）。交互式脚本（Read-Host）
+/// 不加 -NonInteractive。
 pub fn visible_script_params(
     dir: &Path,
     script: Script,
     lang: Lang,
     extra_args: &[&str],
 ) -> String {
-    let path = quote(&dir.join(script.file_name()).to_string_lossy());
-    let mut parts: Vec<String> = vec![
-        "-NoProfile".into(),
-        "-ExecutionPolicy".into(),
-        "Bypass".into(),
-        "-File".into(),
-        path,
-        "-Lang".into(),
-        lang_arg(lang).into(),
-        "-NoExit".into(),
-    ];
-    parts.extend(extra_args.iter().map(|s| (*s).to_string()));
-    parts.join(" ")
+    // PowerShell 单引号字面量：含空格天然安全，内部单引号按规则翻倍
+    let script_path = dir.join(script.file_name());
+    let path = format!("'{}'", script_path.to_string_lossy().replace('\'', "''"));
+    let mut inner = format!("& {path} -Lang {}", lang_arg(lang));
+    for arg in extra_args {
+        inner.push(' ');
+        inner.push_str(arg);
+    }
+    inner.push_str("; Write-Host ''; Write-Host '");
+    inner.push_str(finished_hint(lang));
+    inner.push('\'');
+    format!("-NoProfile -ExecutionPolicy Bypass -NoExit -Command \"{inner}\"")
 }
 
 /// ShellExecuteW 原语（T15：提权/可见窗/URL 打开共用）。
@@ -791,20 +792,37 @@ mod tests {
     // ── 可见/提权参数串 ────────────────────────────────────────────────
 
     #[test]
-    fn visible_params_keep_window_open_and_interactive() {
+    fn visible_params_survive_script_exit_and_keep_window() {
         let dir = script_dir("elev");
         let p = visible_script_params(&dir, Script::InstallHttps, Lang::Zh, &["-Update"]);
         assert!(p.contains("-NoExit"), "AC19：结尾手工步骤须可读 → -NoExit：{p}");
+        assert!(
+            p.contains("-Command"),
+            "必须经 -Command 包装（-File 下脚本内 exit 会连窗关闭，实测缺陷）：{p}"
+        );
+        assert!(
+            p.contains(&format!("& '{}'", dir.join("install-https.ps1").to_string_lossy())),
+            "脚本路径以单引号字面量传给 & 调用：{p}"
+        );
         assert!(!p.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive：{p}");
-        assert!(p.contains(&format!("-File \"{}\"", dir.join("install-https.ps1").to_string_lossy())) || p.contains(&format!("-File {}", dir.join("install-https.ps1").to_string_lossy())), "{p}");
         assert!(p.contains("-Lang zh"));
         assert!(p.contains("-Update"), "额外参数应透传：{p}");
+        assert!(
+            p.contains("核对上方输出后关闭本窗口"),
+            "结尾应有收尾提示（配合 -NoExit 停留可读）：{p}"
+        );
     }
 
     #[test]
-    fn quote_only_when_spaces() {
-        assert_eq!(quote(r"D:\plain.ps1"), r"D:\plain.ps1");
-        assert_eq!(quote(r"D:\with space\a.ps1"), r#""D:\with space\a.ps1""#);
+    fn visible_params_quote_path_with_spaces_and_quotes() {
+        // 含空格路径：单引号字面量天然安全；路径内单引号按 PowerShell 规则翻倍
+        let dir = Path::new(r"D:\with space");
+        let p = visible_script_params(dir, Script::InstallClient, Lang::En, &[]);
+        assert!(p.contains(r"'D:\with space\install-client.ps1'"), "{p}");
+
+        let dir_q = Path::new(r"D:\odd'name");
+        let p2 = visible_script_params(dir_q, Script::InstallClient, Lang::En, &[]);
+        assert!(p2.contains(r"'D:\odd''name\install-client.ps1'"), "{p2}");
     }
 
     // ── 低频工具派发（run_tool 契约，T15）──────────────────────────────

@@ -252,6 +252,15 @@ impl DetailTexts {
             Lang::En => format!("Logs not readable: {paths}"),
         }
     }
+
+    /// CloudCLI 启动失败的环境安装指引（缺 sqlite / 模块缺失类失败的出路；
+    /// 前端失败卡片的「去安装」按钮与之配套）
+    pub fn env_install_hint(&self) -> String {
+        match self.lang {
+            Lang::Zh => "若日志显示缺少依赖（如 sqlite、Cannot find module），请运行「低频操作 → 安装/重装服务端」完成环境安装".into(),
+            Lang::En => "If the log shows missing dependencies (e.g. sqlite, Cannot find module), run 'Advanced Operations → Install / Reinstall Server' to set up the environment".into(),
+        }
+    }
 }
 
 // ── 停止管线 detail 文案（stop.rs 的双语源；zh 与既有文案逐字一致）──────────

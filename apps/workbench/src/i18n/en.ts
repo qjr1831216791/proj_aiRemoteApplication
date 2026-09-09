@@ -31,11 +31,15 @@ export const en = {
 
   // Main: master switch and status cards
   "main.startAll": "Start All",
+  "main.allRunning": "All Running",
+  "main.allRunningHint": "All three components are running",
   "main.stopAll": "Stop All",
   "main.stopHint": "Stopping ends any AI sessions in progress",
   "main.busy": "Working…",
   "main.elapsed": "for",
   "main.port": "Port",
+  "main.startingWait": "up to 60s, then marked failed",
+  "main.goInstall": "Set Up Environment",
 
   // Address area
   "addr.title": "Access Addresses",

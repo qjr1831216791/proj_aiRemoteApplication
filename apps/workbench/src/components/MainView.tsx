@@ -39,6 +39,8 @@ export function MainView(props: MainViewProps) {
 
   const starting = statuses.some((s) => s.state === "starting");
   const anyRunning = statuses.some((s) => s.state === "running");
+  // 三组件全部运行中：启动无事可做，禁用并明示（避免"点了没反应"的静默无操作）
+  const allRunning = statuses.length > 0 && statuses.every((s) => s.state === "running");
   const busy = starting || stopping;
 
   return (
@@ -46,15 +48,23 @@ export function MainView(props: MainViewProps) {
       {/* 总开关（spec §4.6 信息分区之首） */}
       <section class="card master">
         <div class="master__actions">
-          <button class="btn btn--primary" disabled={busy} onClick={onStartAll}>
-            {t("main.startAll", lang)}
+          <button
+            class="btn btn--primary"
+            disabled={busy || allRunning}
+            onClick={onStartAll}
+          >
+            {allRunning ? t("main.allRunning", lang) : t("main.startAll", lang)}
           </button>
           <button class="btn btn--danger" disabled={busy || !anyRunning} onClick={onStopAll}>
             {t("main.stopAll", lang)}
           </button>
         </div>
         <p class="master__hint">
-          {busy ? t("main.busy", lang) : t("main.stopHint", lang)}
+          {busy
+            ? t("main.busy", lang)
+            : allRunning
+              ? t("main.allRunningHint", lang)
+              : t("main.stopHint", lang)}
         </p>
       </section>
 
@@ -70,11 +80,30 @@ export function MainView(props: MainViewProps) {
               {t("main.port", lang)} {s.port}
               <span class="status__sep">·</span>
               {t("main.elapsed", lang)} {fmtElapsed(now - s.since)}
+              {s.state === "starting" ? (
+                <>
+                  <span class="status__sep">·</span>
+                  {t("main.startingWait", lang)}
+                </>
+              ) : null}
             </p>
             {s.detail ? <p class="status__detail">{s.detail}</p> : null}
             {s.state === "failed" || s.state === "port-held" ? (
               <button class="btn btn--sm" disabled={busy} onClick={() => onRetry(s.id)}>
                 {t("common.retry", lang)}
+              </button>
+            ) : null}
+            {s.state === "failed" && s.id === "cloudcli" ? (
+              <button
+                class="btn btn--sm"
+                onClick={() =>
+                  api
+                    .runTool("install_server", { update: false, mirror: false })
+                    .then(() => onToast(t("tools.dispatched", lang), "success"))
+                    .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"))
+                }
+              >
+                {t("main.goInstall", lang)}
               </button>
             ) : null}
           </article>

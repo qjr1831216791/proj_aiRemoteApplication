@@ -34,6 +34,8 @@ pub const EVENT_STATUS_CHANGED: &str = "status://changed";
 pub const FOREGROUND_POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// 启动就绪超时（AC1：60s 未就绪判失败）
 pub const START_READY_TIMEOUT: Duration = Duration::from_secs(60);
+/// 在途启动登记的挂死自愈上限（脚本 15s + 就绪 60s 的最坏合法路径再留余量）
+pub const IN_FLIGHT_STALE_AFTER: Duration = Duration::from_secs(120);
 /// 失败详情附带的日志尾部行数
 pub const LOG_TAIL_LINES: usize = 30;
 
@@ -168,38 +170,57 @@ pub fn cloudcli_log_path() -> PathBuf {
 /// T10 收摊退出流消费 `cancel`/`wait_idle` 消除"退出后组件姗姗来迟"竞态。
 #[derive(Default)]
 pub struct InFlightTracker {
-    cancels: Mutex<HashMap<ComponentId, Arc<AtomicBool>>>,
+    entries: Mutex<HashMap<ComponentId, InFlightEntry>>,
     idle: Condvar,
+}
+
+struct InFlightEntry {
+    flag: Arc<AtomicBool>,
+    /// 登记时刻（挂死自愈判据）
+    since: Instant,
 }
 
 impl InFlightTracker {
     /// 登记在途操作；已存在 → None（互斥拒绝）
     pub fn try_mark(&self, id: ComponentId) -> Option<Arc<AtomicBool>> {
-        let mut map = self.cancels.lock().expect("在途锁中毒");
+        let mut map = self.entries.lock().expect("在途锁中毒");
         if map.contains_key(&id) {
             return None;
         }
         let flag = Arc::new(AtomicBool::new(false));
-        map.insert(id, flag.clone());
+        map.insert(id, InFlightEntry { flag: flag.clone(), since: Instant::now() });
         Some(flag)
     }
 
     /// 清除登记（操作结束；唤醒全部等待者）
     pub fn clear(&self, id: ComponentId) {
-        self.cancels.lock().expect("在途锁中毒").remove(&id);
+        self.entries.lock().expect("在途锁中毒").remove(&id);
         self.idle.notify_all();
     }
 
     pub fn is_busy(&self, id: ComponentId) -> bool {
-        self.cancels.lock().expect("在途锁中毒").contains_key(&id)
+        self.entries.lock().expect("在途锁中毒").contains_key(&id)
+    }
+
+    /// 在途登记超时自愈：登记时长超过 max_age 视为启动线程挂死（如探测阻塞），
+    /// 强制清除登记；返回是否清除。清除后调用方按探测实况纠正状态。
+    pub fn expire_if_stale(&self, id: ComponentId, max_age: Duration) -> bool {
+        let mut map = self.entries.lock().expect("在途锁中毒");
+        let stale = matches!(map.get(&id), Some(e) if e.since.elapsed() > max_age);
+        if stale {
+            map.remove(&id);
+            drop(map);
+            self.idle.notify_all();
+        }
+        stale
     }
 
     /// 请求取消（返回是否存在在途操作）
     pub fn cancel(&self, id: ComponentId) -> bool {
-        let map = self.cancels.lock().expect("在途锁中毒");
+        let map = self.entries.lock().expect("在途锁中毒");
         match map.get(&id) {
-            Some(flag) => {
-                flag.store(true, Ordering::Relaxed);
+            Some(entry) => {
+                entry.flag.store(true, Ordering::Relaxed);
                 true
             }
             None => false,
@@ -209,7 +230,7 @@ impl InFlightTracker {
     /// 等待指定组件无在途操作；超时返回 false
     pub fn wait_idle(&self, id: ComponentId, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
-        let mut map = self.cancels.lock().expect("在途锁中毒");
+        let mut map = self.entries.lock().expect("在途锁中毒");
         loop {
             if !map.contains_key(&id) {
                 return true;
@@ -236,6 +257,8 @@ pub struct OrchestratorConfig {
     pub poll_interval: Duration,
     /// 启动就绪超时（默认 60s，AC1）
     pub start_timeout: Duration,
+    /// 在途登记挂死自愈上限（默认 120s；refresh_all 周期检查）
+    pub in_flight_max_age: Duration,
     /// 停止管线配置（默认 5s/10s/500ms，spec §4.4/AC2）
     pub stop: StopConfig,
     /// 脚本语言（-Lang 对齐，AC25）
@@ -251,6 +274,7 @@ impl OrchestratorConfig {
         Self {
             poll_interval: FOREGROUND_POLL_INTERVAL,
             start_timeout: START_READY_TIMEOUT,
+            in_flight_max_age: IN_FLIGHT_STALE_AFTER,
             stop: StopConfig::default(),
             lang,
             log_dir,
@@ -383,12 +407,16 @@ impl Orchestrator {
     }
 
     /// 全组件刷新（前台轮询周期执行；AC4 外部停止 ≤10s 可见）。
-    /// 在途组件跳过（启动线程独占其状态迁移）。
+    /// 在途组件跳过（启动线程独占其状态迁移）；在途登记超过上限视为线程
+    /// 挂死，自愈清除后按探测实况纠正（兜底，防"启动中"永久卡死）。
     pub fn refresh_all(&self) {
         let texts = crate::lang::detail_texts(self.current_lang());
         for id in COMPONENT_ORDER {
             if self.tracker.is_busy(id) {
-                continue;
+                if !self.tracker.expire_if_stale(id, self.cfg.in_flight_max_age) {
+                    continue;
+                }
+                log::warn!("组件 {} 在途启动登记超限，自愈清除并按探测实况纠正", id.as_str());
             }
             let (state, detail) = match self.probe.probe(id) {
                 ProbeState::Running { .. } => (ComponentState::Running, None),
@@ -545,11 +573,13 @@ impl Orchestrator {
                 match self.executor.execute(&spec) {
                     ExecOutcome::Exited(0) => {}
                     ExecOutcome::Exited(code) => {
-                        // AC1：exit 1 映射"未安装/不可用"提示
-                        let detail = outcome_detail(
+                        // AC1：exit 1 映射"未安装/不可用"提示；附环境安装指引
+                        let mut detail = outcome_detail(
                             &interpret_exit(Script::RunServerHidden, code),
                             self.current_lang(),
                         );
+                        detail.push('\n');
+                        detail.push_str(&texts.env_install_hint());
                         self.set_state_if_active(cancel, id, ComponentState::Failed, Some(detail));
                         return;
                     }
@@ -662,7 +692,7 @@ impl Orchestrator {
                 })
             })
             .collect();
-        if tails.is_empty() {
+        let mut result = if tails.is_empty() {
             let joined = paths
                 .iter()
                 .map(|p| p.display().to_string())
@@ -671,7 +701,13 @@ impl Orchestrator {
             format!("{}。{}", texts.start_timeout(secs), texts.logs_unreadable(&joined))
         } else {
             format!("{}。\n{}", texts.start_timeout(secs), tails.join("\n"))
+        };
+        // CloudCLI 超时常见于环境不完整（如缺 sqlite/模块）：附安装指引（AC1 反馈补强）
+        if matches!(id, ComponentId::CloudCli) {
+            result.push('\n');
+            result.push_str(&texts.env_install_hint());
         }
+        result
     }
 
     /// 状态迁移 + 变化时发事件；state 不变但 detail 变化也发（如占用者更名）
@@ -1159,6 +1195,7 @@ mod tests {
         let cfg = OrchestratorConfig::new(Lang::Zh, PathBuf::from(r"D:\logs"));
         assert_eq!(cfg.poll_interval, FOREGROUND_POLL_INTERVAL);
         assert_eq!(cfg.start_timeout, START_READY_TIMEOUT);
+        assert_eq!(cfg.in_flight_max_age, IN_FLIGHT_STALE_AFTER);
         assert_eq!(cfg.scripts_dir, None, "默认未定位脚本目录（装配层注入）");
     }
 
@@ -1528,6 +1565,51 @@ mod tests {
             "在途组件应保持 starting（其线程会自行迁移终态）"
         );
         // 收尾：取消并等待，避免线程继续占用 mock
+        orch.cancel_start(ComponentId::CloudCli);
+        assert!(orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn refresh_all_self_heals_stale_inflight_registration() {
+        // 兜底：启动线程挂死（登记未清）时，超限的在途登记被自愈清除，
+        // 状态按探测实况纠正，不再永久停留在 starting（问题 2"卡启动中"防线）
+        let probe = Arc::new(ScriptedProbe::new());
+        probe.pin(ComponentId::CloudCli, ProbeState::Stopped);
+        let exec = Arc::new(MockExecutor::new());
+        let mut cfg = test_cfg();
+        cfg.in_flight_max_age = Duration::from_millis(30);
+        let sink = Arc::new(MockEventSink::default());
+        let logs = Arc::new(MockLogTail::default());
+        let orch = Orchestrator::new(
+            cfg,
+            probe,
+            exec,
+            Arc::new(MockProcessOps::new()),
+            sink,
+            logs,
+        );
+
+        // 模拟挂死：手工登记在途并置 starting，但无线程会推进它
+        orch.tracker.try_mark(ComponentId::CloudCli).unwrap();
+        orch.set_state(ComponentId::CloudCli, ComponentState::Starting, None);
+
+        orch.refresh_all();
+        assert_eq!(
+            state_of(&orch, ComponentId::CloudCli).state,
+            ComponentState::Starting,
+            "未超限的自愈窗口内不动在途组件"
+        );
+
+        std::thread::sleep(Duration::from_millis(40));
+        orch.refresh_all();
+        assert_eq!(
+            state_of(&orch, ComponentId::CloudCli).state,
+            ComponentState::Stopped,
+            "超限自愈后按探测实况纠正状态"
+        );
+        assert!(!orch.tracker.is_busy(ComponentId::CloudCli), "在途登记已清除");
+        // 自愈后可重新派发（未被假性在途锁死）
+        assert!(orch.start_one(ComponentId::CloudCli).is_ok());
         orch.cancel_start(ComponentId::CloudCli);
         assert!(orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)));
     }

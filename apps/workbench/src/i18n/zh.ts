@@ -30,11 +30,15 @@ export const zh = {
 
   // 主界面：总开关与状态卡
   "main.startAll": "启动全部",
+  "main.allRunning": "全部运行中",
+  "main.allRunningHint": "三组件均在运行，无需启动",
   "main.stopAll": "停止全部",
   "main.stopHint": "停止会结束进行中的 AI 会话",
   "main.busy": "操作进行中…",
   "main.elapsed": "已持续",
   "main.port": "端口",
+  "main.startingWait": "最长等待 60s，超时判失败",
+  "main.goInstall": "去安装",
 
   // 地址区
   "addr.title": "访问地址",
