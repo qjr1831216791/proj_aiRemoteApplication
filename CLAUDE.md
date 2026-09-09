@@ -59,7 +59,7 @@ proj_aiRemoteApplication/
 │   └── archive/           # 已验收 Spec 的归档
 ├── config/                # 环境配置：非敏感默认配置（模板 .env.example 在仓库根目录）
 ├── apps/                  # 应用层（一个应用一个子目录，互不外溢）
-│   └── workbench/         # AI 远程工作台桌面版（Sprint 1 起，Tauri 2）：src/ 前端 + src-tauri/ Rust
+│   └── workbench/         # AI 远程工作台桌面版（Spec 001，Tauri 2）：src/ 前端（Preact+TS+Vite）+ src-tauri/ Rust
 ├── tests/                 # 测试
 ├── scripts/               # 生命周期命令（dev/build/test/deploy，日常入口）
 └── tools/                 # 开发辅助工具脚本（一次性任务，与生命周期脚本分离）
@@ -81,4 +81,19 @@ proj_aiRemoteApplication/
 
 ## 常用命令
 
-待补充（项目初始化后记录构建、测试、运行命令）。
+桌面版工作台（`apps/workbench/`，Tauri 2：前端 Preact + TS + Vite，宿主 Rust 在 `src-tauri/`）：
+
+```bash
+cd apps/workbench
+npm install          # 首次或依赖变更后
+npm run tauri dev    # 开发态：拉起桌面窗口（自动带起前端与 cargo run）
+npm run dev          # 仅起前端（Vite，浏览器预览，无原生壳）
+npm run build        # 仅构建前端到 dist/（tauri build 前置步骤）
+npm run tauri build  # 发布构建（安装包等分发产物）
+```
+
+```bash
+# Rust 侧检查与测试（无需 cd 进工程）
+cargo check --manifest-path apps/workbench/src-tauri/Cargo.toml
+cargo test  --manifest-path apps/workbench/src-tauri/Cargo.toml
+```

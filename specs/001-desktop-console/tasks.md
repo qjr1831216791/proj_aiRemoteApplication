@@ -14,7 +14,7 @@
 - [x] T1 Tauri 2 工程脚手架：`create-tauri-app`（Vite + TS）接入 Preact；蓝白主题基础样式（设计令牌：色板/圆角/间距）；**zh/en 词条词典 + `t()` helper 骨架**（全 UI 文案自始双语，杜绝后期补翻）；窗口 `visible:false` 创建、页面就绪后 show；`npm run dev` 可出窗口（crates.io 访问慢则按 plan §7 配 rsproxy 镜像）（验收: 约束 §5）<!-- 2026-09-09 完成：cargo check 绿（1m28s）；tauri dev 实测出窗口；工程收拢于 apps/workbench/（多应用层） -->
 - [x] T2 单实例（`tauri-plugin-single-instance`，`Global\` 互斥体、**首个注册**）+ 托盘骨架（菜单占位：启动/停止/打开工作台/显示主界面/停止并退出/退出）+ `RunEvent::ExitRequested` 退出钩子挂接（依赖: T1）（验收: AC18 骨架）<!-- 2026-09-09 完成：插件互斥体实测仅会话内（{id}-sim 无 Global 前缀），windows crate 补 Global\ 互斥体跨会话判定；cargo test 3/3 绿；dev 实测：关 X 隐藏到托盘进程存活（AC18）、第二实例秒退并激活主窗、托盘图标 UIA 可见、语言探测 Zh -->
 - [x] T3 里程碑 1 内存实测：托盘 + 隐藏主窗 + 真实空页，任务管理器记录"程序 + 全部 msedgewebview2 子进程"合计（启动后 5 分钟采样），基线记入本文件备注（验收: 约束 §5；完成标志: 数据落档且 ≤150MB，超限则先减依赖再继续）<!-- 2026-09-09 完成：任务管理器口径（私有工作集合计）97.9MB ≤150MB 达标，明细见文末备注 -->
-- [ ] T4 文档回填：CLAUDE.md 目录树（src/ + src-tauri/ 职责）与"常用命令"（dev/build/test）、README 快速开始补桌面版入口、CHANGELOG Unreleased（验收: DoD 文档项）
+- [x] T4 文档回填：CLAUDE.md 目录树（src/ + src-tauri/ 职责）与"常用命令"（dev/build/test）、README 快速开始补桌面版入口、CHANGELOG Unreleased（验收: DoD 文档项）<!-- 2026-09-09 完成：CLAUDE.md 常用命令补齐 + 目录树标注技术栈；README 快速开始增桌面工作台入口（sprint0 内容未动）；CHANGELOG Unreleased 记 T1/T2 用户可感知变更；src/.gitkeep 已随实文件落地清理 -->
 
 ## 阶段 2: 核心逻辑（测试先行）
 

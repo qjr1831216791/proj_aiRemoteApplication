@@ -21,6 +21,14 @@
 
 本地环境变量：`cp .env.example .env` 后填入真实值。
 
+**桌面工作台**（Sprint 1 开发中，[specs/001-desktop-console](specs/001-desktop-console/spec.md)）：托盘常驻的图形控制台，逐步接管上述脚本的总控职责。开发态拉起桌面窗口：
+
+```bash
+cd apps/workbench
+npm install
+npm run tauri dev
+```
+
 ## 目录结构
 
 以 [CLAUDE.md](CLAUDE.md) 的"目录结构"一节为唯一来源，此处不重复维护。
