@@ -83,6 +83,8 @@ proj_aiRemoteApplication/
 
 桌面版工作台（`apps/workbench/`，Tauri 2：前端 Preact + TS + Vite，宿主 Rust 在 `src-tauri/`）：
 
+双击 `apps/workbench/start-here.bat` 进傻瓜式操作菜单（开发运行/测试/构建/打包，等价下列命令）；
+
 ```bash
 cd apps/workbench
 npm install          # 首次或依赖变更后
