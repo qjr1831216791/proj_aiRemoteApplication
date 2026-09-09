@@ -84,10 +84,11 @@ pub fn switch_actions(
 // ── .env 解析（spec 004 §4.2，纯函数）───────────────────────────────────────
 
 /// 从 `.env` 内容提取 `KEY=VALUE`（忽略注释行/空行；值去首尾空白与成对引号）。
+/// 首行 BOM 剥离（set-frp-key.ps1 以 UTF-8 BOM 写出，PowerShell 5.1 回读兼容）。
 /// 找不到或值为空返回 None（调用方转为「未配置」引导，不 panic）。
 pub fn parse_env_value(content: &str, key: &str) -> Option<String> {
     for line in content.lines() {
-        let line = line.trim();
+        let line = line.trim().trim_start_matches('\u{feff}').trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -621,6 +622,12 @@ mod tests {
         assert_eq!(parse_env_value(env, "QUOTED").as_deref(), Some("hi there"));
         assert_eq!(parse_env_value(env, "MISSING"), None);
         assert_eq!(parse_env_value("SAKURA_FRP_KEY = spaced ", "SAKURA_FRP_KEY").as_deref(), Some("spaced"));
+        // BOM 兼容（set-frp-key.ps1 以 UTF-8 BOM 写出 .env）
+        assert_eq!(
+            parse_env_value("\u{feff}# comment\nSAKURA_FRP_KEY=bommed", "SAKURA_FRP_KEY").as_deref(),
+            Some("bommed"),
+            "首行 BOM 不应破坏键值解析"
+        );
     }
 
     #[test]

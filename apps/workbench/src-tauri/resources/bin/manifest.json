@@ -8,6 +8,7 @@
                   "install-https.ps1":  "37379d7974df92b138af42df91178fa37c92313c2ab35839b279d3485b0d57c7",
                   "enable-https.ps1":  "bb6c801b05bdc1b9e1f7f2218c8f8021d11aec2836fab8466ae92f9558a9956b",
                   "install-client.ps1":  "357ed400ef580a011fa35ab7a5aab7af080619bdaec40b270847795a69f45805",
-                  "reset-ddns-password.ps1":  "7952510bed946f62f0f3a3e6e508aa5700146e66b1288c0ce4ac6a572e0c7028"
+                  "reset-ddns-password.ps1":  "7952510bed946f62f0f3a3e6e508aa5700146e66b1288c0ce4ac6a572e0c7028",
+                  "set-frp-key.ps1":  "b7047acd86ca8bac2a981c4d09ca9c7c23f9b256c37f559554bfdb53665e812c"
               }
 }

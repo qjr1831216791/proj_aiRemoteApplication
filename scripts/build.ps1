@@ -52,6 +52,7 @@ $ScriptSubset = @(
     'enable-https.ps1'        # HTTPS 环境配置（UAC）
     'install-client.ps1'      # 客户端配置（交互式）
     'reset-ddns-password.ps1' # ddns-go 密码重置（交互式，spec 003）
+    'set-frp-key.ps1'         # SakuraFrp 访问密钥写入 .env（交互式，spec 004）
 )
 
 function Write-Step { param([string]$Msg) Write-Host "`n==> $Msg" -ForegroundColor Cyan }
