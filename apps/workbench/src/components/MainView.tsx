@@ -52,12 +52,12 @@ export function MainView(props: MainViewProps) {
     return () => clearInterval(id);
   }, []);
 
-  // 网络归类切换的两步确认（5s 未确认自动还原，spec 002 AC5 风险说明先行）
+  // 网络归类切换的两步确认（需求方定：30s 未确认自动还原，给足阅读风险文案时间）
   const [confirmIf, setConfirmIf] = useState<number | null>(null);
   const [confirmCat, setConfirmCat] = useState<"private" | "public" | null>(null);
   useEffect(() => {
     if (confirmIf === null) return;
-    const id = setTimeout(() => setConfirmIf(null), 5000);
+    const id = setTimeout(() => setConfirmIf(null), 30000);
     return () => clearTimeout(id);
   }, [confirmIf]);
 

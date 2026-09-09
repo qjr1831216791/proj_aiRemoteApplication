@@ -17,7 +17,7 @@
 | 检测通道 | PowerShell 隐藏执行（一次调用合并规则+网络查询，输出 JSON） | 无新增依赖；与 sprint0/APP 既有执行口径一致；逻辑集中在脚本串便于对齐 Windows 语义 | Rust 原生 COM（NetworkList Manager + NetFwPolicy2）：两个 COM 面只为省一次进程拉起，不值 |
 | 轮询节奏 | 独立线程 15s（AC 上限 30s），变化才发事件 | 组件状态 2s 轮询共享会让 PS 拉起过频；事件按变化去重免前端抖动 | 复用 2s poller：PS 进程 2s/次浪费 |
 | 修改通道 | `ShellExecuteW verb=runas` 派发 `Set-NetConnectionProfile -InterfaceIndex N -NetworkCategory Private|Public` | 复用既有 elevate 原语与 UAC 拒绝文案（`shell_error_text`）；结果经轮询复测闭环 | 程序内自提权：需整段提权基础设施，过度设计 |
-| 前端确认 | 两步内联确认（首次点击变"确认"态 + 风险文案，5s 未确认自动还原） | 零依赖、可测；风险说明先于执行（AC5） | 系统对话框：Tauri 无内置 confirm 插件，引入 dialog 插件为单一用途不值 |
+| 前端确认 | 两步内联确认（首次点击变"确认"态 + 风险文案，30s 未确认自动还原——需求方定时长，给足阅读风险时间） | 零依赖、可测；风险说明先于执行（AC5） | 系统对话框：Tauri 无内置 confirm 插件，引入 dialog 插件为单一用途不值 |
 
 ## 3. 架构设计
 
