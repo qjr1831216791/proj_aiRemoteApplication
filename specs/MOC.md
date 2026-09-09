@@ -5,7 +5,7 @@
 ## 按状态导航
 
 ### 🟡 草稿（draft）
-- （暂无）
+- [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：周期探测 + 不通红色标记 + 失效分层定责（DNS/本机组件/全链路），口径如实标注不冒充外部视角（Sprint 4，draft 待确认）
 
 ### 🔵 已确认（reviewed）
 - [004-tunnel-access](./004-tunnel-access/spec.md) — 内网穿透双通道：直连（DDNS，默认）⇄ 穿透（SakuraFrp 香港节点）用户可切换，隧道进程托管与守护、双向 DNS 切换指引（需求方委托决策，2026-09-09 置 reviewed）
