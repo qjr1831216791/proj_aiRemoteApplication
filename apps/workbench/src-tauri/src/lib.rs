@@ -8,6 +8,7 @@
 mod consts;
 mod lang;
 mod probe;
+mod scripts;
 mod settings;
 mod single_instance;
 mod tray;
