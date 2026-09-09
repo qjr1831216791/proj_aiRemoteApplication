@@ -99,9 +99,9 @@ pub struct Settings {
 - frpc 启动时由 Rust 读 `.env` 拼装 `-f <key>:<id>`；key 不进日志、不进事件、不进 settings.json。
 - 已知暴露面：进程命令行含 key（本机其他本地用户经 WMI 可见）——单人自用场景接受，缓解：`enable-https.ps1` 已将栈目录置于用户profile 外的固定路径，文档提示保持登录用户唯一；风险表持续跟踪。
 
-### 4.3 frpc 分发
+### 4.3 frpc 部署（不入库）
 
-`frpc.exe`（定制版，Windows amd64）入 `apps/workbench/src-tauri/resources/bin/`，登记 manifest 哈希（沿 003 先例）；`scripts/build.ps1` 打包副本同步（沿 sprint0 脚本同步先例）。版本锁定 + 文档给手动下载指引。
+`frpc.exe`（定制版 `0.51.0-sakura-14`，Windows amd64，SHA256 `b70526…5234`）**放栈目录运行**（`D:\Software\cloudcli-https\frpc.exe`），**不入 git 仓库、不进打包**——遵循项目既有惯例（caddy/ddns-go 同为栈目录二进制，`resources/bin` 仅承载 sprint0 脚本副本）。工作台侧只做**存在性检查**：启用穿透时发现 frpc 缺失 → 指引用户下载（官方 URL + SHA256 校验值写入指引文案），缺失态不阻塞直连通道。
 
 ## 5. 接口契约（Tauri commands / events）
 
@@ -153,3 +153,4 @@ pub struct Settings {
 | 日期 | 变更内容 | 原因 |
 |------|----------|------|
 | 2026-09-09 | 初稿 | spec reviewed 后落定 6 项开放问题：frpc 命令行接入、HTTPS 隧道 TLS 透传至本地 caddy、DNS-01 续期实证免迁移、守护退避策略、停用交互（TunnelDisabled 态）、nslookup 检测通道 |
+| 2026-09-09 | §4.3 修正：frpc.exe 不入仓库/打包，改栈目录部署 + 存在性检查 | 发现 `resources/bin` 定位仅为 sprint0 脚本副本，项目惯例二进制不入库（caddy/ddns-go 先例）；manifest 亦非 Rust 消费而是打包说明清单 |
