@@ -132,6 +132,8 @@ export const en = {
   "settings.setFrpKeyDispatched": "Key setup window opened; please type it in the console",
   "settings.setFrpKeyHint":
     "Get the key: natfrp.com user center → View Access Key; stored as SAKURA_FRP_KEY in the stack directory .env",
+  "settings.frpcDeploy":
+    "frpc client deployment (new machine/environment): download frpc_windows_amd64 (panel \"Software Download\" page, or https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe , SHA256 prefix b70526…), put it into the stack directory as frpc.exe. Without it, direct channel is unaffected and switching to tunnel is blocked with a notice",
 
   // Tunnel channel (spec 004)
   "tunnel.title": "Access Channel",

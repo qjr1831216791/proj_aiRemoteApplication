@@ -212,6 +212,7 @@ export function SettingsView(props: SettingsViewProps) {
           </button>
         </div>
         <p class="muted">{t("settings.setFrpKeyHint", lang)}</p>
+        <p class="muted">{t("settings.frpcDeploy", lang)}</p>
       </section>
 
       {/* 语言（AC25：切换立即生效） */}
