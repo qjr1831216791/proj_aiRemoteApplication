@@ -12,6 +12,7 @@ mod probe;
 mod scripts;
 mod settings;
 mod single_instance;
+mod stop;
 mod tray;
 
 use tauri::{Emitter, Manager};

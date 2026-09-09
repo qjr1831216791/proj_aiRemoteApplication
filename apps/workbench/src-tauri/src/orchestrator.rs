@@ -19,6 +19,7 @@ use crate::scripts::{
     caddy_run, ddns_go_run, interpret_exit, run_server_hidden, CommandExecutor, CommandSpec,
     ExecOutcome, Script, ScriptOutcome,
 };
+use crate::stop::{ProcessOps, StopConfig, StopOutcome};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -235,6 +236,8 @@ pub struct OrchestratorConfig {
     pub poll_interval: Duration,
     /// 启动就绪超时（默认 60s，AC1）
     pub start_timeout: Duration,
+    /// 停止管线配置（默认 5s/10s/500ms，spec §4.4/AC2）
+    pub stop: StopConfig,
     /// 脚本语言（-Lang 对齐，AC25）
     pub lang: Lang,
     /// 程序日志目录（stdio 重定向与失败尾部来源）
@@ -248,6 +251,7 @@ impl OrchestratorConfig {
         Self {
             poll_interval: FOREGROUND_POLL_INTERVAL,
             start_timeout: START_READY_TIMEOUT,
+            stop: StopConfig::default(),
             lang,
             log_dir,
             scripts_dir: None,
@@ -271,12 +275,14 @@ impl PollerHandle {
     }
 }
 
-/// 编排器：启动侧状态机 + 状态轮询 + 事件发射（Clone 为廉价句柄，全 Arc 字段）
+/// 编排器：启动侧状态机 + 停止管线接入 + 状态轮询 + 事件发射
+/// （Clone 为廉价句柄，全 Arc 字段）
 #[derive(Clone)]
 pub struct Orchestrator {
     cfg: OrchestratorConfig,
     probe: Arc<dyn StatusProbe>,
     executor: Arc<dyn CommandExecutor>,
+    procs: Arc<dyn ProcessOps>,
     events: Arc<dyn StatusEventSink>,
     logs: Arc<dyn LogTailReader>,
     statuses: Arc<Mutex<Vec<ComponentStatus>>>,
@@ -288,6 +294,7 @@ impl Orchestrator {
         cfg: OrchestratorConfig,
         probe: Arc<dyn StatusProbe>,
         executor: Arc<dyn CommandExecutor>,
+        procs: Arc<dyn ProcessOps>,
         events: Arc<dyn StatusEventSink>,
         logs: Arc<dyn LogTailReader>,
     ) -> Self {
@@ -305,6 +312,7 @@ impl Orchestrator {
             cfg,
             probe,
             executor,
+            procs,
             events,
             logs,
             statuses: Arc::new(Mutex::new(statuses)),
@@ -393,6 +401,76 @@ impl Orchestrator {
             })
             .expect("轮询线程创建失败");
         PollerHandle { stop, join: Some(join) }
+    }
+
+    /// 单组件停止（AC2）：先等待/取消在途启动（spec §4.4 竞态消除），再执行
+    /// 停止管线；结论映射状态（复核失败/超时 → failed 附原因与排查命令）。
+    pub fn stop_one(&self, id: ComponentId) -> StopOutcome {
+        let cfg = &self.cfg.stop;
+        // §4.4：停止先等待或取消在途启动，再判定端口
+        if self.tracker.cancel(id) {
+            log::info!("组件 {} 存在在途启动：已请求取消并等待其退出", id.as_str());
+        }
+        if !self.tracker.wait_idle(id, cfg.component_timeout) {
+            log::warn!(
+                "组件 {} 在途启动未在 {}s 内退出：按端口口径继续停止",
+                id.as_str(),
+                cfg.component_timeout.as_secs()
+            );
+        }
+        let deadline = Instant::now() + cfg.component_timeout;
+        let outcome = match id {
+            ComponentId::CloudCli => crate::stop::stop_cloudcli(
+                self.probe.as_ref(),
+                self.procs.as_ref(),
+                cfg,
+                deadline,
+            ),
+            ComponentId::Caddy => crate::stop::stop_caddy(
+                self.probe.as_ref(),
+                self.executor.as_ref(),
+                self.procs.as_ref(),
+                cfg,
+                &self.cfg.log_dir,
+                deadline,
+            ),
+            ComponentId::DdnsGo => crate::stop::stop_ddnsgo(
+                self.probe.as_ref(),
+                self.procs.as_ref(),
+                cfg,
+                deadline,
+            ),
+        };
+        match &outcome {
+            StopOutcome::AlreadyStopped | StopOutcome::Stopped => {
+                self.set_state(id, ComponentState::Stopped, None);
+                log::info!("组件 {} 已停止（{:?}）", id.as_str(), outcome);
+            }
+            StopOutcome::Failed(detail) | StopOutcome::TimedOut(detail) => {
+                // AC2：复核失败 → failed 附原因；超时 → 记日志 + 手动排查命令
+                log::error!("组件 {} 停止未完全成功：{detail}", id.as_str());
+                self.set_state(id, ComponentState::Failed, Some(detail.clone()));
+            }
+        }
+        outcome
+    }
+
+    /// 一键停止：三组件并行（plan §3.2 收摊时序；单组件各自 10s 预算互不阻塞）
+    pub fn stop_all(&self) -> Vec<(ComponentId, StopOutcome)> {
+        let handles: Vec<_> = COMPONENT_ORDER
+            .iter()
+            .map(|&id| {
+                let me = self.clone();
+                std::thread::Builder::new()
+                    .name(format!("wb-stop-{}", id.as_str()))
+                    .spawn(move || (id, me.stop_one(id)))
+                    .expect("停止线程创建失败")
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("停止线程崩溃"))
+            .collect()
     }
 
     // ── 内部 ───────────────────────────────────────────────────────────
@@ -704,6 +782,16 @@ pub(crate) mod test_support {
             self.sticky_holders.lock().unwrap().insert(port, holders);
         }
 
+        /// 停止侧剧本：按序消费（定位→…→复核 各阶段快照），耗尽粘住末值
+        pub fn enqueue_holders(&self, port: u16, holders: &[PortHolders]) {
+            self.holders
+                .lock()
+                .unwrap()
+                .entry(port)
+                .or_default()
+                .extend(holders.iter().cloned());
+        }
+
         pub fn probe_calls(&self) -> usize {
             self.probe_calls.load(Ordering::SeqCst)
         }
@@ -797,12 +885,13 @@ pub(crate) mod test_support {
         }
     }
 
-    /// 执行器 mock：记录规格 + 可编退出码（粘性末值）
+    /// 执行器 mock：记录规格 + 可编退出码（粘性末值）+ 可选调用日志
     pub struct MockExecutor {
         pub executed: Mutex<Vec<CommandSpec>>,
         pub dispatched: Mutex<Vec<CommandSpec>>,
         exits: Mutex<VecDeque<ExecOutcome>>,
         dispatch_err: Option<String>,
+        log: Option<Arc<CallLog>>,
     }
 
     impl MockExecutor {
@@ -812,7 +901,15 @@ pub(crate) mod test_support {
                 dispatched: Mutex::new(vec![]),
                 exits: Mutex::new(VecDeque::new()),
                 dispatch_err: None,
+                log: None,
             }
+        }
+
+        /// 绑定调用日志（与 probe/procs mock 联合断言跨 trait 顺序）
+        pub fn with_log(log: Arc<CallLog>) -> Self {
+            let mut me = Self::new();
+            me.log = Some(log);
+            me
         }
 
         pub fn with_exits(exits: &[ExecOutcome]) -> Self {
@@ -837,6 +934,9 @@ pub(crate) mod test_support {
     impl CommandExecutor for MockExecutor {
         fn execute(&self, spec: &CommandSpec) -> ExecOutcome {
             self.executed.lock().unwrap().push(spec.clone());
+            if let Some(log) = &self.log {
+                log.record(format!("exec:{}", spec.command_line()));
+            }
             self.exits
                 .lock()
                 .unwrap()
@@ -846,10 +946,78 @@ pub(crate) mod test_support {
 
         fn dispatch(&self, spec: &CommandSpec) -> Result<(), String> {
             self.dispatched.lock().unwrap().push(spec.clone());
+            if let Some(log) = &self.log {
+                log.record(format!("dispatch:{}", spec.command_line()));
+            }
             match &self.dispatch_err {
                 Some(e) => Err(e.clone()),
                 None => Ok(()),
             }
+        }
+    }
+
+    /// 进程操作 mock：可编树/路径映射，调用全部记录日志（顺序断言用）
+    pub struct MockProcessOps {
+        log: Option<Arc<CallLog>>,
+        descendants_map: Mutex<HashMap<u32, Vec<u32>>>,
+        by_exe: Mutex<HashMap<String, Vec<u32>>>,
+    }
+
+    impl MockProcessOps {
+        pub fn new() -> Self {
+            Self {
+                log: None,
+                descendants_map: Mutex::new(HashMap::new()),
+                by_exe: Mutex::new(HashMap::new()),
+            }
+        }
+
+        pub fn with_log(log: Arc<CallLog>) -> Self {
+            let mut me = Self::new();
+            me.log = Some(log);
+            me
+        }
+
+        pub fn set_descendants(&self, pid: u32, children: &[u32]) {
+            self.descendants_map
+                .lock()
+                .unwrap()
+                .insert(pid, children.to_vec());
+        }
+
+        pub fn set_by_exe(&self, exe: &str, pids: &[u32]) {
+            self.by_exe.lock().unwrap().insert(exe.to_string(), pids.to_vec());
+        }
+    }
+
+    impl Default for MockProcessOps {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl crate::stop::ProcessOps for MockProcessOps {
+        fn descendants(&self, pid: u32) -> Vec<u32> {
+            let children = self.descendants_map.lock().unwrap().get(&pid).cloned().unwrap_or_default();
+            if let Some(log) = &self.log {
+                log.record(format!("procs:descendants({pid})->{children:?}"));
+            }
+            children
+        }
+
+        fn pids_by_exe(&self, exe: &str) -> Vec<u32> {
+            let pids = self.by_exe.lock().unwrap().get(exe).cloned().unwrap_or_default();
+            if let Some(log) = &self.log {
+                log.record(format!("procs:pids_by_exe({exe})->{pids:?}"));
+            }
+            pids
+        }
+
+        fn kill(&self, pid: u32) -> Result<(), String> {
+            if let Some(log) = &self.log {
+                log.record(format!("procs:kill({pid})"));
+            }
+            Ok(())
         }
     }
 
@@ -888,11 +1056,17 @@ pub(crate) mod test_support {
 mod tests {
     use super::test_support::*;
     use super::*;
+    use crate::probe::PortHolders;
 
     fn test_cfg() -> OrchestratorConfig {
         let mut cfg = OrchestratorConfig::new(Lang::Zh, PathBuf::from(r"D:\test-logs"));
         cfg.poll_interval = Duration::from_millis(5);
         cfg.start_timeout = Duration::from_millis(300);
+        cfg.stop = StopConfig {
+            caddy_stop_timeout: Duration::from_millis(500),
+            component_timeout: Duration::from_secs(2),
+            port_grace: Duration::from_millis(0),
+        };
         cfg.scripts_dir = Some(PathBuf::from(r"D:\test-scripts"));
         cfg
     }
@@ -907,6 +1081,7 @@ mod tests {
             test_cfg(),
             probe,
             executor,
+            Arc::new(MockProcessOps::new()),
             sink.clone(),
             logs.clone(),
         );
@@ -1187,7 +1362,14 @@ mod tests {
         let logs = Arc::new(MockLogTail::default());
         let mut cfg = test_cfg();
         cfg.scripts_dir = None;
-        let orch = Orchestrator::new(cfg, probe, exec.clone(), sink, logs);
+        let orch = Orchestrator::new(
+            cfg,
+            probe,
+            exec.clone(),
+            Arc::new(MockProcessOps::new()),
+            sink,
+            logs,
+        );
         orch.start_one(ComponentId::CloudCli).unwrap();
         assert!(orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)));
         let st = state_of(&orch, ComponentId::CloudCli);
@@ -1312,7 +1494,14 @@ mod tests {
         cfg.poll_interval = Duration::from_millis(10);
         let sink = Arc::new(MockEventSink::default());
         let logs = Arc::new(MockLogTail::default());
-        let orch = Orchestrator::new(cfg, probe.clone(), exec, sink, logs);
+        let orch = Orchestrator::new(
+            cfg,
+            probe.clone(),
+            exec,
+            Arc::new(MockProcessOps::new()),
+            sink,
+            logs,
+        );
 
         let handle = orch.spawn_poller();
         std::thread::sleep(Duration::from_millis(150));
@@ -1343,6 +1532,110 @@ mod tests {
         orch.start_all();
         for id in COMPONENT_ORDER {
             assert!(orch.wait_start_idle(id, Duration::from_secs(2)));
+        }
+    }
+
+    // ── 停止接入（T9）──────────────────────────────────────────────────
+
+    #[test]
+    fn stop_one_runs_pipeline_and_updates_state() {
+        // CloudCLI：定位(占) → 杀 → 复核(空) → Stopped；事件同步
+        let probe = Arc::new(ScriptedProbe::new());
+        probe.pin(ComponentId::CloudCli, running()); // 先处于运行态
+        probe.enqueue_holders(
+            3001,
+            &[
+                holders(&[addr([127, 0, 0, 1])], &[(100, Some(r"C:\n\node.exe"), Some("node.exe"))]),
+                PortHolders::default(),
+            ],
+        );
+        let exec = Arc::new(MockExecutor::new());
+        let (orch, sink, _) = build(probe, exec);
+        orch.refresh_all(); // 迁移到 Running（事件 [Running]）
+
+        let outcome = orch.stop_one(ComponentId::CloudCli);
+        assert_eq!(outcome, StopOutcome::Stopped);
+        assert_eq!(
+            state_of(&orch, ComponentId::CloudCli).state,
+            ComponentState::Stopped
+        );
+        assert_eq!(
+            timeline(&sink, ComponentId::CloudCli),
+            vec![ComponentState::Running, ComponentState::Stopped]
+        );
+    }
+
+    #[test]
+    fn stop_all_isolates_component_failure() {
+        // AC2：cloudcli 复核失败（端口重占）不得阻塞其余组件停止
+        let probe = Arc::new(ScriptedProbe::new());
+        // cloudcli：定位与复核均被 node 占 → Failed；其余组件端口默认空 → AlreadyStopped
+        probe.pin_holders(
+            3001,
+            holders(&[addr([127, 0, 0, 1])], &[(100, Some(r"C:\n\node.exe"), Some("node.exe"))]),
+        );
+        let exec = Arc::new(MockExecutor::new());
+        let (orch, sink, _) = build(probe, exec);
+
+        let outcomes: std::collections::HashMap<ComponentId, StopOutcome> =
+            orch.stop_all().into_iter().collect();
+        assert_eq!(outcomes.len(), 3, "全部组件都应得到结论（互不阻塞）");
+        assert!(matches!(outcomes[&ComponentId::CloudCli], StopOutcome::Failed(_)), "复核失败应上报");
+        assert_eq!(outcomes[&ComponentId::Caddy], StopOutcome::AlreadyStopped);
+        assert_eq!(outcomes[&ComponentId::DdnsGo], StopOutcome::AlreadyStopped);
+
+        // 状态：失败组件 failed 附原因；其余 stopped
+        assert_eq!(state_of(&orch, ComponentId::CloudCli).state, ComponentState::Failed);
+        let detail = state_of(&orch, ComponentId::CloudCli).detail.unwrap();
+        assert!(detail.contains("复核未通过") && detail.contains("netstat"), "{detail}");
+        assert_eq!(state_of(&orch, ComponentId::Caddy).state, ComponentState::Stopped);
+        assert_eq!(state_of(&orch, ComponentId::DdnsGo).state, ComponentState::Stopped);
+        assert_eq!(
+            timeline(&sink, ComponentId::CloudCli),
+            vec![ComponentState::Failed]
+        );
+    }
+
+    #[test]
+    fn stop_cancels_inflight_start_quickly() {
+        // spec §4.4：停止先等待/取消在途启动再判定端口；
+        // 取消后启动线程不得再迁移状态（不会把 Stopped 打回 Starting/Failed）
+        let probe = Arc::new(ScriptedProbe::new());
+        probe.pin(ComponentId::CloudCli, ProbeState::Stopped); // 启动永远不就绪
+        let mut cfg = test_cfg();
+        cfg.start_timeout = Duration::from_secs(8); // 在途远长于停止预算
+        let sink = Arc::new(MockEventSink::default());
+        let logs = Arc::new(MockLogTail::default());
+        let orch = Orchestrator::new(
+            cfg,
+            probe,
+            Arc::new(MockExecutor::new()),
+            Arc::new(MockProcessOps::new()),
+            sink.clone(),
+            logs,
+        );
+
+        orch.start_one(ComponentId::CloudCli).unwrap();
+        let begun = Instant::now();
+        let outcome = orch.stop_one(ComponentId::CloudCli);
+        assert_eq!(outcome, StopOutcome::AlreadyStopped);
+        assert!(
+            begun.elapsed() < Duration::from_secs(2),
+            "取消应在途启动后立即继续（实际 {:?}）",
+            begun.elapsed()
+        );
+        assert!(orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)));
+        assert_eq!(
+            state_of(&orch, ComponentId::CloudCli).state,
+            ComponentState::Stopped,
+            "取消路径的终态由停止管线决定"
+        );
+        // 启动线程已在 wait_idle 前退出：其后不得再出现 Starting/Failed 覆盖
+        // （取消发生在 Starting 之前时时间线为空，同样合法）
+        let tl = timeline(&sink, ComponentId::CloudCli);
+        match tl.last() {
+            None | Some(ComponentState::Stopped) => {}
+            other => panic!("取消后启动线程不得再覆盖状态：{other:?}（完整 {tl:?}）"),
         }
     }
 }
