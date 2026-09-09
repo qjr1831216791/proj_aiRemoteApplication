@@ -41,7 +41,8 @@
 
 ## 阶段 6: 验收与发布
 
-- [ ] T16 执行文末"手工验收清单"并逐条记录结果（验收: 全部 GUI 类 AC）
+- [ ] T16 执行文末"手工验收清单"并逐条记录结果（验收: 全部 GUI 类 AC）<!-- 自动化部分 2026-09-09 完成：①全套 `cargo test` 118 passed + 1 ignored、`npm run build` 零错误（逻辑类 AC 基线绿：settings 13/probe 11/scripts 18/orchestrator/stop/exit_flow 7/autostart 16/startup 5，AC1/3/5/7/8/9/21/23/24/25 逻辑层全覆盖；AC18/24 另有 T2/T14 真机实证）；②AC16 进程级实证（T17 安装版验证中顺带：三组件运行中 taskkill 程序→3001/443/9876 监听 PID 原样存活→重启程序日志"组件 caddy 已在运行：守卫跳过（AC3 幂等）"完成接管、无重复进程）；③加固托盘 explorer.exe 强杀重启→程序存活、`tray_icon_app` 托盘窗口仍在（进程级通过；图标视觉恢复因锁屏态无法人眼核验，留手工清单该项）；④AC8/9 真机 roundtrip 已在 T11 注记（不重复动 Sprint0 任务）。手工操作手册：[acceptance-manual.md](./acceptance-manual.md) -->
+- [x] T17 一键构建与双形态分发产物：`scripts/build.ps1`（同步 `resources/bin` 脚本副本并校验与 app 版本对齐 → `tauri build`（NSIS，**embedBootstrapper**）→ 便携 zip（exe + resources，目录结构与安装版一致，附简要说明）→ 产物命名 `<app>_<版本>_<arch>`、体积记录入文末备注）；干净机验证三路径：安装器双击安装、便携包解压即用、**覆盖安装升级（设置保留）**；SmartScreen"仍要运行"引导写入安装说明（验收: 目标/约束 §5 打包分发项、plan §7 脚本耦合；完成标志: 双形态产物落档 + 三路径验证记录）<!-- 2026-09-09 完成：build.ps1（BOM+CRLF；净 PSModulePath 中 WindowsApps 污染修 Get-FileHash/Compress-Archive 失效）五步流水：版本对齐(0.2.0 三处)→脚本子集同步(SHA256 逐文件比对+manifest.json 清单，6 脚本)→tauri build→便携 zip(exe+resources+README 含 SmartScreen 引导)→release/ 落位命名；tauri.conf.json 补 `bundle.resources=["resources/bin/*"]` 与 `windows.nsis.installMode=currentUser`。踩坑：NSIS 工具链 GitHub 直连超时（plan §7 预判风险），按 tauri-bundler 2.9.4 源码 NSIS_REQUIRED_FILES 清单经 ghfast.top 镜像补齐 nsis-3.11.zip+nsis_tauri_utils.dll（SHA1 与常量逐一核对）落位 %LOCALAPPDATA%\tauri\NSIS。三路径真机结论见文末备注 -->
 - [ ] T17 一键构建与双形态分发产物：`scripts/build.ps1`（同步 `resources/bin` 脚本副本并校验与 app 版本对齐 → `tauri build`（NSIS，**embedBootstrapper**）→ 便携 zip（exe + resources，目录结构与安装版一致，附简要说明）→ 产物命名 `<app>_<版本>_<arch>`、体积记录入文末备注）；干净机验证三路径：安装器双击安装、便携包解压即用、**覆盖安装升级（设置保留）**；SmartScreen"仍要运行"引导写入安装说明（验收: 目标/约束 §5 打包分发项、plan §7 脚本耦合；完成标志: 双形态产物落档 + 三路径验证记录）
 - [ ] T18 收尾：对照 [spec.md](./spec.md) 逐条勾选 AC；tasks 全勾；README/CHANGELOG/MOC 状态流转（in-progress → done）；CHANGELOG 发布节 + `vX.Y.Z` 标签准备
 
@@ -84,4 +85,12 @@
 - 进程明细（私有工作集）：workbench 2.7 · wv2 31.2 / 34.4 / 19.0 / 5.4 / 3.3 / 1.8 MB
 - T13~T15 界面与业务接入后建议复核一次；若届时超限，按"先减依赖再继续"处理
 
-**备注（T17 分发产物）**：（执行时填写：日期 / 双形态产物名与体积 / 三路径验证结论）
+**备注（T17 分发产物）**：2026-09-09 · `scripts/build.ps1` 一键产出，落位 `release/`（已 .gitignore）：
+- **产物**：`AI-Remote-Workbench_0.2.0_x64-setup.exe` **2.79 MB**（NSIS，embedBootstrapper + currentUser）/ `AI-Remote-Workbench_0.2.0_x64.zip` **1.44 MB**（便携：ai-remote-workbench.exe + resources\bin\[6 脚本+manifest.json] + README.txt[含 SmartScreen"仍要运行"引导，中英双语]）；均 ≤15MB 约束达标（约束 §5）
+- **三路径验证**（开发机代替干净机，锁屏态进程级口径——tasklist/netstat/窗口枚举/日志/注册表，无截图点击）：
+  - 路径1 安装器：`/S` 静默装 → `%LOCALAPPDATA%\AI-Remote-Workbench`（exe+uninstall.exe+resources\bin 齐）；`--hidden` 启动 → 进程存活、主窗 `Tauri Window` 隐藏、**托盘窗口类 `tray_icon_app` 存在**、日志含"sprint0 脚本目录：…\resources\bin（**来源 bundled**）"；联动补齐拉起三组件（caddy 2.0s / ddns-go 2.0s / cloudcli 4.1s 就绪，3001/443/9876 全 LISTENING）；开始菜单 `AI-Remote-Workbench.lnk` 与 HKCU 卸载键（DisplayVersion 0.2.0）均在
+  - 路径2 便携包：解压 zip → `--hidden` 运行 → 进程存活、日志同样命中"来源 bundled"（`<解压目录>\resources\bin`）；联动关（linkStartServices=false）→ 零派发、三端口静默，配置语义随包生效
+  - 路径3 覆盖安装升级：预写非默认 settings.json（language=en、linkStartServices=false）→ 重新 `/S` 安装 → **设置逐字保留**（language 仍 en）、安装目录与 resources 完好
+- **resources 生效性**（T17 第4项）：ScriptLocator 内置副本路径在安装版/便携版双实证命中（日志共 3 次"来源 bundled"），`--hidden` 启动无禁用告警、脚本派发正常
+- 卸载复原：`uninstall.exe /S` → 安装目录/卸载键/开始菜单三残留全清；解压目录与测试用 settings.json 已清理；终态三组件全停、无 workbench 进程、Sprint0 三任务原状
+- 分发提示：SmartScreen"仍要运行"引导在便携包 README.txt 与本备注双落位（README 快速开始入口的文案核对留 T18 随 CHANGELOG 一并回看）
