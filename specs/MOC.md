@@ -11,10 +11,11 @@
 - （暂无）
 
 ### 🟠 实现中（in-progress）
-- [002-network-profile](./002-network-profile/spec.md) — 网络防火墙归类反馈与调整：换网被拦截主动提示 + 用户决策改公用/专用（风险提示先行）
+- （暂无）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
+- [002-network-profile](./002-network-profile/spec.md) — 网络防火墙归类反馈与调整：换网被拦截主动提示 + 用户决策改公用/专用（风险提示先行）
 - [003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md) — ddns-go 密码重置：sprint0 交互式脚本 + APP 低频操作入口（密码不进 APP/IPC/日志）
 
 ### 📦 已归档（archived）
