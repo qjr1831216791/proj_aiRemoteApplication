@@ -189,6 +189,146 @@ pub async fn set_network_category(
     .map_err(|code| lang::shell_error_text(code, lang))
 }
 
+// ── 穿透通道（spec 004：AC5/6/7/11/12/13 命令层；逻辑在 tunnel/settings）────
+
+use crate::settings::SettingsPatch;
+use crate::tunnel::{
+    judge_dns, switch_actions, DnsAlignment, FrpcOps, SwitchAction, SwitchReject, TunnelManager,
+    TunnelStatus,
+};
+
+/// 隧道状态快照（启动兜底；此后以 `tunnel://status` 事件为准）
+#[tauri::command]
+pub fn get_tunnel_status(mgr: tauri::State<'_, TunnelManager>) -> TunnelStatus {
+    mgr.status()
+}
+
+/// 通道切换（AC5/6/7）：前置就绪校验（无副作用拒绝）→ 按状态机动作序执行 →
+/// 持久化。「先起新再停旧」序保证起新失败时旧通道无恙（tunnel.rs 状态机注释）。
+#[tauri::command]
+pub async fn switch_channel(
+    orch: tauri::State<'_, Orchestrator>,
+    mgr: tauri::State<'_, TunnelManager>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    target: crate::settings::AccessChannel,
+) -> Result<crate::settings::Settings, String> {
+    use crate::tunnel::WindowsFrpcOps;
+
+    let cur = settings.current();
+    // 前置就绪：穿透配置（settings.tunnel）∧ frpc 二进制 ∧ 访问密钥（AC7/AC14）
+    let ops = WindowsFrpcOps;
+    let tunnel_ready = cur.tunnel.is_some() && ops.exe_exists() && ops.access_key().is_some();
+    let actions = switch_actions(cur.access_channel, target, tunnel_ready).map_err(|e| match e {
+        SwitchReject::NotConfigured { .. } => {
+            "穿透未就绪：请先在穿透设置中填写隧道 ID 与节点域名，并按指引配置 frpc.exe 与访问密钥"
+                .to_string()
+        }
+        SwitchReject::AlreadyOnTarget => "已处于目标通道".to_string(),
+    })?;
+
+    for action in actions {
+        match action {
+            SwitchAction::StartFrpc => mgr.start()?,
+            SwitchAction::StopFrpc => mgr.stop(),
+            SwitchAction::StartDdnsGo => orch
+                .start_one(ComponentId::DdnsGo)
+                .map_err(|e| format!("ddns-go 启动派发失败：{e}"))?,
+            SwitchAction::StopDdnsGo => {
+                // 停止管线有 10s 预算 → spawn_blocking 不阻塞 UI 线程（沿 stop_all）
+                let orch2 = orch.inner().clone();
+                let outcome = tauri::async_runtime::spawn_blocking(move || {
+                    orch2.stop_one(ComponentId::DdnsGo)
+                })
+                .await
+                .map_err(|e| format!("停止线程失败：{e}"))?;
+                if !matches!(outcome, StopOutcome::Stopped | StopOutcome::AlreadyStopped) {
+                    return Err(format!(
+                        "ddns-go 停止未确认（{outcome:?}）：frpc 已启动，请检查 ddns-go 状态后重试"
+                    ));
+                }
+            }
+            SwitchAction::Persist(ch) => {
+                settings
+                    .patch(&SettingsPatch { access_channel: Some(ch), ..Default::default() })
+                    .map_err(|e| format!("通道持久化失败：{e}"))?;
+            }
+        }
+    }
+    Ok(settings.current())
+}
+
+/// 穿透启用/停用（AC11）：非穿透通道下仅改开关（守护循环按通道×开关收敛，
+/// 不在此处拉起/停止，避免与守护竞争）
+#[tauri::command]
+pub fn set_tunnel_enabled(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    enabled: bool,
+) -> Result<crate::settings::Settings, String> {
+    settings.patch(&SettingsPatch {
+        tunnel_enabled: Some(enabled),
+        ..Default::default()
+    })
+}
+
+/// DNS 对齐检测（AC12/13）：权威 NS 上的 CNAME/A 实况 → 对齐结论。
+/// `Err` = 查询本身失败（网络/解析器异常），前端如实显示"检测失败"。
+#[tauri::command]
+pub async fn check_dns_alignment(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<DnsAlignment, String> {
+    use crate::consts::{DOMAIN, DOMAIN_ROOT};
+    let node_domain = settings
+        .current()
+        .tunnel
+        .map(|t| t.node_domain)
+        .ok_or("穿透未配置，无需 DNS 对齐检测")?;
+    let probe = tauri::async_runtime::spawn_blocking(move || run_dns_probe(DOMAIN_ROOT, DOMAIN))
+        .await
+        .map_err(|e| format!("DNS 检测线程失败：{e}"))??;
+    Ok(judge_dns(probe.cname.as_deref(), probe.has_a, &node_domain))
+}
+
+/// Resolve-DnsName 三连查（NS → 权威 CNAME/A）的合成输出
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DnsProbeResult {
+    ns: Option<String>,
+    cname: Option<String>,
+    has_a: bool,
+}
+
+/// PowerShell 采集（沿 network.rs 先例：UTF8 输出 + CREATE_NO_WINDOW，一次
+/// 进程调用完成三查）。CNAME/A 无记录时字段为 null/false；NS 失败 = 权威
+/// 不可达 = 整体 Err。
+fn run_dns_probe(domain_root: &str, domain: &str) -> Result<DnsProbeResult, String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    let script = format!(
+        r#"[Console]::OutputEncoding=[Text.Encoding]::UTF8;
+$ErrorActionPreference='SilentlyContinue';
+$ns=@(Resolve-DnsName -Name {root} -Type NS -Server 223.5.5.5 -ErrorAction SilentlyContinue | Where-Object {{$_.Type -eq 2}} | Select-Object -First 1).NameHost;
+if(-not $ns){{ Write-Output '{{"ns":null,"cname":null,"hasA":false}}'; exit }};
+$cn=@(Resolve-DnsName -Name {dom} -Type CNAME -Server $ns -ErrorAction SilentlyContinue | Where-Object {{$_.Type -eq 5}} | Select-Object -First 1).NameHost;
+$aa=@(Resolve-DnsName -Name {dom} -Type A -Server $ns -ErrorAction SilentlyContinue | Where-Object {{$_.Type -eq 1}});
+[pscustomobject]@{{ns=$ns;cname=[string]$cn;hasA=($aa.Count -gt 0)}} | ConvertTo-Json -Compress"#,
+        root = domain_root,
+        dom = domain,
+    );
+    let output = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(crate::scripts::CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("PowerShell 拉起失败：{e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: DnsProbeResult = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("DNS 探测输出解析失败：{e}（输出：{:.200}）", stdout.trim()))?;
+    if parsed.ns.is_none() {
+        return Err("权威 DNS 查询失败：无法获取 NS 记录".into());
+    }
+    Ok(parsed)
+}
+
 // ── 单元测试（纯逻辑：停止汇总）────────────────────────────────────────────
 
 #[cfg(test)]

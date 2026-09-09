@@ -31,3 +31,16 @@ pub const DDNSGO_UI_URL: &str = "http://127.0.0.1:9876/";
 /// CloudCLI 监听进程的可执行名：run-server-hidden.ps1 经 npm 全局拉起 node.exe，
 /// 路径不定 → 身份按文件名匹配（AC7 双重判据）
 pub const CLOUDCLI_EXE_NAME: &str = "node.exe";
+
+// ── 穿透通道（spec 004 §4：与栈目录部署知识对齐，二进制不入库不入打包）──────
+
+/// frpc 可执行名（栈目录，plan §4.3：不入仓库/打包，沿 caddy/ddns-go 惯例）
+pub const FRPC_EXE_NAME: &str = "frpc.exe";
+/// 访问密钥所在环境文件（栈目录 `.env`，spec 004 §4.2）
+pub const FRPC_ENV_FILE: &str = ".env";
+/// 访问密钥变量名（`.env` 内，宪法 §3：不入日志/事件/设置文件）
+pub const SAKURA_KEY_VAR: &str = "SAKURA_FRP_KEY";
+/// frpc 运行日志（stdio 追加重定向，失败摘要来源；沿 ddns-go-run.log 先例）
+pub const FRPC_LOG_FILE: &str = "frpc-run.log";
+/// 对外域名根（权威 NS 查询起点，AC12/13 权威比对口径）
+pub const DOMAIN_ROOT: &str = "jackqi.cn";

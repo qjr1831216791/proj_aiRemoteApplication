@@ -20,6 +20,7 @@ mod single_instance;
 mod startup;
 mod stop;
 mod tray;
+mod tunnel;
 mod urls;
 
 use tauri::{Emitter, Manager};
@@ -93,6 +94,11 @@ pub fn run() {
             // spec 002：网络环境反馈与归类调整
             commands::get_net_status,
             commands::set_network_category,
+            // spec 004：穿透通道
+            commands::get_tunnel_status,
+            commands::switch_channel,
+            commands::set_tunnel_enabled,
+            commands::check_dns_alignment,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -186,6 +192,17 @@ pub fn run() {
             app.manage(net_monitor.clone());
             let _net_poller = net_monitor.spawn_poller();
 
+            // ── 穿透通道（spec 004）：frpc 管理器 + 守护线程 ────────────────
+            // 通道源/事件出口接 AppHandle（装配层适配，tunnel.rs 保持无 Tauri 依赖）；
+            // 守护线程每 5s 收敛「期望通道×开关 ↔ frpc 实况」（AC3/8/11）
+            let tunnel_mgr = std::sync::Arc::new(tunnel::TunnelManager::new(
+                std::sync::Arc::new(tunnel::WindowsFrpcOps),
+                std::sync::Arc::new(AppChannelSource { app: app.handle().clone() }),
+                std::sync::Arc::new(TauriTunnelEmitter { app: app.handle().clone() }),
+            ));
+            app.manage(tunnel_mgr.clone());
+            tunnel_mgr.spawn_guard();
+
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
 
@@ -225,6 +242,9 @@ pub fn run() {
                 // ADR-0002：三组件独立于程序存活、不挂 kill-on-close Job，
                 // 退出绝不无条件携带服务进程。
                 log::info!("ExitRequested(code={code:?})");
+                // spec 004 AC10：收摊语义覆盖隧道——frpc 与三组件一并退出
+                // （幂等：未运行时 kill 为无操作）
+                app.state::<tunnel::TunnelManager>().stop();
                 let stopper: std::sync::Arc<dyn exit_flow::ServiceStopper> = {
                     let orch = app.state::<orchestrator::Orchestrator>();
                     std::sync::Arc::new(orch.inner().clone())
@@ -271,6 +291,36 @@ fn build_net_monitor(app: tauri::AppHandle) -> network::NetMonitor {
     {
         let _ = app;
         unreachable!("本项目仅面向 Windows（ADR-0001）")
+    }
+}
+
+/// 通道感知配置源（spec 004）：实时读 SettingsState，供守护线程每轮取期望状态
+struct AppChannelSource {
+    app: tauri::AppHandle,
+}
+
+impl tunnel::ChannelSource for AppChannelSource {
+    fn channel_state(&self) -> (settings::AccessChannel, bool, Option<String>) {
+        let s = self.app.state::<settings::SettingsState>().current();
+        (
+            s.access_channel,
+            s.tunnel_enabled,
+            s.tunnel.as_ref().map(|t| t.tunnel_id.clone()),
+        )
+    }
+}
+
+/// 隧道状态事件出口（`tunnel://status`；载荷 TunnelStatus）
+struct TauriTunnelEmitter {
+    app: tauri::AppHandle,
+}
+
+impl tunnel::TunnelEventSink for TauriTunnelEmitter {
+    fn emit_tunnel_status(&self, status: &tunnel::TunnelStatus) {
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit(tunnel::EVENT_TUNNEL_STATUS, status) {
+            log::error!("发送 {} 失败：{e}", tunnel::EVENT_TUNNEL_STATUS);
+        }
     }
 }
 
