@@ -23,7 +23,7 @@
 
 | 迭代 | Spec | 交付目标 |
 |------|------|----------|
-| Sprint 1 | [001-desktop-console](./001-desktop-console/spec.md) | Windows 桌面程序：一键启停三组件、自启托管（含菜单 7/8 回归）、显式收摊、sprint0 全能力入口 |
+| Sprint 1 | [001-desktop-console](./001-desktop-console/spec.md) | Windows 桌面程序：一键启停三组件、自启托管（含菜单 7/8 回归）、显式收摊、sprint0 全能力入口（待手工验收收口） |
 
 ## 按主题导航
 

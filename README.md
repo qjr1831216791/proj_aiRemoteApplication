@@ -17,17 +17,26 @@
 
 ## 快速开始
 
-当前处于 **Sprint 0 试用阶段**（v0.1.0）：用现成的 CloudCLI 验证"手机遥控开发机上的 Claude Code"，自研立项待试用结论。开发机双击 [tools/sprint0/start-here.bat](tools/sprint0/start-here.bat) 进入总控菜单，上路引导见 [tools/sprint0/README.md](tools/sprint0/README.md)。
+Sprint 0（v0.1.0）已交付脚本化试用基建：用现成的 CloudCLI 验证"手机遥控开发机上的 Claude Code"。开发机双击 [tools/sprint0/start-here.bat](tools/sprint0/start-here.bat) 进入总控菜单，上路引导见 [tools/sprint0/README.md](tools/sprint0/README.md)。
 
 本地环境变量：`cp .env.example .env` 后填入真实值。
 
-**桌面工作台**（Sprint 1 开发中，[specs/001-desktop-console](specs/001-desktop-console/spec.md)）：托盘常驻的图形控制台，逐步接管上述脚本的总控职责。开发态拉起桌面窗口：
+**桌面工作台**（Sprint 1，[specs/001-desktop-console](specs/001-desktop-console/spec.md)，待手工验收后发布）：托盘常驻的图形控制台，接管上述脚本的总控职责——三组件状态与一键启停、自启托管、可控退出、低频操作入口，中英双语。开发态拉起桌面窗口：
 
 ```bash
 cd apps/workbench
 npm install
-npm run tauri dev
+npm run tauri dev    # 开发态（自动带起前端与 cargo）；npm run build 仅构建前端
+cargo test --manifest-path apps/workbench/src-tauri/Cargo.toml   # Rust 侧全套测试
 ```
+
+一键打包分发（Windows PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1
+```
+
+产出双形态产物落 `release/`（已 .gitignore）：`AI-Remote-Workbench_<版本>_x64-setup.exe`（NSIS 安装器，离线可装）与 `AI-Remote-Workbench_<版本>_x64.zip`（便携版，解压即用）；sprint0 脚本以内置副本随包分发，覆盖安装升级保留设置。未签名分发可能触发 SmartScreen，选择"仍要运行"（引导见便携包内 README.txt）。
 
 ## 目录结构
 
