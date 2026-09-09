@@ -6,6 +6,7 @@
 //! - T5~T15：业务命令（设置/探测/编排/自启/界面）逐步接入
 //!   - T10：退出流装配——编排器接入运行时 + ExitGate 意图 + 退出钩子收摊
 
+mod autostart;
 mod consts;
 mod exit_flow;
 mod lang;
@@ -70,6 +71,8 @@ pub fn run() {
             settings::get_settings,
             settings::save_settings,
             exit_flow::quit,
+            autostart::set_autostart_services,
+            autostart::set_autostart_app,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -142,6 +145,9 @@ pub fn run() {
 
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
+
+            // ── 自启上下文（T11）：脚本目录 + 日志目录（命令薄封装消费）─────
+            app.manage(autostart::AutostartContext { scripts_dir, log_dir });
 
             tray::setup(app, effective_lang)?;
             log::info!("托盘就绪（语言：{effective_lang:?}）");

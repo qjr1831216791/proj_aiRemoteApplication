@@ -30,7 +30,7 @@
 
 ## 阶段 4: 自启体系
 
-- [ ] T11 `autostart` 模块：服务自启开/关复用 `setup-autostart.ps1`（含 `-Remove`）+ 存量任务接管检测（返回 tookOver）；程序自身登录任务注册/移除（PowerShell `Register-ScheduledTask`、`--hidden`、ExecutionTimeLimit Zero、exe 取自身路径）——命令构造单测（依赖: T7）（验收: AC8/9/10；完成标志: `cargo test autostart` 绿）
+- [x] T11 `autostart` 模块：服务自启开/关复用 `setup-autostart.ps1`（含 `-Remove`）+ 存量任务接管检测（返回 tookOver）；程序自身登录任务注册/移除（PowerShell `Register-ScheduledTask`、`--hidden`、ExecutionTimeLimit Zero、exe 取自身路径）——命令构造单测（依赖: T7）（验收: AC8/9/10；完成标志: `cargo test autostart` 绿）<!-- 2026-09-09 完成：红 10 failed（todo! 桩）→ 绿 autostart 16/16（全套 97/97 + 1 ignored）。autostart.rs：任务名常量与 setup-autostart.ps1 逐字对齐；接管检测 = 开启前 Get-ScheduledTask 查三条存在性（任一存在 → tookOver，单条查询失败不阻断）；开关统一走 setup-autostart.ps1（幂等重建/-Remove，exit 1→栈目录缺件语义）；程序自身任务 Register-ScheduledTask（try/catch 显式 exit code、登录触发 $env:USERNAME、--hidden、ExecutionTimeLimit Zero、exe=current_exe、幂等重建=接管同语义）；全部经 CommandExecutor seam + CREATE_NO_WINDOW。setup-autostart.ps1 经读源确认**不自提权**（无 UAC 预期）。真机演练（--ignored roundtrip）：三条 Sprint0 任务只读验证存在→注册自身任务→schtasks 确认→移除→确认消失，Sprint0 三任务原状未动 -->
 - [ ] T12 登录联动：`--hidden` 启动判定（不弹主窗、不开浏览器），按 `linkStartServices` 执行补齐启动（依赖: T8/T11）（验收: AC11/12；完成标志: 单测 + 本机注销重登演练通过）
 
 ## 阶段 5: 前端界面
