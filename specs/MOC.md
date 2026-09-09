@@ -8,7 +8,7 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- （暂无）
+- [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2）
 
 ### 🟠 实现中（in-progress）
 - （暂无）
@@ -23,9 +23,11 @@
 
 | 迭代 | Spec | 交付目标 |
 |------|------|----------|
-| Sprint 1 | （待规划） | |
+| Sprint 1 | [001-desktop-console](./001-desktop-console/spec.md) | Windows 桌面程序：一键启停三组件、自启托管（含菜单 7/8 回归）、显式收摊、sprint0 全能力入口 |
 
 ## 按主题导航
+
+- 桌面工作台：[001-desktop-console](./001-desktop-console/spec.md)
 
 <!-- 功能域增多后按主题分区，例如：-->
 <!-- - 用户体系：[001-xxx](./001-xxx/spec.md) · [003-xxx](./003-xxx/spec.md) -->
