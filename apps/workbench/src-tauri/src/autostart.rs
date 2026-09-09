@@ -211,9 +211,11 @@ fn exec_error(script: Script, outcome: ExecOutcome) -> String {
 
 // ── Tauri 命令（装配层经 lib.rs 注入上下文）────────────────────────────────
 
-/// 自启上下文（lib.rs setup 注入：脚本目录 + 日志目录）
+/// 自启上下文（lib.rs setup 注入：脚本目录 + 禁用原因 + 日志目录）
 pub struct AutostartContext {
     pub scripts_dir: Option<PathBuf>,
+    /// 脚本目录不可用时的禁用原因（spec §4.5：按钮禁用 + 定位提示透传前端）
+    pub scripts_disabled_reason: Option<String>,
     pub log_dir: PathBuf,
 }
 
@@ -224,9 +226,11 @@ pub struct TookOverPayload {
     pub took_over: bool,
 }
 
-/// 服务自启开关（AC8/9）：脚本目录不可用时报错禁用（spec §4.5）
+/// 服务自启开关（AC8/9）：脚本目录不可用时报错禁用（spec §4.5）。
+/// 脚本执行最长 60s → spawn_blocking 执行，不阻塞主线程/UI（Tauri 同步命令
+/// 默认跑主线程，长命令会冻结窗口与托盘）。
 #[tauri::command]
-pub fn set_autostart_services(
+pub async fn set_autostart_services(
     ctx: tauri::State<'_, AutostartContext>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
     enable: bool,
@@ -235,18 +239,29 @@ pub fn set_autostart_services(
         return Err("sprint0 脚本目录不可用（spec §4.5）：无法管理服务自启任务".into());
     };
     let lang = crate::lang::resolve_setting(settings.current().language);
-    let out = set_services_autostart(&crate::scripts::ProcessExecutor, &dir, lang, &ctx.log_dir, enable)?;
+    let log_dir = ctx.log_dir.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        set_services_autostart(&crate::scripts::ProcessExecutor, &dir, lang, &log_dir, enable)
+    })
+    .await
+    .map_err(|e| format!("自启任务执行异常结束：{e}"))??;
     Ok(TookOverPayload { took_over: out.took_over })
 }
 
-/// 程序自身自启开关（AC10）：Action 取 current_exe() 路径
+/// 程序自身自启开关（AC10）：Action 取 current_exe() 路径。
+/// 同上：注册/移除最长 30s → 后台线程执行。
 #[tauri::command]
-pub fn set_autostart_app(
+pub async fn set_autostart_app(
     ctx: tauri::State<'_, AutostartContext>,
     enable: bool,
 ) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("无法定位自身可执行文件：{e}"))?;
-    set_app_autostart(&crate::scripts::ProcessExecutor, &exe, &ctx.log_dir, enable)
+    let log_dir = ctx.log_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        set_app_autostart(&crate::scripts::ProcessExecutor, &exe, &log_dir, enable)
+    })
+    .await
+    .map_err(|e| format!("自启任务执行异常结束：{e}"))?
 }
 
 // ── 单元测试（宪法 §1：先红后绿）────────────────────────────────────────────

@@ -287,6 +287,9 @@ pub struct Orchestrator {
     logs: Arc<dyn LogTailReader>,
     statuses: Arc<Mutex<Vec<ComponentStatus>>>,
     tracker: Arc<InFlightTracker>,
+    /// 实时语言源（T14：语言切换后脚本 -Lang 与状态 detail 即时跟随；
+    /// None = 回落 cfg.lang，单测/默认路径）
+    lang_source: Option<Arc<dyn Fn() -> Lang + Send + Sync>>,
 }
 
 impl Orchestrator {
@@ -317,7 +320,19 @@ impl Orchestrator {
             logs,
             statuses: Arc::new(Mutex::new(statuses)),
             tracker: Arc::new(InFlightTracker::default()),
+            lang_source: None,
         }
+    }
+
+    /// 注入实时语言源（装配层接 LanguageState；AC25 切换立即生效）
+    pub fn with_lang_source(mut self, source: Arc<dyn Fn() -> Lang + Send + Sync>) -> Self {
+        self.lang_source = Some(source);
+        self
+    }
+
+    /// 当前生效语言（语言源实时读取；缺省 cfg.lang）
+    fn current_lang(&self) -> Lang {
+        self.lang_source.as_ref().map(|f| f()).unwrap_or(self.cfg.lang)
     }
 
     /// 当前全组件状态快照（get_status 命令的数据源）
@@ -370,6 +385,7 @@ impl Orchestrator {
     /// 全组件刷新（前台轮询周期执行；AC4 外部停止 ≤10s 可见）。
     /// 在途组件跳过（启动线程独占其状态迁移）。
     pub fn refresh_all(&self) {
+        let texts = crate::lang::detail_texts(self.current_lang());
         for id in COMPONENT_ORDER {
             if self.tracker.is_busy(id) {
                 continue;
@@ -379,7 +395,7 @@ impl Orchestrator {
                 ProbeState::Stopped => (ComponentState::Stopped, None),
                 ProbeState::PortHeld { process_name } => (
                     ComponentState::PortHeld,
-                    Some(format!("端口 {} 被进程 {process_name} 占用", id.port())),
+                    Some(texts.port_held(id.port(), &process_name)),
                 ),
             };
             self.set_state(id, state, detail);
@@ -478,6 +494,7 @@ impl Orchestrator {
     /// 启动管线主体（工作线程内执行）：守卫 → starting → 拉起 → 就绪轮询
     fn run_start(&self, id: ComponentId, cancel: &AtomicBool) {
         let begun = Instant::now();
+        let texts = crate::lang::detail_texts(self.current_lang());
         // 1. 守卫（AC3 幂等）：已运行跳过；被无关进程占如实上报且不拉起（AC7）
         match self.probe.probe(id) {
             ProbeState::Running { .. } => {
@@ -489,10 +506,7 @@ impl Orchestrator {
                 self.set_state(
                     id,
                     ComponentState::PortHeld,
-                    Some(format!(
-                        "端口 {} 被进程 {process_name} 占用，未拉起",
-                        id.port()
-                    )),
+                    Some(texts.port_held_not_started(id.port(), &process_name)),
                 );
                 log::warn!(
                     "组件 {} 端口被 {} 占用：不拉起（AC7）",
@@ -518,19 +532,19 @@ impl Orchestrator {
                         cancel,
                         id,
                         ComponentState::Failed,
-                        Some(
-                            "sprint0 脚本目录不可用（spec §4.5）：CloudCLI 启动已禁用，请检查脚本目录设置"
-                                .into(),
-                        ),
+                        Some(texts.scripts_dir_unavailable()),
                     );
                     return;
                 };
-                let spec = run_server_hidden(&dir, self.cfg.lang, &self.cfg.log_dir);
+                let spec = run_server_hidden(&dir, self.current_lang(), &self.cfg.log_dir);
                 match self.executor.execute(&spec) {
                     ExecOutcome::Exited(0) => {}
                     ExecOutcome::Exited(code) => {
                         // AC1：exit 1 映射"未安装/不可用"提示
-                        let detail = outcome_detail(&interpret_exit(Script::RunServerHidden, code));
+                        let detail = outcome_detail(
+                            &interpret_exit(Script::RunServerHidden, code),
+                            self.current_lang(),
+                        );
                         self.set_state_if_active(cancel, id, ComponentState::Failed, Some(detail));
                         return;
                     }
@@ -539,7 +553,7 @@ impl Orchestrator {
                             cancel,
                             id,
                             ComponentState::Failed,
-                            Some("启动脚本超时未返回（run-server-hidden.ps1），详情见程序日志".into()),
+                            Some(texts.script_timeout()),
                         );
                         return;
                     }
@@ -548,7 +562,7 @@ impl Orchestrator {
                             cancel,
                             id,
                             ComponentState::Failed,
-                            Some(format!("启动脚本无法执行：{e}")),
+                            Some(texts.spawn_failed(&e)),
                         );
                         return;
                     }
@@ -585,7 +599,7 @@ impl Orchestrator {
                         cancel,
                         id,
                         ComponentState::PortHeld,
-                        Some(format!("端口 {} 被进程 {process_name} 占用", id.port())),
+                        Some(texts.port_held(id.port(), &process_name)),
                     );
                     return;
                 }
@@ -604,6 +618,7 @@ impl Orchestrator {
 
     /// 原生拉起（Caddy/ddns-go）：dispatch 派发即返；失败置 failed
     fn dispatch_native(&self, cancel: &AtomicBool, spec: &CommandSpec, id: ComponentId) -> bool {
+        let texts = crate::lang::detail_texts(self.current_lang());
         match self.executor.dispatch(spec) {
             Ok(()) => true,
             Err(e) => {
@@ -612,7 +627,7 @@ impl Orchestrator {
                     cancel,
                     id,
                     ComponentState::Failed,
-                    Some(format!("拉起失败：{e}")),
+                    Some(texts.dispatch_failed(&e)),
                 );
                 false
             }
@@ -622,6 +637,7 @@ impl Orchestrator {
     /// 就绪超时的失败详情：附组件对应日志尾部（AC1：CloudCLI 为 %TEMP%\cloudcli.log）
     fn timeout_detail(&self, id: ComponentId) -> String {
         let secs = self.cfg.start_timeout.as_secs();
+        let texts = crate::lang::detail_texts(self.current_lang());
         let paths: Vec<PathBuf> = match id {
             ComponentId::CloudCli => vec![cloudcli_log_path()],
             ComponentId::Caddy => vec![
@@ -636,22 +652,20 @@ impl Orchestrator {
         let tails: Vec<String> = paths
             .iter()
             .filter_map(|p| {
-                self.logs
-                    .tail(p, LOG_TAIL_LINES)
-                    .map(|t| format!("—— {} 尾部 ——\n{t}", p.display()))
+                self.logs.tail(p, LOG_TAIL_LINES).map(|t| {
+                    format!("{}\n{t}", texts.log_tail_header(&p.display().to_string()))
+                })
             })
             .collect();
         if tails.is_empty() {
-            format!(
-                "启动超时（{secs}s 未就绪）。日志暂不可读：{}",
-                paths
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join("、")
-            )
+            let joined = paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("、");
+            format!("{}。{}", texts.start_timeout(secs), texts.logs_unreadable(&joined))
         } else {
-            format!("启动超时（{secs}s 未就绪）。\n{}", tails.join("\n"))
+            format!("{}。\n{}", texts.start_timeout(secs), tails.join("\n"))
         }
     }
 
@@ -696,13 +710,13 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 脚本退出语义 → 失败详情文案
-fn outcome_detail(outcome: &ScriptOutcome) -> String {
+/// 脚本退出语义 → 失败详情文案（双语：编排侧仅 RunServerHidden 进入此路径，
+/// Unavailable 的具体语义替换为本地化文案）
+fn outcome_detail(outcome: &ScriptOutcome, lang: Lang) -> String {
+    let texts = crate::lang::detail_texts(lang);
     match outcome {
-        ScriptOutcome::Unavailable(msg) => format!("启动失败：{msg}"),
-        ScriptOutcome::Failed(code) => {
-            format!("启动脚本异常退出（code={code}），详情见程序日志目录")
-        }
+        ScriptOutcome::Unavailable(_) => texts.start_failed(&texts.cloudcli_unavailable()),
+        ScriptOutcome::Failed(code) => texts.script_failed(*code),
         // Success/TimedOut 在调用处分派，不会进入此处
         ScriptOutcome::Success | ScriptOutcome::TimedOut => String::new(),
     }
@@ -1560,6 +1574,58 @@ mod tests {
         for id in COMPONENT_ORDER {
             assert!(orch.wait_start_idle(id, Duration::from_secs(2)));
         }
+    }
+
+    // ── T14：语言源实时覆盖（切换语言后脚本 -Lang 与 detail 即时跟随）────
+
+    #[test]
+    fn lang_source_overrides_config_for_script_and_detail() {
+        // cfg.lang=Zh 但语言源返回 En：脚本 -Lang en、失败 detail 英文（AC25）
+        let probe = Arc::new(ScriptedProbe::new());
+        probe.pin(ComponentId::CloudCli, ProbeState::Stopped);
+        probe.pin(
+            ComponentId::Caddy,
+            ProbeState::PortHeld { process_name: "nginx.exe".into() },
+        );
+        let exec = Arc::new(MockExecutor::with_exits(&[ExecOutcome::Exited(1)]));
+        let (orch, _sink, _) = build(probe, exec.clone());
+        let orch = orch.with_lang_source(Arc::new(|| Lang::En));
+
+        orch.start_one(ComponentId::CloudCli).unwrap();
+        assert!(orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)));
+        {
+            let executed = exec.executed.lock().unwrap();
+            assert_eq!(executed.len(), 1);
+            assert!(
+                executed[0].command_line().contains("-Lang en"),
+                "脚本语言应实时跟随共享语言态：{}",
+                executed[0].command_line()
+            );
+        }
+        let st = state_of(&orch, ComponentId::CloudCli);
+        assert_eq!(st.state, ComponentState::Failed);
+        let detail = st.detail.unwrap();
+        assert!(detail.starts_with("Start failed"), "detail 应为英文：{detail}");
+        assert!(detail.contains("cloudcli unavailable"), "{detail}");
+
+        // 刷新侧 port-held detail 同样双语（AC7）
+        orch.refresh_all();
+        let held = state_of(&orch, ComponentId::Caddy);
+        assert_eq!(held.state, ComponentState::PortHeld);
+        let d = held.detail.unwrap();
+        assert!(d.contains("nginx.exe") && d.contains("held by"), "英文 detail：{d}");
+    }
+
+    #[test]
+    fn config_lang_still_used_without_source() {
+        // 未注入语言源（默认/单测路径）：回落 cfg.lang，zh detail 与历史字样一致
+        let probe = Arc::new(ScriptedProbe::new());
+        probe.pin(ComponentId::Caddy, ProbeState::PortHeld { process_name: "x.exe".into() });
+        let exec = Arc::new(MockExecutor::new());
+        let (orch, _sink, _) = build(probe, exec);
+        orch.refresh_all();
+        let d = state_of(&orch, ComponentId::Caddy).detail.unwrap();
+        assert_eq!(d, "端口 443 被进程 x.exe 占用");
     }
 
     // ── 停止接入（T9）──────────────────────────────────────────────────

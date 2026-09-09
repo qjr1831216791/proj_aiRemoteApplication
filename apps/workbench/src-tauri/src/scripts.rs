@@ -331,8 +331,10 @@ pub fn visible_script_params(
     parts.join(" ")
 }
 
-/// UAC 提权启动（ShellExecuteW verb=runas；用户拒绝/失败 → Err 交上层提示，AC20）
-pub fn elevate(program: &str, params: &str) -> Result<(), String> {
+/// ShellExecuteW 原语（T15：提权/可见窗/URL 打开共用）。
+/// 返回原始结果码（惯例 >32 成功；5 = SE_ERR_ACCESSDENIED 即 UAC 被拒），
+/// 错误文案由调用方经 `lang::shell_error_text` 本地化（AC20）。
+pub fn shell_execute(verb: Option<&str>, program: &str, params: &str) -> Result<(), isize> {
     #[cfg(windows)]
     {
         use windows::core::PCWSTR;
@@ -342,13 +344,13 @@ pub fn elevate(program: &str, params: &str) -> Result<(), String> {
         fn wide(s: &str) -> Vec<u16> {
             s.encode_utf16().chain(std::iter::once(0)).collect()
         }
-        let verb = wide("runas");
+        let verb = verb.map(wide);
         let file = wide(program);
         let parameters = wide(params);
         let code = unsafe {
             ShellExecuteW(
                 None,
-                PCWSTR::from_raw(verb.as_ptr()),
+                verb.as_deref().map(|v| PCWSTR::from_raw(v.as_ptr())).unwrap_or_default(),
                 PCWSTR::from_raw(file.as_ptr()),
                 PCWSTR::from_raw(parameters.as_ptr()),
                 None,
@@ -356,19 +358,103 @@ pub fn elevate(program: &str, params: &str) -> Result<(), String> {
             )
             .0 as isize
         };
-        // 惯例：>32 成功；5 = SE_ERR_ACCESSDENIED（UAC 被拒）
         if code > 32 {
             Ok(())
         } else {
-            Err(format!(
-                "ShellExecuteW 返回 {code}（5=UAC 被拒；AC20：提示用户且不崩溃）"
-            ))
+            Err(code)
         }
     }
     #[cfg(not(windows))]
     {
-        let _ = (program, params);
-        Err("提权启动仅支持 Windows".into())
+        let _ = (verb, program, params);
+        Err(0)
+    }
+}
+
+/// UAC 提权启动（ShellExecuteW verb=runas，可见窗；用户拒绝 → Err 交上层提示，AC20）
+pub fn elevate(program: &str, params: &str) -> Result<(), String> {
+    shell_execute(Some("runas"), program, params)
+        .map_err(|code| format!("ShellExecuteW 返回 {code}（5=UAC 被拒；AC20：提示用户且不崩溃）"))
+}
+
+/// 普通可见窗口启动（无 UAC）：交互式脚本（install-client.ps1）走此通道
+pub fn open_visible(program: &str, params: &str) -> Result<(), isize> {
+    shell_execute(Some("open"), program, params)
+}
+
+/// 用默认浏览器打开 URL（open_external 命令与托盘共用）
+pub fn open_url(url: &str) -> Result<(), isize> {
+    shell_execute(Some("open"), url, "")
+}
+
+/// 用资源管理器打开目录（open_logs_dir 命令）
+pub fn open_dir(path: &Path) -> Result<(), isize> {
+    shell_execute(Some("open"), &path.to_string_lossy(), "")
+}
+
+// ── 低频工具派发（run_tool，plan §5.1 / AC19-20）────────────────────────────
+
+/// 工具类别（前端序列化：snake_case 字符串）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    /// 安装/重装服务端（install-server.ps1，UAC）
+    InstallServer,
+    /// HTTPS 栈装机（install-https.ps1，UAC）
+    InstallHttps,
+    /// HTTPS 环境配置（enable-https.ps1，UAC）
+    EnableHttps,
+    /// 客户端配置（install-client.ps1，可见交互窗）
+    InstallClient,
+}
+
+impl From<ToolKind> for Script {
+    fn from(kind: ToolKind) -> Self {
+        match kind {
+            ToolKind::InstallServer => Script::InstallServer,
+            ToolKind::InstallHttps => Script::InstallHttps,
+            ToolKind::EnableHttps => Script::EnableHttps,
+            ToolKind::InstallClient => Script::InstallClient,
+        }
+    }
+}
+
+/// install-server 可选项（plan §5.2）
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ToolOpts {
+    /// `-Update`：升级 CloudCLI 到最新版
+    pub update: bool,
+    /// `-UseMirror`：npm 换国内镜像源
+    pub mirror: bool,
+}
+
+/// 派发计划（纯函数构造，可单测；run_tool 命令消费）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDispatch {
+    pub script: Script,
+    /// ShellExecuteW lpParameters（可见窗 + -NoExit + -Lang）
+    pub params: String,
+    /// true = runas 提权；false = 普通可见窗（交互式）
+    pub elevated: bool,
+}
+
+/// 构造派发计划：可见窗参数 + 提权判定（按脚本契约表 Visibility 推导）
+pub fn tool_plan(kind: ToolKind, opts: ToolOpts, dir: &Path, lang: Lang) -> ToolDispatch {
+    let script = Script::from(kind);
+    let mut extra: Vec<&str> = Vec::new();
+    if matches!(kind, ToolKind::InstallServer) {
+        if opts.update {
+            extra.push("-Update");
+        }
+        if opts.mirror {
+            extra.push("-UseMirror");
+        }
+    }
+    ToolDispatch {
+        script,
+        params: visible_script_params(dir, script, lang, &extra),
+        elevated: script.visibility() == Visibility::Elevated,
     }
 }
 
@@ -719,6 +805,47 @@ mod tests {
     fn quote_only_when_spaces() {
         assert_eq!(quote(r"D:\plain.ps1"), r"D:\plain.ps1");
         assert_eq!(quote(r"D:\with space\a.ps1"), r#""D:\with space\a.ps1""#);
+    }
+
+    // ── 低频工具派发（run_tool 契约，T15）──────────────────────────────
+
+    #[test]
+    fn tool_plan_install_server_default_and_options() {
+        let dir = script_dir("tool");
+        // 默认安装/重装：UAC 提权 + -Lang + -NoExit，无 -Update/-UseMirror
+        let plan = tool_plan(ToolKind::InstallServer, ToolOpts::default(), &dir, Lang::Zh);
+        assert_eq!(plan.script, Script::InstallServer);
+        assert!(plan.elevated, "install-server 需 UAC");
+        assert!(plan.params.contains("install-server.ps1"), "{}", plan.params);
+        assert!(plan.params.contains("-Lang zh"));
+        assert!(!plan.params.contains("-Update") && !plan.params.contains("-UseMirror"), "{}", plan.params);
+
+        // 升级 + 镜像源：两个开关透传
+        let opts = ToolOpts { update: true, mirror: true };
+        let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::En);
+        assert!(plan.params.contains("-Update"), "{}", plan.params);
+        assert!(plan.params.contains("-UseMirror"), "{}", plan.params);
+        assert!(plan.params.contains("-Lang en"), "{}", plan.params);
+    }
+
+    #[test]
+    fn tool_plan_https_and_client_visibility() {
+        let dir = script_dir("tool2");
+        // 提权类：install-https / enable-https → runas 可见窗（AC19：结尾手工步骤可读）
+        let https = tool_plan(ToolKind::InstallHttps, ToolOpts::default(), &dir, Lang::Zh);
+        assert!(https.elevated);
+        assert!(https.params.contains("install-https.ps1") && https.params.contains("-NoExit"));
+
+        let enable = tool_plan(ToolKind::EnableHttps, ToolOpts::default(), &dir, Lang::Zh);
+        assert!(enable.elevated);
+        assert!(enable.params.contains("enable-https.ps1"));
+
+        // install-client：非 UAC 可见交互窗（spec §4.3 交互式脚本）
+        let client = tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh);
+        assert!(!client.elevated);
+        assert!(client.params.contains("install-client.ps1"));
+        assert!(client.params.contains("-NoExit"), "交互脚本窗口结束后保留：{}", client.params);
+        assert!(!client.params.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive");
     }
 
     // ── 退出码语义 ─────────────────────────────────────────────────────

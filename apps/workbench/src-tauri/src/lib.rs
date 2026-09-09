@@ -7,6 +7,7 @@
 //!   - T10：退出流装配——编排器接入运行时 + ExitGate 意图 + 退出钩子收摊
 
 mod autostart;
+mod commands;
 mod consts;
 mod exit_flow;
 mod lang;
@@ -18,6 +19,7 @@ mod single_instance;
 mod startup;
 mod stop;
 mod tray;
+mod urls;
 
 use tauri::{Emitter, Manager};
 
@@ -71,10 +73,22 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             settings::get_settings,
             settings::save_settings,
+            lang::set_language,
             exit_flow::quit,
             autostart::set_autostart_services,
             autostart::set_autostart_app,
             startup::is_hidden_startup,
+            // T13/T15 UI 命令层（plan §5.1 剩余项）
+            commands::get_status,
+            commands::get_urls,
+            commands::start_all,
+            commands::stop_all,
+            commands::start_one,
+            commands::stop_one,
+            commands::open_external,
+            commands::run_tool,
+            commands::scripts_availability,
+            commands::open_logs_dir,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -122,6 +136,8 @@ pub fn run() {
                 (s.language, s.scripts_dir_override)
             };
             let effective_lang = lang::resolve_setting(language_setting);
+            // 共享语言态：set_language 为唯一写者；托盘/脚本派发/状态 detail 实时读
+            app.manage(lang::LanguageState::new(effective_lang));
 
             // ── 编排器装配（T8/T9 实现首次接入运行时；T10 收摊/T11/T12 消费）──
             let log_dir = app.path().app_log_dir().unwrap_or_else(|e| {
@@ -131,7 +147,7 @@ pub fn run() {
             let exe_dir = std::env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-            let scripts_dir =
+            let (scripts_dir, scripts_disabled_reason) =
                 match scripts::locate(scripts_override.as_deref(), exe_dir.as_deref()) {
                     scripts::ScriptsResolution::Found { dir, source } => {
                         log::info!(
@@ -139,18 +155,23 @@ pub fn run() {
                             dir.display(),
                             source.as_str()
                         );
-                        Some(dir)
+                        (Some(dir), None)
                     }
                     scripts::ScriptsResolution::Disabled { reason } => {
                         // spec §4.5：脚本缺失 → 相关功能禁用并给原因，不崩溃
                         log::warn!("{reason}");
-                        None
+                        (None, Some(reason))
                     }
                 };
             let mut orch_cfg =
                 orchestrator::OrchestratorConfig::new(effective_lang, log_dir.clone());
             orch_cfg.scripts_dir = scripts_dir.clone();
-            let orch = build_orchestrator(app.handle().clone(), orch_cfg);
+            let lang_handle = app.handle().clone();
+            let orch = build_orchestrator(app.handle().clone(), orch_cfg)
+                // 语言切换后脚本 -Lang 与状态 detail 即时跟随（AC25）
+                .with_lang_source(std::sync::Arc::new(move || {
+                    lang_handle.state::<lang::LanguageState>().current()
+                }));
             app.manage(orch.clone());
             // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：句柄随 setup 结束丢弃——
             // PollerHandle 无 Drop 停止语义，轮询线程随进程退出而止
@@ -159,8 +180,12 @@ pub fn run() {
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
 
-            // ── 自启上下文（T11）：脚本目录 + 日志目录（命令薄封装消费）─────
-            app.manage(autostart::AutostartContext { scripts_dir, log_dir });
+            // ── 自启上下文（T11/T15）：脚本目录 + 禁用原因 + 日志目录 ────────
+            app.manage(autostart::AutostartContext {
+                scripts_dir,
+                scripts_disabled_reason,
+                log_dir,
+            });
 
             tray::setup(app, effective_lang)?;
             log::info!("托盘就绪（语言：{effective_lang:?}）");
