@@ -180,9 +180,18 @@ impl StatusProbe for WindowsProbe {
 fn exe_of_pids(pids: &[u32]) -> Vec<ProbeProcess> {
     use sysinfo::{Pid, ProcessesToUpdate, System};
 
+    // 去重：同端口多 Listen 套接字会给出重复 PID（caddy 双栈 0.0.0.0:443 +
+    // [::]:443 实测两份）。sysinfo 0.33 的 Some(pids) 在 remove_dead_processes
+    // =true 时对每个 pid 逐一 switch_updated：重复项第二次读到 false 会被当
+    // 死进程移除，导致富集全空（caddy 永远误判 port-held）。
+    let mut unique: Vec<u32> = pids.to_vec();
+    unique.sort_unstable();
+    unique.dedup();
+    let targets: Vec<Pid> = unique.iter().map(|&p| Pid::from_u32(p)).collect();
+
     let mut sys = System::new();
-    let targets: Vec<Pid> = pids.iter().map(|&p| Pid::from_u32(p)).collect();
     sys.refresh_processes(ProcessesToUpdate::Some(&targets), true);
+    // 输出仍按原始 pids 映射（与监听条目一一对应；classify 只做 any 匹配）
     pids.iter()
         .map(|&p| {
             let proc = sys.process(Pid::from_u32(p));
@@ -386,6 +395,31 @@ mod tests {
         assert!(paths_equal(r"D:\A\b.exe", r"d:\a\B.EXE"));
         assert!(!paths_equal(r"D:\A\b.exe", r"D:\A\c.exe"));
         assert!(paths_equal(r"\\?\C:\x\y.exe", r"C:\x\y.exe"));
+    }
+
+    /// 回归（真机发现）：同一端口的多个 Listen 套接字（如 caddy 双栈
+    /// 0.0.0.0:443 + [::]:443）会给出重复 PID；sysinfo 0.33 的
+    /// `Some(pids)` + remove_dead_processes=true 会对每个 pid 逐一
+    /// switch_updated，重复项第二次读到 false 被当死进程移除 → exe 富集
+    /// 全空 → caddy 永远误判 port-held（unknown）。本测试以自身进程验证
+    /// 重复 PID 不再丢失身份。
+    #[test]
+    #[cfg(windows)]
+    fn exe_of_pids_survives_duplicate_pids() {
+        let me = std::process::id();
+        let name =
+            file_name_of(&std::env::current_exe().unwrap().to_string_lossy()).expect("exe 应有文件名");
+        // 重复 PID（caddy 双栈形态）
+        let dup = exe_of_pids(&[me, me]);
+        assert_eq!(dup.len(), 2, "输出与输入条目一一对应");
+        for p in &dup {
+            assert_eq!(p.pid, me);
+            assert!(p.exe.is_some(), "重复 PID 不应导致富集失败：{p:?}");
+            assert_eq!(p.exe_name.as_deref(), Some(name.as_str()));
+        }
+        // 单次出现（cloudcli 单套接字形态）回归无损
+        let single = exe_of_pids(&[me]);
+        assert!(single[0].exe.is_some() && single[0].exe_name.is_some());
     }
 
     /// Windows 集成（轻量）：真实起一个监听走完整 netstat2+sysinfo 链路，
