@@ -42,6 +42,17 @@ pub fn detect_system_lang() -> Lang {
     Lang::En
 }
 
+/// 设置语言 → 生效语言（AC25：显式选择优先于系统；auto = 系统显示语言）。
+/// 装配层在启动时解析一次（T14 切换语言时重新解析并重建托盘）。
+pub fn resolve_setting(setting: crate::settings::LanguageSetting) -> Lang {
+    use crate::settings::LanguageSetting;
+    match setting {
+        LanguageSetting::Auto => detect_system_lang(),
+        LanguageSetting::Zh => Lang::Zh,
+        LanguageSetting::En => Lang::En,
+    }
+}
+
 /// 托盘菜单文案（spec §4.2 六项 + tooltip）。
 /// zh/en 两套与 `src/i18n/` 词条风格对齐（`common.start` 等键位同源），
 /// T2 阶段为独立 const 模块，T14 统一词条源时替换数据来源、接口不变。
@@ -99,6 +110,15 @@ mod tests {
         assert_eq!(resolve_lang_from_langid(0x0011), Lang::En); // ja（中性）
         assert_eq!(resolve_lang_from_langid(0x0411), Lang::En); // ja-JP
         assert_eq!(resolve_lang_from_langid(0), Lang::En); // 未知/中性 → 英文
+    }
+
+    #[test]
+    fn resolve_setting_prefers_explicit_choice() {
+        // AC25：显式选择优先于系统语言；auto 落回系统探测（本机中文环境 → Zh）
+        use crate::settings::LanguageSetting;
+        assert_eq!(resolve_setting(LanguageSetting::Zh), Lang::Zh);
+        assert_eq!(resolve_setting(LanguageSetting::En), Lang::En);
+        assert_eq!(resolve_setting(LanguageSetting::Auto), detect_system_lang());
     }
 
     #[test]

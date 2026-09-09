@@ -1,8 +1,9 @@
 //! 托盘骨架（spec §4.2：托盘常驻是程序固有形态）。
 //!
-//! T2 只挂六项菜单与占位 handler：启动/停止/打开工作台/显示主界面 打日志，
-//! 「停止服务并退出」「退出」直接 `app.exit(0)`（退出钩子见 lib.rs 的
-//! RunEvent::ExitRequested 骨架）；实际编排随 T8/T9/T15 接入，退出分流随 T10。
+//! 六项菜单：启动/停止/打开工作台/显示主界面 为占位 handler（编排接线随
+//! T13/T15 前端接入），「停止服务并退出」「退出」已接真语义（T10 退出流：
+//! 经 `exit_flow::request_exit` 登记 ExitGate 意图后 `app.exit`，收摊在
+//! RunEvent::ExitRequested 钩子执行——绝不挂在无条件退出路径，AC17）。
 //!
 //! explorer 重启/崩溃后托盘图标的重挂由底层 tray-icon crate 的
 //! TaskbarCreated 广播机制承担（plan §7 风险行），无需手工处理。
@@ -52,15 +53,17 @@ pub fn setup(app: &App, lang: Lang) -> tauri::Result<()> {
             "open_workbench" => log::info!("托盘「打开工作台」触发（占位 handler，open_external T15 接入）"),
             "show_main" => log::info!("托盘「显示主界面」触发（占位 handler，交互随 T13/T14 完善）"),
             "stop_and_exit" => {
-                // T10：先执行与 AC2 等价的收摊（总超时 30s 放行）再退出；
-                // 骨架阶段直接退出。ADR-0002：退出不携带任何服务进程。
-                log::info!("托盘「停止服务并退出」：骨架直接退出（收摊逻辑 T10 接入）");
-                app.exit(0);
+                // AC14：显式收摊（总超时 30s 放行）再退出。意图登记在
+                // request_exit（先置标志后 app.exit），收摊实际执行于
+                // RunEvent::ExitRequested 钩子（见 lib.rs / exit_flow.rs）
+                log::info!("托盘「停止服务并退出」：显式收摊（AC14）");
+                crate::exit_flow::request_exit(app, true);
             }
             "quit" => {
-                // AC13 语义：退出程序、保留服务（ADR-0002 控制面/数据面分离）
-                log::info!("托盘「退出」：退出程序，服务保留（ADR-0002；exitAction 分流 T10 接入）");
-                app.exit(0);
+                // AC13/15：按 exitAction 分流——keep 直退（服务保留）/
+                // stop 先收摊再退。ADR-0002：默认不携带服务进程
+                log::info!("托盘「退出」：按 exitAction 分流（AC13/AC15）");
+                crate::exit_flow::request_exit(app, false);
             }
             unknown => log::warn!("托盘菜单未知项：{unknown}"),
         })

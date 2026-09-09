@@ -4,8 +4,10 @@
 //! - T2：单实例（会话内插件激活 + Global 互斥体跨会话唯一）、托盘骨架、
 //!   关 X 最小化到托盘（AC18）、RunEvent::ExitRequested 退出钩子骨架
 //! - T5~T15：业务命令（设置/探测/编排/自启/界面）逐步接入
+//!   - T10：退出流装配——编排器接入运行时 + ExitGate 意图 + 退出钩子收摊
 
 mod consts;
+mod exit_flow;
 mod lang;
 mod orchestrator;
 mod probe;
@@ -67,6 +69,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             settings::get_settings,
             settings::save_settings,
+            exit_flow::quit,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -97,9 +100,51 @@ pub fn run() {
                 );
             }
 
-            let l = lang::detect_system_lang();
-            tray::setup(app, l)?;
-            log::info!("托盘骨架就绪（语言：{l:?}）");
+            // ── 生效语言（AC25：显式选择优先于系统显示语言）──────────────────
+            let (language_setting, scripts_override) = {
+                let s = app.state::<settings::SettingsState>().current();
+                (s.language, s.scripts_dir_override)
+            };
+            let effective_lang = lang::resolve_setting(language_setting);
+
+            // ── 编排器装配（T8/T9 实现首次接入运行时；T10 收摊/T11/T12 消费）──
+            let log_dir = app.path().app_log_dir().unwrap_or_else(|e| {
+                log::warn!("应用日志目录不可用（{e}）：组件日志退回临时目录");
+                std::env::temp_dir()
+            });
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let scripts_dir =
+                match scripts::locate(scripts_override.as_deref(), exe_dir.as_deref()) {
+                    scripts::ScriptsResolution::Found { dir, source } => {
+                        log::info!(
+                            "sprint0 脚本目录：{}（来源 {}）",
+                            dir.display(),
+                            source.as_str()
+                        );
+                        Some(dir)
+                    }
+                    scripts::ScriptsResolution::Disabled { reason } => {
+                        // spec §4.5：脚本缺失 → 相关功能禁用并给原因，不崩溃
+                        log::warn!("{reason}");
+                        None
+                    }
+                };
+            let mut orch_cfg =
+                orchestrator::OrchestratorConfig::new(effective_lang, log_dir.clone());
+            orch_cfg.scripts_dir = scripts_dir.clone();
+            let orch = build_orchestrator(app.handle().clone(), orch_cfg);
+            app.manage(orch.clone());
+            // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：句柄随 setup 结束丢弃——
+            // PollerHandle 无 Drop 停止语义，轮询线程随进程退出而止
+            let _poller = orch.spawn_poller();
+
+            // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
+            app.manage(exit_flow::ExitGate::new());
+
+            tray::setup(app, effective_lang)?;
+            log::info!("托盘就绪（语言：{effective_lang:?}）");
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -117,15 +162,44 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|_app, event| {
+        .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { code, .. } = event {
-                // 退出钩子骨架：默认放行；T10 按 exitAction 分流
-                // （keep 直退 / stop 先收摊总超时 30s）。
+                // T10 退出钩子：只认 ExitGate 标志（AC17）——显式收摊退出在此
+                // 执行总超时 30s 的 stop_all；关机/注销/无意图路径零收摊直接放行。
                 // ADR-0002：三组件独立于程序存活、不挂 kill-on-close Job，
-                // 本钩子不做也不需要任何"连带停止"——退出绝不携带服务进程。
-                log::info!("ExitRequested(code={code:?})：放行退出（exitAction 分流 T10 接入）");
+                // 退出绝不无条件携带服务进程。
+                log::info!("ExitRequested(code={code:?})");
+                let stopper: std::sync::Arc<dyn exit_flow::ServiceStopper> = {
+                    let orch = app.state::<orchestrator::Orchestrator>();
+                    std::sync::Arc::new(orch.inner().clone())
+                };
+                let gate = app.state::<exit_flow::ExitGate>();
+                exit_flow::handle_exit_requested(&gate, stopper, exit_flow::SHUTDOWN_TOTAL_TIMEOUT);
             }
         });
+}
+
+/// 真实编排器装配（平台采集层注入；Windows-only，ADR-0001）
+fn build_orchestrator(
+    app: tauri::AppHandle,
+    cfg: orchestrator::OrchestratorConfig,
+) -> orchestrator::Orchestrator {
+    #[cfg(windows)]
+    {
+        orchestrator::Orchestrator::new(
+            cfg,
+            std::sync::Arc::new(probe::WindowsProbe),
+            std::sync::Arc::new(scripts::ProcessExecutor),
+            std::sync::Arc::new(stop::SysinfoProcessOps),
+            std::sync::Arc::new(orchestrator::TauriStatusEmitter::new(app)),
+            std::sync::Arc::new(orchestrator::FsLogTailReader),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, cfg);
+        unreachable!("本项目仅面向 Windows（ADR-0001）")
+    }
 }
 
 /// 本进程的单实例身份（setup 闭包捕获用）
