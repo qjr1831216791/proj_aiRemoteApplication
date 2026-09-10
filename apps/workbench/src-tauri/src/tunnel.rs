@@ -231,8 +231,12 @@ pub enum DnsAlignment {
     AlignedTunnel,
     /// 无 CNAME 且有 A 记录 → 直连通道解析恢复（AC13 指引消失）
     AlignedDirect,
+    /// 无 CNAME 且 A 记录 = 虚拟 IP → 组网通道解析就绪（spec 007 体检重定义）
+    AlignedMesh,
     /// 存在 CNAME 但目标不符（用户可能填错值，detail 带实际目标）
     MismatchedCname { actual: String },
+    /// 存在 A 记录但值 ≠ 虚拟 IP（公网 IP 残留 = 切组网未完成；spec 007）
+    MismatchedA { actual: String },
     /// 既无 CNAME 也无 A（用户删了记录还没配好新值）
     NoRecord,
     /// 查询本身失败（网络/解析器异常），不构成结论
@@ -257,6 +261,25 @@ pub fn judge_dns(cname_target: Option<&str>, has_a_record: bool, node_domain: &s
                 DnsAlignment::NoRecord
             }
         }
+    }
+}
+
+/// 组网态对齐判定（spec 007 体检重定义，plan §5.1：DNS 对齐 → A 记录 = 虚拟 IP）。
+/// 空串视为无记录（PowerShell `[string]$null` 产出 ""，见 commands::run_dns_probe）。
+pub fn judge_dns_mesh(
+    cname_target: Option<&str>,
+    a_value: Option<&str>,
+    virtual_ip: &str,
+) -> DnsAlignment {
+    let cname = cname_target.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(target) = cname {
+        // 组网态不该有 CNAME（切组网时已全删）——残留即旁路暴露面
+        return DnsAlignment::MismatchedCname { actual: target.to_string() };
+    }
+    match a_value.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(v) if v.eq_ignore_ascii_case(virtual_ip.trim()) => DnsAlignment::AlignedMesh,
+        Some(v) => DnsAlignment::MismatchedA { actual: v.to_string() },
+        None => DnsAlignment::NoRecord,
     }
 }
 
@@ -1033,6 +1056,29 @@ mod tests {
         );
         assert_eq!(judge_dns(None, true, "frp-can.com"), DnsAlignment::AlignedDirect);
         assert_eq!(judge_dns(None, false, "frp-can.com"), DnsAlignment::NoRecord);
+    }
+
+    #[test]
+    fn mesh_dns_judgement_covers_four_states() {
+        // spec 007 体检重定义：无 CNAME ∧ A=虚拟 IP → 对齐
+        assert_eq!(
+            judge_dns_mesh(None, Some("10.126.126.1"), "10.126.126.1"),
+            DnsAlignment::AlignedMesh
+        );
+        // A 值残留公网 IP（切组网未完成）→ 目标不符透出实况
+        assert_eq!(
+            judge_dns_mesh(None, Some("113.87.11.22"), "10.126.126.1"),
+            DnsAlignment::MismatchedA { actual: "113.87.11.22".into() }
+        );
+        // CNAME 残留 = 可重启的公网旁路（AC5 同语义）→ 报不符
+        assert_eq!(
+            judge_dns_mesh(Some("frp-can.com"), Some("10.126.126.1"), "10.126.126.1"),
+            DnsAlignment::MismatchedCname { actual: "frp-can.com".into() }
+        );
+        // 无任何记录
+        assert_eq!(judge_dns_mesh(None, None, "10.126.126.1"), DnsAlignment::NoRecord);
+        // PowerShell [string]$null → "" 的输出形态按无记录处理（防御）
+        assert_eq!(judge_dns_mesh(Some(""), Some(""), "10.126.126.1"), DnsAlignment::NoRecord);
     }
 
     #[test]

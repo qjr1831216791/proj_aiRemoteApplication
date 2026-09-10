@@ -218,6 +218,7 @@ pub async fn switch_channel(
     orch: tauri::State<'_, Orchestrator>,
     mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
+    lang_state: tauri::State<'_, LanguageState>,
     target: crate::settings::AccessChannel,
 ) -> Result<crate::settings::Settings, String> {
     use crate::tunnel::WindowsFrpcOps;
@@ -245,13 +246,27 @@ pub async fn switch_channel(
         match action {
             SwitchAction::StartFrpc => mgr.start()?,
             SwitchAction::StopFrpc => mgr.stop(),
-            // 组网生效（渲染→校验→提权重启）与反向收尾（提权停）随 T9 命令层
-            // 接 mesh-service.ps1；当前不可达（mesh_ready 判定后正常路径才会产出）
+            // 组网生效（渲染→落位→校验→提权 install/restart）：与 mesh_apply_config
+            // 命令共享内核（plan §3.2 第 3~4 步；密钥缺失已由 switch_actions 前置
+            // 拒绝，此处 prepare_stack 的同判定为双保险）
             SwitchAction::RestartMeshService => {
-                return Err("组网服务管理待 T9 接入（mesh-service.ps1）".into());
+                apply_mesh_effective(&ctx, &settings, lang_state.current()).await?;
             }
+            // 反向收尾：提权停组网服务（mesh→direct/tunnel，plan §3.2）
             SwitchAction::StopMeshService => {
-                return Err("组网服务管理待 T9 接入（mesh-service.ps1）".into());
+                let Some(dir) = ctx.scripts_dir.clone() else {
+                    return Err(
+                        "脚本目录不可用：无法停组网服务（可手动运行 mesh-service.ps1 -Action stop）"
+                            .into(),
+                    );
+                };
+                let params = crate::mesh::service_action_params(
+                    &dir,
+                    "stop",
+                    &cur.stack_dir,
+                    lang_state.current(),
+                );
+                dispatch_elevated(params).await?;
             }
             SwitchAction::StartDdnsGo => {
                 orch.start_one(ComponentId::DdnsGo)
@@ -261,22 +276,7 @@ pub async fn switch_channel(
                 sync_ddnsgo_autostart(&ctx, cur.language, cur.stack_dir.clone(), true).await;
             }
             SwitchAction::StopDdnsGo => {
-                // 停止管线有 10s 预算 → spawn_blocking 不阻塞 UI 线程（沿 stop_all）
-                let orch2 = orch.inner().clone();
-                let outcome = tauri::async_runtime::spawn_blocking(move || {
-                    orch2.stop_one(ComponentId::DdnsGo)
-                })
-                .await
-                .map_err(|e| format!("停止线程失败：{e}"))?;
-                if !matches!(outcome, StopOutcome::Stopped | StopOutcome::AlreadyStopped) {
-                    return Err(format!(
-                        "ddns-go 停止未确认（{outcome:?}）：frpc 已启动，请检查 ddns-go 状态后重试"
-                    ));
-                }
-                // 取消 ddns-go 自启托管（007 §3.2，对 tunnel/mesh 双方向同语义——
-                // 004 补强）：开机任务拉起 ddns-go 会把 A 记录写回公网 IP，与穿透
-                // CNAME / 组网虚拟 IP 的 DNS 调和互踩
-                sync_ddnsgo_autostart(&ctx, cur.language, cur.stack_dir.clone(), false).await;
+                stop_ddnsgo_and_unmanage(&ctx, &orch, cur.language, cur.stack_dir.clone()).await?;
             }
             SwitchAction::SyncDns(to) => {
                 // DNS 自动切换（AC12/13 升级）：凭证缺失/API 失败仅记录不阻断——
@@ -354,6 +354,261 @@ async fn sync_ddnsgo_autostart(
     }
 }
 
+/// 停 ddns-go 进程并取消自启托管（switch_channel StopDdnsGo 与停用直连共享；
+/// 007 §3.2——开机任务拉起 ddns-go 会把 A 记录写回公网 IP，与穿透 CNAME /
+/// 组网虚拟 IP 的 DNS 调和互踩）。停止未确认 → Err（后续 DNS 动作没有意义）。
+async fn stop_ddnsgo_and_unmanage(
+    ctx: &tauri::State<'_, AutostartContext>,
+    orch: &tauri::State<'_, Orchestrator>,
+    language: crate::settings::LanguageSetting,
+    stack_dir: String,
+) -> Result<(), String> {
+    // 停止管线有 10s 预算 → spawn_blocking 不阻塞 UI 线程（沿 stop_all）
+    let orch2 = orch.inner().clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || orch2.stop_one(ComponentId::DdnsGo))
+        .await
+        .map_err(|e| format!("停止线程失败：{e}"))?;
+    if !matches!(outcome, StopOutcome::Stopped | StopOutcome::AlreadyStopped) {
+        return Err(format!(
+            "ddns-go 停止未确认（{outcome:?}）：请检查组件状态后重试"
+        ));
+    }
+    sync_ddnsgo_autostart(ctx, language, stack_dir, false).await;
+    Ok(())
+}
+
+/// UAC 派发（ShellExecuteW runas）：UAC 弹窗期间可能不返回 → 后台线程执行
+/// 不冻结 UI（run_tool 同纪律）；elevate 已把结果码转为可读文案（5=UAC 被拒）
+async fn dispatch_elevated(params: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || scripts::elevate("powershell.exe", &params))
+        .await
+        .map_err(|e| format!("提权派发线程失败：{e}"))?
+}
+
+// ── 组网通道（spec 007 T9：plan §5.1 命令层；逻辑在 mesh/tunnel/dns_api）────
+
+use crate::mesh::MeshStatus;
+
+/// 组网状态快照（启动兜底；此后以 `mesh://status` 事件为准——AC4 四态 + 失败
+/// 摘要 detail 稳定码，构造上不含密钥）
+#[tauri::command]
+pub fn mesh_status(
+    monitor: tauri::State<'_, std::sync::Arc<crate::mesh::MeshMonitor>>,
+) -> MeshStatus {
+    monitor.status()
+}
+
+/// 组网配置生效（AC1/AC9）：密钥就绪检查 → 渲染 config.toml → 二进制缺失时
+/// 落位 → `--check-config` 校验 → 按服务实况 UAC 派发 install/restart。
+/// 与 switch_channel 的 RestartMeshService 共享内核（同一生效路径，无双源）。
+#[tauri::command]
+pub async fn mesh_apply_config(
+    ctx: tauri::State<'_, AutostartContext>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    lang_state: tauri::State<'_, LanguageState>,
+) -> Result<(), String> {
+    apply_mesh_effective(&ctx, &settings, lang_state.current()).await
+}
+
+/// mesh 生效内核：磁盘段（prepare_stack，spawn_blocking）→ 服务实况选动作
+/// → UAC 派发。任一步 Err 均含可读指引且不含密钥值（AC8/AC9）。
+async fn apply_mesh_effective(
+    ctx: &tauri::State<'_, AutostartContext>,
+    settings: &tauri::State<'_, crate::settings::SettingsState>,
+    lang: crate::lang::Lang,
+) -> Result<(), String> {
+    use crate::mesh::MeshOps;
+
+    prepare_mesh_stack(ctx, settings).await?;
+    let Some(dir) = ctx.scripts_dir.clone() else {
+        return Err("脚本目录不可用：无法派发组网服务动作（mesh-service.ps1）".into());
+    };
+    let stack = settings.current().stack_dir;
+    let ops = crate::mesh::WindowsMeshOps::new(ctx.scripts_dir.clone(), stack.clone());
+    let params = match crate::mesh::apply_service_action(ops.service_state()) {
+        "install" => crate::mesh::service_install_params(&dir, &stack, lang),
+        _ => crate::mesh::service_action_params(&dir, "restart", &stack, lang),
+    };
+    dispatch_elevated(params).await
+}
+
+/// 生效流水线磁盘段（apply/install 共享前置）：渲染 → 落位 → 写盘 → 校验
+async fn prepare_mesh_stack(
+    ctx: &tauri::State<'_, AutostartContext>,
+    settings: &tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<(), String> {
+    let cur = settings.current();
+    let stack = cur.stack_dir.clone();
+    let cfg = cur.mesh.clone();
+    let src_bin = ctx.scripts_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::mesh::prepare_stack(&cfg, &stack, src_bin.as_deref()).map(|_| ())
+    })
+    .await
+    .map_err(|e| format!("组网配置生效线程失败：{e}"))?
+}
+
+/// 安装/刷新组网服务（AC3 前置）：落位五文件 + 渲染 config（缺密钥 → Err
+/// 指引）+ UAC install（幂等：已存在则刷新 binPath 与自愈配置——显式装服务
+/// 入口强制 install 动作，与 apply 的「已装即 restart」分流）
+#[tauri::command]
+pub async fn mesh_install_service(
+    ctx: tauri::State<'_, AutostartContext>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    lang_state: tauri::State<'_, LanguageState>,
+) -> Result<(), String> {
+    prepare_mesh_stack(&ctx, &settings).await?;
+    let lang = lang_state.current();
+    let Some(dir) = ctx.scripts_dir.clone() else {
+        return Err("脚本目录不可用：无法安装组网服务（mesh-service.ps1）".into());
+    };
+    let stack = settings.current().stack_dir;
+    let params = crate::mesh::service_install_params(&dir, &stack, lang);
+    dispatch_elevated(params).await
+}
+
+/// 卸载组网服务（停用 mesh 的清理路径；服务承载进程一并消失）
+#[tauri::command]
+pub async fn mesh_uninstall_service(
+    ctx: tauri::State<'_, AutostartContext>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    lang_state: tauri::State<'_, LanguageState>,
+) -> Result<(), String> {
+    let lang = lang_state.current();
+    let Some(dir) = ctx.scripts_dir.clone() else {
+        return Err("脚本目录不可用：无法卸载组网服务（mesh-service.ps1）".into());
+    };
+    let stack = settings.current().stack_dir;
+    let params = crate::mesh::service_action_params(&dir, "uninstall", &stack, lang);
+    dispatch_elevated(params).await
+}
+
+/// 停用旧通道（AC5/AC6，plan §5.2）：前置校验非现役（disable_actions 纯函数
+/// 拒绝）→ 停组件 → DNS 清理（凭证缺失降级 warn，前端呈现手动指引）→
+/// 持久化停用标记。返回更新后的 Settings（看板「已停用」态数据源）。
+#[tauri::command]
+pub async fn disable_legacy_channel(
+    ctx: tauri::State<'_, AutostartContext>,
+    orch: tauri::State<'_, Orchestrator>,
+    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    target: String,
+    delete_a: bool,
+) -> Result<crate::settings::Settings, String> {
+    use crate::tunnel::{disable_actions, DisableAction, DisableReject, DisableTarget};
+
+    let target = parse_disable_target(&target)?;
+    let cur = settings.current();
+    let actions =
+        disable_actions(cur.access_channel, target, delete_a).map_err(|e| match e {
+            DisableReject::ChannelActive { target } => match target {
+                DisableTarget::Tunnel => {
+                    "穿透通道现役中：请先切换到组网或直连，再执行停用".to_string()
+                }
+                DisableTarget::Direct => {
+                    "直连通道现役中：请先切换到组网或穿透，再执行停用".to_string()
+                }
+            },
+        })?;
+    for action in actions {
+        match action {
+            DisableAction::StopFrpc => mgr.stop(),
+            DisableAction::StopDdnsGo => {
+                stop_ddnsgo_and_unmanage(&ctx, &orch, cur.language, cur.stack_dir.clone()).await?;
+            }
+            // CNAME 全删（AC5 彻底清理）／A 全删（AC6 非组网态按用户选择）
+            DisableAction::DeleteCname | DisableAction::DeleteA => {
+                purge_dns_records(&cur, matches!(action, DisableAction::DeleteA)).await;
+            }
+            DisableAction::MarkDisabled(t) => {
+                let patch = match t {
+                    DisableTarget::Tunnel => SettingsPatch {
+                        tunnel_disabled: Some(true),
+                        ..Default::default()
+                    },
+                    DisableTarget::Direct => SettingsPatch {
+                        direct_disabled: Some(true),
+                        ..Default::default()
+                    },
+                };
+                settings
+                    .patch(&patch)
+                    .map_err(|e| format!("停用标记持久化失败：{e}"))?;
+            }
+        }
+    }
+    Ok(settings.current())
+}
+
+/// "tunnel"|"direct" → DisableTarget（前端入参解析；非法值 Err）
+fn parse_disable_target(s: &str) -> Result<crate::tunnel::DisableTarget, String> {
+    match s {
+        "tunnel" => Ok(crate::tunnel::DisableTarget::Tunnel),
+        "direct" => Ok(crate::tunnel::DisableTarget::Direct),
+        other => Err(format!("未知停用目标（应为 tunnel/direct）：{other}")),
+    }
+}
+
+/// DNS 清理执行臂（DeleteCname/DeleteA）：腾讯云凭证缺失或 API 失败仅记
+/// warn 不阻断——停用编排主体（停组件 + 标记）已完成，记录残留交由前端
+/// 手动指引闭环（AC5/AC6「失败回退手动指引」004 惯例）
+async fn purge_dns_records(cur: &crate::settings::Settings, delete_a: bool) {
+    use crate::consts::{DOMAIN, DOMAIN_ROOT};
+    let Some(cred) = crate::dns_api::read_credential(&cur.stack_dir) else {
+        log::warn!("DNS 清理跳过：未找到腾讯云凭证（.env / ddns-go.yaml），请按指引手动删除记录");
+        return;
+    };
+    let root = DOMAIN_ROOT.to_string();
+    let sub = crate::dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        if delete_a {
+            crate::dns_api::purge_a_records(&cred, &root, &sub)
+        } else {
+            crate::dns_api::purge_cnames(&cred, &root, &sub)
+        }
+    })
+    .await;
+    match result {
+        Ok(Ok(n)) => log::info!("DNS 清理完成（删除 {n} 条记录）"),
+        Ok(Err(e)) => log::warn!("DNS 清理失败（回退手动指引）：{e}"),
+        Err(e) => log::warn!("DNS 清理线程失败（回退手动指引）：{e}"),
+    }
+}
+
+/// 停用穿透后的密钥清除入口（AC5）：拉起 clear-frp-key.ps1 可见窗（从栈
+/// .env 移除 SAKURA_FRP_KEY 行，其余行保留）。栈目录当前用户可写，无需提权。
+#[tauri::command]
+pub async fn clear_frp_key(
+    ctx: tauri::State<'_, AutostartContext>,
+    lang_state: tauri::State<'_, LanguageState>,
+) -> Result<(), String> {
+    let lang = lang_state.current();
+    let Some(dir) = ctx.scripts_dir.clone() else {
+        // spec §4.5：脚本目录不可用 → 禁用原因透传
+        let reason = ctx
+            .scripts_disabled_reason
+            .clone()
+            .unwrap_or_else(|| lang::detail_texts(lang).scripts_dir_unavailable());
+        return Err(reason);
+    };
+    let stack_dir = ctx
+        .stack_dir
+        .clone()
+        .unwrap_or_else(|| crate::consts::DEFAULT_STACK_DIR.to_string());
+    tauri::async_runtime::spawn_blocking(move || {
+        let params = scripts::visible_script_params(
+            &dir,
+            scripts::Script::ClearFrpKey,
+            lang,
+            &["-StackDir", &format!("'{}'", stack_dir.replace('\'', "''"))],
+        );
+        scripts::open_visible("powershell.exe", &params)
+    })
+    .await
+    .map_err(|e| lang::err_texts(lang).tool_join_failed(&e.to_string()))?
+    .map_err(|code| lang::shell_error_text(code, lang))
+}
+
 /// 穿透启用/停用（AC11）：非穿透通道下仅改开关（守护循环按通道×开关收敛，
 /// 不在此处拉起/停止，避免与守护竞争）
 #[tauri::command]
@@ -367,22 +622,39 @@ pub fn set_tunnel_enabled(
     })
 }
 
-/// DNS 对齐检测（AC12/13）：权威 NS 上的 CNAME/A 实况 → 对齐结论。
+/// DNS 对齐检测（AC12/13 + spec 007 体检重定义，通道感知）：权威 NS 上的
+/// CNAME/A 实况 → 对齐结论。穿透判 CNAME→节点域；组网判 A=虚拟 IP；
+/// 直连判有 A 即可（值由 ddns-go 自愈维护，不比对）。
 /// `Err` = 查询本身失败（网络/解析器异常），前端如实显示"检测失败"。
 #[tauri::command]
 pub async fn check_dns_alignment(
     settings: tauri::State<'_, crate::settings::SettingsState>,
 ) -> Result<DnsAlignment, String> {
     use crate::consts::{DOMAIN, DOMAIN_ROOT};
-    let node_domain = settings
-        .current()
-        .tunnel
-        .map(|t| t.node_domain)
-        .ok_or("穿透未配置，无需 DNS 对齐检测")?;
+    use crate::settings::AccessChannel as Ac;
+    let cur = settings.current();
+    let expected = match cur.access_channel {
+        Ac::Tunnel => cur
+            .tunnel
+            .as_ref()
+            .map(|t| t.node_domain.clone())
+            .ok_or("穿透未配置，无需 DNS 对齐检测")?,
+        Ac::Mesh => cur.mesh.virtual_ip.clone(),
+        // 直连不比对 A 值——占位空串（judge_dns 的 CNAME 分支才用期望值）
+        Ac::Direct => String::new(),
+    };
     let probe = tauri::async_runtime::spawn_blocking(move || run_dns_probe(DOMAIN_ROOT, DOMAIN))
         .await
         .map_err(|e| format!("DNS 检测线程失败：{e}"))??;
-    Ok(judge_dns(probe.cname.as_deref(), probe.has_a, &node_domain))
+    Ok(match cur.access_channel {
+        Ac::Tunnel => judge_dns(probe.cname.as_deref(), probe.has_a, &expected),
+        Ac::Mesh => crate::tunnel::judge_dns_mesh(
+            probe.cname.as_deref(),
+            probe.a_value.as_deref(),
+            &expected,
+        ),
+        Ac::Direct => judge_dns(probe.cname.as_deref(), probe.has_a, &expected),
+    })
 }
 
 /// Resolve-DnsName 三连查（NS → 权威 CNAME/A）的合成输出
@@ -392,6 +664,8 @@ struct DnsProbeResult {
     ns: Option<String>,
     cname: Option<String>,
     has_a: bool,
+    /// 首条 A 记录值（组网态比对虚拟 IP 用；无记录 → null/空）
+    a_value: Option<String>,
 }
 
 /// PowerShell 采集（沿 network.rs 先例：UTF8 输出 + CREATE_NO_WINDOW，一次
@@ -405,10 +679,11 @@ fn run_dns_probe(domain_root: &str, domain: &str) -> Result<DnsProbeResult, Stri
         r#"[Console]::OutputEncoding=[Text.Encoding]::UTF8;
 $ErrorActionPreference='SilentlyContinue';
 $ns=@(Resolve-DnsName -Name {root} -Type NS -Server 223.5.5.5 -ErrorAction SilentlyContinue | Where-Object {{[string]$_.NameHost}} | Select-Object -First 1).NameHost;
-if(-not $ns){{ Write-Output '{{"ns":null,"cname":null,"hasA":false}}'; exit }};
+if(-not $ns){{ Write-Output '{{"ns":null,"cname":null,"hasA":false,"aValue":null}}'; exit }};
 $cn=@(Resolve-DnsName -Name {dom} -Type CNAME -Server $ns -ErrorAction SilentlyContinue | Where-Object {{[string]$_.NameHost}} | Select-Object -First 1).NameHost;
 $aa=@(Resolve-DnsName -Name {dom} -Type A -Server $ns -ErrorAction SilentlyContinue | Where-Object {{[string]$_.IPAddress}});
-[pscustomobject]@{{ns=[string]$ns;cname=[string]$cn;hasA=($aa.Count -gt 0)}} | ConvertTo-Json -Compress"#,
+$aVal=if($aa.Count -gt 0){{[string](@($aa | Select-Object -First 1).IPAddress)}}else{{$null}};
+[pscustomobject]@{{ns=[string]$ns;cname=[string]$cn;hasA=($aa.Count -gt 0);aValue=$aVal}} | ConvertTo-Json -Compress"#,
         root = domain_root,
         dom = domain,
     );
@@ -555,5 +830,15 @@ mod tests {
         // 编译期语义：Orchestrator 可跨线程共享（spawn_blocking 前提）
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Arc<Orchestrator>>();
+    }
+
+    /// 停用目标解析（spec 007 AC5/AC6 前置）：合法两值映射，非法值可读 Err
+    #[test]
+    fn parse_disable_target_accepts_known_values_only() {
+        use crate::tunnel::DisableTarget;
+        assert_eq!(parse_disable_target("tunnel").unwrap(), DisableTarget::Tunnel);
+        assert_eq!(parse_disable_target("direct").unwrap(), DisableTarget::Direct);
+        let err = parse_disable_target("mesh").unwrap_err();
+        assert!(err.contains("tunnel/direct"), "{err}");
     }
 }

@@ -103,6 +103,13 @@ pub fn run() {
             commands::switch_channel,
             commands::set_tunnel_enabled,
             commands::check_dns_alignment,
+            // spec 007：组网通道 + 旧通道停用（T9 命令层）
+            commands::mesh_status,
+            commands::mesh_apply_config,
+            commands::mesh_install_service,
+            commands::mesh_uninstall_service,
+            commands::disable_legacy_channel,
+            commands::clear_frp_key,
             // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启 + frpc 分发保障
             commands::open_stack_dir,
             commands::check_domain_health_now,

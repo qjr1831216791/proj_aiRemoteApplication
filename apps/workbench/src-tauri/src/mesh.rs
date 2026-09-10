@@ -523,14 +523,91 @@ pub fn service_action_params(
     stack_dir: &str,
     lang: crate::lang::Lang,
 ) -> String {
+    service_action_params_extra(scripts_dir, action, stack_dir, lang, &[])
+}
+
+/// 同上，可附加额外具名参数（install 的 -BinPath；参数值由调用方按 PS 单引号
+/// 字面量包裹后传入——内部双引号不逃逸，binPath 含引号路径安全）
+fn service_action_params_extra(
+    scripts_dir: &Path,
+    action: &str,
+    stack_dir: &str,
+    lang: crate::lang::Lang,
+    extra: &[&str],
+) -> String {
     // PS 单引号字面量（栈目录含空格安全，autostart::ps_quote 同规则）
     let quoted_stack = format!("'{}'", stack_dir.replace('\'', "''"));
+    let mut args: Vec<&str> = vec!["-Action", action, "-StackDir", &quoted_stack];
+    args.extend_from_slice(extra);
     crate::scripts::visible_script_params(
         scripts_dir,
         crate::scripts::Script::MeshService,
         lang,
-        &["-Action", action, "-StackDir", &quoted_stack],
+        &args,
     )
+}
+
+/// install 派发参数（mesh_install_service / apply 未装路径）：附 -BinPath。
+/// binPath 由 [`service_bin_path`] 构造（AC8 断言纯路径无密钥），PS 单引号
+/// 包裹原样传递——内部双引号是 SCM 命令行的路径包裹，不经 PS 解析拆断。
+pub fn service_install_params(
+    scripts_dir: &Path,
+    stack_dir: &str,
+    lang: crate::lang::Lang,
+) -> String {
+    let bin_path = service_bin_path(stack_dir);
+    let quoted_bin = format!("'{}'", bin_path.replace('\'', "''"));
+    service_action_params_extra(
+        scripts_dir,
+        "install",
+        stack_dir,
+        lang,
+        &["-BinPath", &quoted_bin],
+    )
+}
+
+/// apply（mesh_apply_config / 切组网）的服务动作选择（纯函数）：服务未装 →
+/// install（附 binPath，脚本幂等建档）；已装（含 Disabled）→ restart
+///（config.toml 变更经重启生效；Disabled 下脚本报错留窗，属显式停用与
+/// 启用路径交叉的罕见态，用户可读后先启用服务）
+pub fn apply_service_action(service: MeshServiceState) -> &'static str {
+    match service {
+        MeshServiceState::NotFound => "install",
+        _ => "restart",
+    }
+}
+
+/// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
+/// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
+/// 写 config.toml → `--check-config` 办后校验。返回 (config 路径, core exe)。
+/// 校验失败时 config 已写盘——调用方不得派发重启，旧配置继续服务，修好再 apply。
+pub fn prepare_stack(
+    cfg: &MeshConfig,
+    stack_dir: &str,
+    src_bin: Option<&Path>,
+) -> Result<(PathBuf, PathBuf), String> {
+    // 顺序：先验密钥与配置（纯内存），再动盘——AC9 的拒绝必须先于任何落盘
+    let secret = read_network_secret(stack_dir)
+        .ok_or("组网密钥未配置：请先运行 set-mesh-secret.ps1 写入密钥（设置区有入口指引）")?;
+    let toml = render_config_checked(cfg, &secret)?;
+    let et_dir = Path::new(stack_dir).join(MESH_DIR);
+    let core_exe = et_dir.join(EASYTIER_CORE_EXE_NAME);
+    if !core_exe.is_file() {
+        let src = src_bin.ok_or_else(|| {
+            format!(
+                "easytier 二进制未落位且资源脚本目录不可用：请重装工作台，或手动复制 easytier 五文件到 {}",
+                et_dir.display()
+            )
+        })?;
+        stage_easytier_binaries(src, stack_dir)?;
+    }
+    std::fs::create_dir_all(&et_dir)
+        .map_err(|e| format!("创建 {} 失败：{e}", et_dir.display()))?;
+    let config_path = et_dir.join(CONFIG_FILE);
+    std::fs::write(&config_path, &toml)
+        .map_err(|e| format!("写入 {} 失败：{e}", config_path.display()))?;
+    check_config(&core_exe, &config_path)?;
+    Ok((config_path, core_exe))
 }
 
 // ── config.toml 渲染（plan §4.3；T2 实测字段形态）──────────────────────────
@@ -1024,6 +1101,70 @@ mod tests {
         let err = stage_easytier_binaries(&src, "unused").expect_err("篡改源应拒绝");
         assert!(err.contains("SHA256"), "{err}");
         let _ = std::fs::remove_dir_all(&src);
+    }
+
+    // ── T9：apply 动作选择 + install 派发参数 + 生效流水线 ────────────────
+
+    /// apply 动作选择：仅未装走 install（幂等建档），其余 restart
+    #[test]
+    fn apply_action_selects_install_only_when_missing() {
+        assert_eq!(apply_service_action(MeshServiceState::NotFound), "install");
+        for s in [
+            MeshServiceState::Running,
+            MeshServiceState::StartPending,
+            MeshServiceState::Stopped,
+            MeshServiceState::Disabled,
+        ] {
+            assert_eq!(apply_service_action(s), "restart", "{s:?}");
+        }
+    }
+
+    /// install 派发参数：-Action install + -BinPath 单引号包裹的 binPath 原文
+    ///（AC8：binPath 纯路径参数，AC8 断言由 service_bin_path 测试锁死）
+    #[test]
+    fn install_params_carry_quoted_bin_path() {
+        let dir = Path::new(r"C:\app\resources\bin");
+        let stack = r"D:\Software\cloudcli-https";
+        let params = service_install_params(dir, stack, crate::lang::Lang::Zh);
+        assert!(params.contains("-Action install"), "{params}");
+        let bp = service_bin_path(stack);
+        // binPath 以 PS 单引号包裹原样传递（内部双引号不逃逸、不被 PS 拆断）
+        assert!(params.contains(&format!("-BinPath '{bp}'")), "{params}");
+        assert!(!bp.to_ascii_lowercase().contains("secret"), "AC8：{bp}");
+    }
+
+    /// AC9：密钥缺失拒绝先于任何落盘（easytier 目录都不建）
+    #[test]
+    fn prepare_stack_rejects_missing_secret_before_any_write() {
+        let stack = std::env::temp_dir().join("et-apply-nosecret");
+        let _ = std::fs::remove_dir_all(&stack);
+        std::fs::create_dir_all(&stack).unwrap();
+        let err = prepare_stack(&sample_config(), stack.to_str().unwrap(), None)
+            .expect_err("无密钥应拒绝");
+        assert!(err.contains("set-mesh-secret"), "指引脚本名：{err}");
+        assert!(
+            !stack.join(MESH_DIR).exists(),
+            "拒绝必须先于落盘（AC9 拒绝启动语义）"
+        );
+        let _ = std::fs::remove_dir_all(&stack);
+    }
+
+    /// 生效流水线端到端（真资源 bin 落位 + 真 exe --check-config）：
+    /// config.toml 产出且含渲染内容
+    #[test]
+    fn prepare_stack_renders_stages_and_checks() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources").join("bin");
+        let stack = std::env::temp_dir().join("et-apply-ok");
+        let _ = std::fs::remove_dir_all(&stack);
+        std::fs::create_dir_all(stack.join(MESH_DIR)).unwrap();
+        std::fs::write(stack.join(MESH_DIR).join(NETWORK_SECRET_FILE), "it-is-a-secret\n").unwrap();
+        let (cfg_path, core_exe) =
+            prepare_stack(&sample_config(), stack.to_str().unwrap(), Some(&src))
+                .expect("合法输入应通过");
+        assert!(cfg_path.is_file() && core_exe.is_file());
+        let content = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(content.contains("network_name = \"office-net\""), "{content}");
+        let _ = std::fs::remove_dir_all(&stack);
     }
 
     // ── T8：状态判定矩阵（AC4：四态 + Inactive + detail 稳定码）──────────

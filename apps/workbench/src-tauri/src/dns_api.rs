@@ -426,6 +426,30 @@ pub fn sync_to_mesh(cred: &TcCredential, root: &str, sub: &str, virtual_ip: &str
     apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Mesh(virtual_ip.to_string())))
 }
 
+/// 停用编排的记录清理计划（纯函数）：删除指定类型的**全部**记录（不管值
+/// 与启用态——停用语义是消除暴露面，暂停的记录同样可被重新激活）。
+fn purge_ops(current: &[DnsRecord], rtype: &str) -> Vec<RecordOp> {
+    current
+        .iter()
+        .filter(|r| r.rtype.eq_ignore_ascii_case(rtype))
+        .map(|r| RecordOp::Delete { record_id: r.record_id })
+        .collect()
+}
+
+/// 停用穿透的 CNAME 彻底清理（spec 007 AC5；幂等，A 记录不动——组网/直连
+/// 通道的 A 由各自机制持有）。返回删除条数。
+pub fn purge_cnames(cred: &TcCredential, root: &str, sub: &str) -> Result<usize, String> {
+    let current = list_records(cred, root, sub)?;
+    apply_ops(cred, root, sub, purge_ops(&current, "CNAME"))
+}
+
+/// 停用直连的 A 记录清理（spec 007 AC6 非组网态、用户选择删除；幂等）。
+/// 组网态不调本函数——A=虚拟 IP 由组网持有（disable_actions 编排保证）。
+pub fn purge_a_records(cred: &TcCredential, root: &str, sub: &str) -> Result<usize, String> {
+    let current = list_records(cred, root, sub)?;
+    apply_ops(cred, root, sub, purge_ops(&current, "A"))
+}
+
 /// 域名常量派生子域（"ai.jackqi.cn" + "jackqi.cn" → "ai"）
 pub fn subdomain_of<'a>(domain: &'a str, root: &str) -> &'a str {
     domain
@@ -555,6 +579,27 @@ mod tests {
             DnsRecord { record_id: 6, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
         ];
         assert!(reconcile(&aligned, &DnsTarget::Tunnel("frp-can.com".into())).is_empty());
+    }
+
+    /// 停用清理（spec 007 AC5/AC6）：指定类型全删（含暂停残留），别类型不动
+    #[test]
+    fn purge_ops_deletes_all_of_type_including_disabled() {
+        let current = vec![
+            DnsRecord { record_id: 1, rtype: "A".into(), value: "10.126.126.1".into(), enabled: true },
+            DnsRecord { record_id: 2, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
+            DnsRecord { record_id: 3, rtype: "CNAME".into(), value: "old-node.com".into(), enabled: false },
+        ];
+        assert_eq!(
+            purge_ops(&current, "CNAME"),
+            vec![RecordOp::Delete { record_id: 2 }, RecordOp::Delete { record_id: 3 }],
+            "停穿透：CNAME 全删（活跃+暂停的均可被重新激活，一并消除）"
+        );
+        assert_eq!(
+            purge_ops(&current, "A"),
+            vec![RecordOp::Delete { record_id: 1 }],
+            "停直连（用户选删）：A 全删"
+        );
+        assert!(purge_ops(&[], "CNAME").is_empty(), "无记录 → 幂等空操作");
     }
 
     #[test]

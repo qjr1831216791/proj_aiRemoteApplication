@@ -49,6 +49,10 @@ pub enum Script {
     /// EasyTier 组网服务管理（install/uninstall/start/stop/restart/status；
     /// 需管理员，变更动作自检提权——spec 007，status 只读免提权）
     MeshService,
+    /// EasyTier 组网密钥写入 network-secret（交互式，无需管理员；spec 007）
+    SetMeshSecret,
+    /// SakuraFrp 密钥清除（从栈 .env 移除该行，无需管理员；spec 007 AC5）
+    ClearFrpKey,
 }
 
 /// 窗口形态（spec §4.3）
@@ -77,6 +81,8 @@ impl Script {
             Script::SetTencentKey => "set-tencent-key.ps1",
             Script::ConfigDdnsGo => "config-ddnsgo.ps1",
             Script::MeshService => "mesh-service.ps1",
+            Script::SetMeshSecret => "set-mesh-secret.ps1",
+            Script::ClearFrpKey => "clear-frp-key.ps1",
         }
     }
 
@@ -93,7 +99,9 @@ impl Script {
             | Script::ResetDdnsPassword
             | Script::SetFrpKey
             | Script::SetTencentKey
-            | Script::ConfigDdnsGo => Visibility::VisibleInteractive,
+            | Script::ConfigDdnsGo
+            | Script::SetMeshSecret
+            | Script::ClearFrpKey => Visibility::VisibleInteractive,
         }
     }
 
@@ -115,6 +123,9 @@ impl Script {
             Script::ConfigDdnsGo => Duration::from_secs(120),
             // 服务动作最快（stop/start 秒级；install 含落位与 Start-Service 预算 60s）
             Script::MeshService => Duration::from_secs(60),
+            // 交互输入等待无上限，给足余量；隐藏执行器不消费此值（可见窗 detached）
+            Script::SetMeshSecret => Duration::from_secs(300),
+            Script::ClearFrpKey => Duration::from_secs(120),
         }
     }
 }
@@ -472,6 +483,11 @@ pub enum ToolKind {
     SetTencentKey,
     /// ddns-go 配置生成 + 拉起（config-ddnsgo.ps1，可见交互窗；spec 006）
     ConfigDdnsGo,
+    /// EasyTier 组网密钥写入 network-secret（set-mesh-secret.ps1，可见交互窗；
+    /// spec 007 AC8——密钥经交互脚本注入，不进工作台内存）
+    SetMeshSecret,
+    /// SakuraFrp 密钥清除（clear-frp-key.ps1，可见窗；spec 007 AC5 停用收尾）
+    ClearFrpKey,
 }
 
 impl From<ToolKind> for Script {
@@ -485,6 +501,8 @@ impl From<ToolKind> for Script {
             ToolKind::SetFrpKey => Script::SetFrpKey,
             ToolKind::SetTencentKey => Script::SetTencentKey,
             ToolKind::ConfigDdnsGo => Script::ConfigDdnsGo,
+            ToolKind::SetMeshSecret => Script::SetMeshSecret,
+            ToolKind::ClearFrpKey => Script::ClearFrpKey,
         }
     }
 }
@@ -537,6 +555,8 @@ pub fn tool_plan(
             | ToolKind::SetFrpKey
             | ToolKind::SetTencentKey
             | ToolKind::ConfigDdnsGo
+            | ToolKind::SetMeshSecret
+            | ToolKind::ClearFrpKey
     ) {
         extra.push("-StackDir");
         extra.push(stack_dir);
