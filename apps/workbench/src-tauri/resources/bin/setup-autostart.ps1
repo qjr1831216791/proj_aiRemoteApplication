@@ -6,8 +6,8 @@
 .DESCRIPTION
   管理三个组件的登录自启，全部幂等（已在运行则自动跳过）：
     1. CloudCLI        -> run-server-hidden.ps1（隐藏窗口，端口守卫）
-    2. Caddy           -> caddy.exe run --config Caddyfile（HTTPS 反代 443 -> 3001；
-                          必须长驻 run 而非 start，见组件定义处注释与 §9.5-⑩）
+    2. Caddy           -> run-caddy-hidden.ps1（注入 .env 凭证后 caddy run --config
+                          Caddyfile；必须长驻 run 而非 start，见组件定义处注释与 §9.5-⑩）
     3. ddns-go         -> ddns-go.exe（DDNS，ai.jackqi.cn 跟随本机 IP）
 
   用法（开关）：
@@ -44,6 +44,7 @@ function Write-Bad  { param([string]$Message) Write-Host "[X ] $Message"  -Foreg
 
 # ---------- 组件定义 ----------
 $runner = Join-Path $PSScriptRoot 'run-server-hidden.ps1'
+$caddyRunner = Join-Path $PSScriptRoot 'run-caddy-hidden.ps1'
 $components = @(
     @{
         Name   = 'CloudCLI Sprint0 autostart'
@@ -57,7 +58,9 @@ $components = @(
         Exe    = 'powershell.exe'
         # 必须用长驻的 run 而非 start：start 会 fork 子进程后退出，计划任务结束时
         # Windows 会把同作业的子进程一并杀死，导致 443 从未真正起来（§9.5-⑩）
-        Arg    = "-NoProfile -WindowStyle Hidden -Command `"& '$StackDir\caddy.exe' run --config '$StackDir\Caddyfile'`""
+        # 经 run-caddy-hidden.ps1 拉起：先注入栈 .env 的 {env.*} 凭证再前台 run
+        # （插件式 Caddyfile，spec 006 / ADR-0003）
+        Arg    = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$caddyRunner`" -StackDir `"$StackDir`""
         Check  = (Join-Path $StackDir 'caddy.exe')
         Why    = (T "缺少 $StackDir\caddy.exe" "Missing $StackDir\caddy.exe")
     },

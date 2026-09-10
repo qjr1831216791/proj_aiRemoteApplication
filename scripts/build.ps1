@@ -46,6 +46,7 @@ $Arch      = 'x64'
 # 停止走程序内等效实现（spec §4.1），脚本保留为仓库内命令行兜底，不入产物）
 $ScriptSubset = @(
     'run-server-hidden.ps1'   # 哨兵：ScriptLocator 以它判定目录有效
+    'run-caddy-hidden.ps1'    # Caddy 计划任务拉起（注入 .env 凭证，spec 006）
     'setup-autostart.ps1'     # 服务自启任务开/关（-Remove）
     'install-server.ps1'      # 安装/升级 CloudCLI（UAC）
     'install-https.ps1'       # HTTPS 栈装机（UAC）

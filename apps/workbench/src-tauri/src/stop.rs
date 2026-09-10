@@ -203,6 +203,7 @@ pub fn caddy_stop_spec(cfg: &StopConfig, log_dir: &Path, stack_dir: &str) -> Com
         stderr_log: Some(log_dir.join("caddy-stop.err.log")),
         timeout: cfg.caddy_stop_timeout,
         working_dir: Some(PathBuf::from(stack_dir)),
+        env: crate::scripts::SecretEnv::default(),
     }
 }
 

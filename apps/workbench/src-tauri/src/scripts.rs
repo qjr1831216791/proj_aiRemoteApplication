@@ -184,7 +184,19 @@ pub fn locate(override_dir: Option<&str>, exe_dir: Option<&Path>) -> ScriptsReso
 
 // ── 命令规格与构建器 ───────────────────────────────────────────────────────
 
-/// 命令规格（数据态：可断言、可 mock、可入日志）
+/// 进程环境注入（可能含敏感凭证：Debug 只显示变量名，值永不出现在日志/断言输出，
+/// 宪法 §3；PartialEq 比较真实值供单测断言）
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct SecretEnv(pub Vec<(String, String)>);
+
+impl std::fmt::Debug for SecretEnv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names: Vec<&str> = self.0.iter().map(|(k, _)| k.as_str()).collect();
+        f.debug_tuple("SecretEnv").field(&names).finish()
+    }
+}
+
+/// 命令规格（数据态：可断言、可 mock、可入日志；env 字段经 SecretEnv 屏蔽值）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandSpec {
     pub program: String,
@@ -199,6 +211,8 @@ pub struct CommandSpec {
     pub timeout: Duration,
     /// 工作目录（None = 继承当前）
     pub working_dir: Option<PathBuf>,
+    /// 进程环境注入（空 = 不注入；caddy 拉起时注入 Caddyfile {env.*} 凭证，ADR-0003）
+    pub env: SecretEnv,
 }
 
 impl CommandSpec {
@@ -244,6 +258,7 @@ pub fn hidden_script_spec(
         stderr_log: Some(log_dir.join(format!("{stem}.err.log"))),
         timeout: script.timeout(),
         working_dir: Some(dir.to_path_buf()),
+        env: SecretEnv::default(),
     }
 }
 
@@ -274,8 +289,19 @@ pub fn setup_autostart(dir: &Path, lang: Lang, log_dir: &Path, remove: bool, sta
     spec
 }
 
-/// Caddy 原生拉起（plan §5.2：不经 powershell；参数与 setup-autostart.ps1 任务一致）
+/// Caddy 原生拉起（plan §5.2：不经 powershell；参数与 setup-autostart.ps1 任务一致）。
+/// 插件式 Caddyfile 的 {env.*} 凭证在 spawn 时注入进程环境（ADR-0003）——
+/// 凭证经 dns_api 回退链（.env → ddns-go.yaml）读取，仅进子进程环境、
+/// 不入 CommandSpec 日志输出（SecretEnv 屏蔽）。
 pub fn caddy_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
+    let env = crate::dns_api::read_credential(stack_dir)
+        .map(|cred| {
+            SecretEnv(vec![
+                ("TENCENT_SECRET_ID".into(), cred.id),
+                ("TENCENT_SECRET_KEY".into(), cred.key),
+            ])
+        })
+        .unwrap_or_default();
     CommandSpec {
         program: format!(r"{stack_dir}\caddy.exe"),
         args: vec!["run".into(), "--config".into(), CADDYFILE_PATH.into()],
@@ -285,6 +311,7 @@ pub fn caddy_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
         // 派发后由编排层轮询端口就绪（T8），此处超时仅为执行器兜底
         timeout: Duration::from_secs(15),
         working_dir: Some(PathBuf::from(stack_dir)),
+        env,
     }
 }
 
@@ -305,6 +332,7 @@ pub fn ddns_go_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
         stderr_log: Some(log_dir.join("ddns-go.err.log")),
         timeout: Duration::from_secs(15),
         working_dir: Some(PathBuf::from(stack_dir)),
+        env: SecretEnv::default(),
     }
 }
 
@@ -615,6 +643,9 @@ fn std_command(
     cmd.args(&spec.args);
     cmd.stdout(stdout);
     cmd.stderr(stderr);
+    for (key, value) in &spec.env.0 {
+        cmd.env(key, value);
+    }
     if let Some(dir) = &spec.working_dir {
         cmd.current_dir(dir);
     }
@@ -976,6 +1007,7 @@ mod tests {
             stderr_log: Some(dir.join("echo.err.log")),
             timeout: Duration::from_secs(10),
             working_dir: None,
+            env: SecretEnv::default(),
         };
         assert_eq!(ProcessExecutor.execute(&spec), ExecOutcome::Exited(0));
         let logged = std::fs::read_to_string(&out_log).expect("stdout 应落日志");
@@ -995,6 +1027,7 @@ mod tests {
             stderr_log: None,
             timeout: Duration::from_millis(400),
             working_dir: None,
+            env: SecretEnv::default(),
         };
         assert_eq!(ProcessExecutor.execute(&spec), ExecOutcome::TimedOut);
     }
@@ -1012,9 +1045,64 @@ mod tests {
             stderr_log: None,
             timeout: Duration::from_secs(5),
             working_dir: None,
+            env: SecretEnv::default(),
         };
         let start = std::time::Instant::now();
         assert!(ProcessExecutor.dispatch(&spec).is_ok());
         assert!(start.elapsed() < Duration::from_secs(5), "dispatch 不应等待子进程完成");
+    }
+
+    /// 独享临时栈目录（含 .env 写入辅助），返回路径
+    fn temp_stack_dir(tag: &str, env_content: Option<&str>) -> std::path::PathBuf {
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "wb-scripts-caddyenv-{}-{tag}-{n}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("创建临时栈目录失败");
+        if let Some(content) = env_content {
+            std::fs::write(dir.join(".env"), content).expect("写 .env 失败");
+        }
+        dir
+    }
+
+    /// ADR-0003：caddy_run 从栈 .env 读凭证注入 {env.*} 所需进程环境
+    #[test]
+    fn caddy_run_injects_tencent_creds_from_env_file() {
+        let stack = temp_stack_dir(
+            "creds",
+            Some("SAKURA_FRP_KEY=frpkey\nTENCENT_SECRET_ID=AKIDtest1234\nTENCENT_SECRET_KEY=secretkey\n"),
+        );
+        let spec = caddy_run(&stack.join("logs"), stack.to_str().unwrap());
+        assert_eq!(
+            spec.env.0,
+            vec![
+                ("TENCENT_SECRET_ID".to_string(), "AKIDtest1234".to_string()),
+                ("TENCENT_SECRET_KEY".to_string(), "secretkey".to_string()),
+            ],
+            "应注入且仅注入 Caddyfile {{env.*}} 消费的两个变量"
+        );
+        // 宪法 §3：Debug/日志路径不得出现凭证值（SecretEnv 屏蔽）
+        let dbg = format!("{spec:?}");
+        assert!(!dbg.contains("AKIDtest1234"), "Debug 泄漏 SecretId：{dbg}");
+        assert!(!dbg.contains("secretkey"), "Debug 泄漏 SecretKey：{dbg}");
+        assert!(dbg.contains("SecretEnv"), "应显示屏蔽形态：{dbg}");
+        let _ = std::fs::remove_dir_all(&stack);
+    }
+
+    /// 无 .env / 无凭证：不注入（CommandSpec 其余断言不受影响）
+    #[test]
+    fn caddy_run_without_credentials_has_empty_env() {
+        let stack = temp_stack_dir("nocreds", None);
+        let spec = caddy_run(&stack.join("logs"), stack.to_str().unwrap());
+        assert!(spec.env.0.is_empty(), "无凭证时 env 应为空");
+        assert_eq!(
+            spec.program,
+            format!(r"{}\caddy.exe", stack.display()),
+            "program 不受 env 逻辑影响"
+        );
+        let _ = std::fs::remove_dir_all(&stack);
     }
 }

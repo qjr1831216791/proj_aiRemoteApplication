@@ -65,6 +65,7 @@ fn ps_command_spec(script: &str, timeout: Duration, log_stem: &str, log_dir: &Pa
         stderr_log: Some(log_dir.join(format!("{log_stem}.err.log"))),
         timeout,
         working_dir: None,
+        env: crate::scripts::SecretEnv::default(),
     }
 }
 
