@@ -24,6 +24,7 @@ mod stop;
 mod tray;
 mod tunnel;
 mod urls;
+mod wizard;
 
 use tauri::{Emitter, Manager};
 
@@ -107,6 +108,12 @@ pub fn run() {
             commands::restart_tunnel,
             commands::get_defender_exclusion_cmd,
             commands::download_frpc,
+            // spec 006：装机向导
+            wizard::wizard_get_state,
+            wizard::wizard_detect,
+            wizard::wizard_set_domain,
+            wizard::wizard_set_branch,
+            wizard::wizard_complete,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -272,6 +279,12 @@ pub fn run() {
                 scripts_disabled_reason,
                 log_dir,
                 stack_dir: Some(stack_dir),
+            });
+
+            // ── 装机向导（spec 006）：状态持有 + 探测源 ─────────────────────
+            app.manage(wizard::WizardHolder::load_at(wizard::wizard_state_path()));
+            app.manage(wizard::WizardDeps {
+                probe: std::sync::Arc::new(probe::WindowsProbe),
             });
 
             tray::setup(app, effective_lang)?;
