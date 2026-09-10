@@ -19,6 +19,7 @@
 |------|------|------|------|
 | [0001](./0001-tauri2-desktop-stack.md) | 桌面端技术栈：Tauri 2 + WebView2 + 轻量 Web 前端 | accepted | 2026-09-08 |
 | [0002](./0002-control-data-plane-split.md) | 服务生命周期：控制面/数据面分离，自启走登录计划任务 | accepted | 2026-09-08 |
+| [0003](./0003-caddy-dns-plugin-tls.md) | TLS 获取：acme.sh 外挂退役，改 Caddy tencentcloud 插件自治 | accepted | 2026-09-10 |
 
 ## 模板
 

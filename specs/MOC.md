@@ -8,7 +8,7 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- [004-tunnel-access](./004-tunnel-access/spec.md) — 内网穿透双通道：直连（DDNS，默认）⇄ 穿透（SakuraFrp 香港节点）用户可切换，隧道进程托管与守护、双向 DNS 切换指引（需求方委托决策，2026-09-09 置 reviewed）
+- [006-foolproof-install](./006-foolproof-install/spec.md) — 傻瓜式装机向导：APP 串联专项脚本驱动新机三目标（局域网/直连/穿透）装机，web 端事项文字引导+办后校验；TLS 获取改 Caddy tencentcloud 插件（acme.sh 退役，ADR-0003）；低频栏瘦身（2026-09-10 需求方确认置 reviewed）
 
 ### 🟠 实现中（in-progress）
 - [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）
@@ -31,6 +31,7 @@
 | Sprint 2 | [003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md) | ddns-go 密码重置脚本与 APP 入口（交互式控制台，密码不落 APP） |
 | Sprint 3 | [004-tunnel-access](./004-tunnel-access/spec.md) | 内网穿透双通道（直连⇄穿透一键切换、DNS 自动暂停/激活、frpc 随包+守护自愈、通道体检）（2026-09-10 验收 done） |
 | Sprint 3 | [005-domain-heartbeat](./005-domain-heartbeat/spec.md) | 域名心跳检测（红绿标记 + 失败分类 + 自愈联动；核心已实现，AC 收口随 Sprint 4） |
+| Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书，reviewed） |
 
 ## 按主题导航
 
