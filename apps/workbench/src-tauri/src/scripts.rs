@@ -42,6 +42,10 @@ pub enum Script {
     ResetDdnsPassword,
     /// SakuraFrp 访问密钥写入 .env（交互式，无需管理员；spec 004）
     SetFrpKey,
+    /// 腾讯云 CAM 密钥写入 .env（交互式，无需管理员；spec 006）
+    SetTencentKey,
+    /// ddns-go 配置生成 + 拉起（可见交互窗，无需管理员；spec 006）
+    ConfigDdnsGo,
 }
 
 /// 窗口形态（spec §4.3）
@@ -67,6 +71,8 @@ impl Script {
             Script::InstallClient => "install-client.ps1",
             Script::ResetDdnsPassword => "reset-ddns-password.ps1",
             Script::SetFrpKey => "set-frp-key.ps1",
+            Script::SetTencentKey => "set-tencent-key.ps1",
+            Script::ConfigDdnsGo => "config-ddnsgo.ps1",
         }
     }
 
@@ -80,7 +86,9 @@ impl Script {
             }
             Script::InstallClient
             | Script::ResetDdnsPassword
-            | Script::SetFrpKey => Visibility::VisibleInteractive,
+            | Script::SetFrpKey
+            | Script::SetTencentKey
+            | Script::ConfigDdnsGo => Visibility::VisibleInteractive,
         }
     }
 
@@ -98,6 +106,8 @@ impl Script {
             Script::ResetDdnsPassword => Duration::from_secs(300),
             // 交互输入等待无上限，给足余量；隐藏执行器不消费此值（可见窗 detached）
             Script::SetFrpKey => Duration::from_secs(300),
+            Script::SetTencentKey => Duration::from_secs(300),
+            Script::ConfigDdnsGo => Duration::from_secs(120),
         }
     }
 }
@@ -451,6 +461,10 @@ pub enum ToolKind {
     ResetDdnsPassword,
     /// SakuraFrp 访问密钥写入 .env（set-frp-key.ps1，可见交互窗；spec 004）
     SetFrpKey,
+    /// 腾讯云 CAM 密钥写入 .env（set-tencent-key.ps1，可见交互窗；spec 006）
+    SetTencentKey,
+    /// ddns-go 配置生成 + 拉起（config-ddnsgo.ps1，可见交互窗；spec 006）
+    ConfigDdnsGo,
 }
 
 impl From<ToolKind> for Script {
@@ -462,18 +476,22 @@ impl From<ToolKind> for Script {
             ToolKind::InstallClient => Script::InstallClient,
             ToolKind::ResetDdnsPassword => Script::ResetDdnsPassword,
             ToolKind::SetFrpKey => Script::SetFrpKey,
+            ToolKind::SetTencentKey => Script::SetTencentKey,
+            ToolKind::ConfigDdnsGo => Script::ConfigDdnsGo,
         }
     }
 }
 
-/// install-server 可选项（plan §5.2）
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+/// 安装类可选项（plan §5.2 + spec 006 域名透传）
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ToolOpts {
     /// `-Update`：升级 CloudCLI 到最新版
     pub update: bool,
     /// `-UseMirror`：npm 换国内镜像源
     pub mirror: bool,
+    /// `-Domain`：安装/配置类脚本的域名透传（装机向导自定义域名；None = 脚本默认）
+    pub domain: Option<String>,
 }
 
 /// 派发计划（纯函数构造，可单测；run_tool 命令消费）
@@ -507,10 +525,21 @@ pub fn tool_plan(
     // 感知栈目录的脚本跟随用户配置（spec 004：装机/密钥/密码重置写入正确位置）
     if matches!(
         kind,
-        ToolKind::InstallHttps | ToolKind::ResetDdnsPassword | ToolKind::SetFrpKey
+        ToolKind::InstallHttps
+            | ToolKind::ResetDdnsPassword
+            | ToolKind::SetFrpKey
+            | ToolKind::SetTencentKey
+            | ToolKind::ConfigDdnsGo
     ) {
         extra.push("-StackDir");
         extra.push(stack_dir);
+    }
+    // 域名透传（spec 006：装机向导自定义域名 → Caddyfile / ddns-go.yaml）
+    if let Some(domain) = opts.domain.as_deref() {
+        if matches!(kind, ToolKind::InstallHttps | ToolKind::ConfigDdnsGo) {
+            extra.push("-Domain");
+            extra.push(domain);
+        }
     }
     ToolDispatch {
         script,
@@ -902,7 +931,7 @@ mod tests {
         assert!(!plan.params.contains("-Update") && !plan.params.contains("-UseMirror"), "{}", plan.params);
 
         // 升级 + 镜像源：两个开关透传
-        let opts = ToolOpts { update: true, mirror: true };
+        let opts = ToolOpts { update: true, mirror: true, domain: None };
         let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::En, DEFAULT_STACK_DIR);
         assert!(plan.params.contains("-Update"), "{}", plan.params);
         assert!(plan.params.contains("-UseMirror"), "{}", plan.params);

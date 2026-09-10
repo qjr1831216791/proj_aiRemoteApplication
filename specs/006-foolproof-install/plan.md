@@ -96,13 +96,13 @@ Tauri commands（事件 `wizard://changed` 载荷 = 全量 WizardState；前端�
 
 | 命令 | 签名 | 语义 |
 |------|------|------|
-| `wizard_get_state` | `-> WizardState` | 读当前（首次调用触发全量探测） |
-| `wizard_detect` | `-> WizardState` | 全阶段重探测（幂等；凭证脚本跑完回来刷新用） |
-| `wizard_set_branch` | `(AccessChannel) -> WizardState` | 阶段④选择；另一分支置 skipped |
+| `wizard_get_state` | `-> WizardState` | 读当前状态持有者 |
+| `wizard_detect` | `-> WizardState`（async） | 全阶段重探测（spawn_blocking；外部办理/脚本跑完后的统一「校验」入口） |
+| `wizard_set_branch` | `(AccessChannel) -> WizardState` | 阶段④选择；**同步写 Settings.access_channel**——frpc 拉起/ddns-go 停托管复用 004 守护收敛 |
 | `wizard_set_domain` | `(String) -> WizardState` | 非敏感域名输入（默认 ai.jackqi.cn） |
-| `wizard_run_stage` | `(WizardStageId) -> WizardState` | 异步执行；状态先置 Running，结果经事件回推 |
-| `wizard_open_key_console` | `("tencent"\|"frp") -> ()` | 拉起对应交互式脚本（可见控制台窗） |
-| `wizard_finalize` | `(autostart: bool) -> WizardState` | 注册自启（复用 001）+ done |
+| `wizard_complete` | `-> WizardState` | done 置位（自启注册由前端复用 set_autostart_* 命令） |
+
+**派发类动作不设独立命令**：装机/密钥脚本由前端复用既有 `run_tool`（新增 ToolKind `set_tencent_key`/`config_ddnsgo`；`ToolOpts` 增 `domain` 透传自定义域名到 install-https/config-ddnsgo 的 `-Domain`）——UAC/可见窗/退出码语义全部沿用 AC19/20，向导只负责状态与校验。
 
 **凭证流向（安全边界）**：键盘 → `set-tencent-key.ps1`（不回显）→ 栈 `.env` → `dns_api::read_credential`（内存）→ API 校验；全程不经 APP 进程/IPC/日志。
 
@@ -153,3 +153,4 @@ GUI 视觉/交互项（布局、chip 配色、滚动、折叠）→ 手工验收
 | 日期 | 变更内容 | 原因 |
 |------|----------|------|
 | 2026-09-10 | 初稿 | 收口 spec 三个开放问题：分发=安装时下载+zip 兜底；校验=Rust 复用 dns_api.rs（004 既有 TC3 客户端，node 方案作废）；ddns-go=url 模式 + 网卡交集 CGNAT 判据 |
+| 2026-09-10 | 实现期修订：① wizard_run_stage/wizard_open_key_console 取消，派发复用 run_tool（+2 ToolKind、ToolOpts.domain）；② StageState 不设 Running（派发繁忙为前端局部态）；③ CGNAT 判据落地为"公网 IP ∈ 私网/CGNAT 段"纯函数 + warn_* 警示码（原"网卡交集"方案无法区分真出口）；计划任务路径的 {env.*} 注入由新脚本 run-caddy-hidden.ps1 承担 | 检测驱动架构下向导无需平行派发机制（简单优先）；详勘后更诚实的实现路径 |

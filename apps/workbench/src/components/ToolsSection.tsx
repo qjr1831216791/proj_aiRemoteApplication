@@ -1,6 +1,6 @@
 /**
- * 低频操作区（T15：AC19/20）。
- * - 折叠区（默认收起）：装机/升级/HTTPS 两件套/客户端配置/ddns-go 管理页/工作台
+ * 运维工具区（spec 006 AC13 瘦身：装机首配归装机向导，本区仅保留运维项）。
+ * - 折叠区（默认收起）：升级 CloudCLI/客户端配置/ddns-go 密码重置/ddns-go 管理页
  * - 脚本缺失 → 对应按钮禁用 + ScriptLocator 禁用原因透传（spec §4.5）
  * - 派发失败/UAC 拒绝 → run_tool 返回 Err，toast 明确提示不崩溃（AC20）
  */
@@ -37,32 +37,11 @@ export function ToolsSection(props: ToolsSectionProps) {
 
   const defs: ToolDef[] = [
     {
-      id: "install_server",
-      label: "tools.installServer",
-      desc: "tools.installServerDesc",
-      needsScripts: true,
-      run: () => runTool("install_server", false),
-    },
-    {
       id: "update_cloudcli",
       label: "tools.updateCloudcli",
       desc: "tools.updateCloudcliDesc",
       needsScripts: true,
       run: () => runTool("install_server", true),
-    },
-    {
-      id: "install_https",
-      label: "tools.installHttps",
-      desc: "tools.installHttpsDesc",
-      needsScripts: true,
-      run: () => runTool("install_https", false),
-    },
-    {
-      id: "enable_https",
-      label: "tools.enableHttps",
-      desc: "tools.enableHttpsDesc",
-      needsScripts: true,
-      run: () => runTool("enable_https", false),
     },
     {
       id: "install_client",
@@ -84,13 +63,6 @@ export function ToolsSection(props: ToolsSectionProps) {
       desc: "tools.openDdnsAdminDesc",
       needsScripts: false,
       run: () => api.openExternal("ddns_admin"),
-    },
-    {
-      id: "open_workbench",
-      label: "tools.openWorkbench",
-      desc: "tools.openWorkbenchDesc",
-      needsScripts: false,
-      run: () => api.openExternal("workbench"),
     },
   ];
 

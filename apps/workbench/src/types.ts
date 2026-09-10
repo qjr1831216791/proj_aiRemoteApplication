@@ -118,12 +118,39 @@ export type ToolKind =
   | "enable_https"
   | "install_client"
   | "reset_ddns_password"
-  | "set_frp_key";
+  | "set_frp_key"
+  | "set_tencent_key"
+  | "config_ddnsgo";
 
-/** run_tool 可选项（仅 install_server 消费） */
+/** run_tool 可选项（update/mirror 仅 install_server；domain 供安装/配置类透传，spec 006） */
 export interface ToolOpts {
   update: boolean;
   mirror: boolean;
+  domain?: string | null;
+}
+
+// ── 装机向导（spec 006）─────────────────────────────────────────────────────
+
+/** 向导阶段（顺序即推进顺序） */
+export type WizardStageId = "basis" | "tencent" | "https" | "channel" | "finalize";
+
+/** 阶段态（无 running：派发繁忙为前端局部状态） */
+export type StageState = "pending" | "done" | "failed" | "skipped";
+
+/** 单阶段状态（detail = 稳定码，双语归 i18n） */
+export interface StageStatus {
+  id: WizardStageId;
+  state: StageState;
+  detail?: string | null;
+}
+
+/** 向导全量状态（wizard://changed 事件与各 wizard_* 命令的载荷） */
+export interface WizardState {
+  version: number;
+  stages: StageStatus[];
+  branch: AccessChannel | null;
+  domain: string;
+  done: boolean;
 }
 
 /** 脚本可用性（spec §4.5：禁用原因透传） */

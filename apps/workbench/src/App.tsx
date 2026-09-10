@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onDomainHealth, onNetChanged, onSettingsRepaired, onStatusChanged, onTunnelStatus } from "./api";
+import { api, onDomainHealth, onNetChanged, onSettingsRepaired, onStatusChanged, onTunnelStatus, onWizardChanged } from "./api";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
   AccessUrls,
@@ -21,11 +21,13 @@ import type {
   ScriptsAvailability,
   Settings,
   TunnelStatus,
+  WizardStageId,
 } from "./types";
 import { MainView } from "./components/MainView";
 import { SettingsView } from "./components/SettingsView";
+import { WizardView } from "./components/WizardView";
 
-type View = "main" | "settings";
+type View = "main" | "settings" | "wizard";
 type ToastKind = "info" | "success" | "error";
 interface Toast {
   id: number;
@@ -47,6 +49,9 @@ export function App() {
   const [domainHealth, setDomainHealth] = useState<DomainHealth | null>(null);
   const [stopping, setStopping] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // 装机向导（spec 006）：装机未完成 → 主看板引导条；跳转定位阶段（AC14）
+  const [wizardFocus, setWizardFocus] = useState<WizardStageId | null>(null);
+  const [wizardDone, setWizardDone] = useState(true);
 
   /** 非阻塞提示（自动 6s 消失） */
   const pushToast = (text: string, kind: ToastKind = "info") => {
@@ -85,6 +90,10 @@ export function App() {
       api.scriptsAvailability().then(setScripts).catch(() => {});
       api.getNetStatus().then(setNetStatus).catch(() => {});
       api.getTunnelStatus().then(setTunnelStatus).catch(() => {});
+      api
+        .wizardGetState()
+        .then((s) => setWizardDone(s.done))
+        .catch(() => {});
 
       // 状态事件：此后状态以事件为准（前端零轮询）
       track(await onStatusChanged(setStatuses));
@@ -96,6 +105,8 @@ export function App() {
       track(await onDomainHealth(setDomainHealth));
       // 设置损坏恢复：非阻塞提示（AC24）
       track(await onSettingsRepaired(() => pushToast(t("settings.repaired", lang), "info")));
+      // 向导状态事件（spec 006）：引导条随 done 收敛
+      track(await onWizardChanged((s) => setWizardDone(s.done)));
     })();
     return () => {
       disposed = true;
@@ -153,6 +164,15 @@ export function App() {
             {t("nav.main", lang)}
           </button>
           <button
+            class={`nav-btn${view === "wizard" ? " nav-btn--active" : ""}`}
+            onClick={() => {
+              setWizardFocus(null);
+              setView("wizard");
+            }}
+          >
+            {t("nav.wizard", lang)}
+          </button>
+          <button
             class={`nav-btn${view === "settings" ? " nav-btn--active" : ""}`}
             onClick={() => setView("settings")}
           >
@@ -178,6 +198,21 @@ export function App() {
           onStopAll={stopAll}
           onRetry={retryOne}
           onToast={pushToast}
+          wizardDone={wizardDone}
+          onOpenWizard={(stage) => {
+            setWizardFocus(stage);
+            setView("wizard");
+          }}
+        />
+      ) : view === "wizard" && settings ? (
+        <WizardView
+          lang={lang}
+          settings={settings}
+          tunnelStatus={tunnelStatus}
+          focusStage={wizardFocus}
+          onToast={pushToast}
+          onSettingsChange={setSettings}
+          onFinished={() => setView("main")}
         />
       ) : settings ? (
         <SettingsView

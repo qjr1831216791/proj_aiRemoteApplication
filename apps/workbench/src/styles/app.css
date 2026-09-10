@@ -729,3 +729,188 @@
   background: var(--c-error-soft);
   color: var(--c-error);
 }
+
+/* ── 装机向导（spec 006 §4.1）────────────────────────────────── */
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.wizard__hint {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.wizard__layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+}
+
+@media (max-width: 640px) {
+  .wizard__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wizard__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.wizard__stage {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface, transparent);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.wizard__stage--on {
+  border-color: var(--c-info);
+}
+
+.wizard__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--c-border);
+  color: var(--c-text-secondary);
+  font-size: var(--fs-xs);
+  flex: none;
+}
+
+.wizard__stage--on .wizard__num {
+  background: var(--c-primary-soft);
+  color: var(--c-info);
+}
+
+.wizard__stage .chip {
+  margin-left: auto;
+}
+
+.chip--wiz-pending {
+  background: var(--c-border);
+  color: var(--c-text-secondary);
+}
+
+.chip--wiz-done {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.chip--wiz-failed {
+  background: var(--c-error-soft);
+  color: var(--c-error);
+}
+
+.chip--wiz-skipped {
+  background: var(--c-border);
+  color: var(--c-text-secondary);
+  opacity: 0.7;
+}
+
+.wizard__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+
+.wizard__desc {
+  margin: 0;
+  color: var(--c-text-secondary);
+}
+
+.wizard__steps {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.wizard__url {
+  word-break: break-all;
+  user-select: text;
+}
+
+.wizard__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.wizard__label {
+  flex: none;
+  min-width: 5em;
+  color: var(--c-text-secondary);
+}
+
+.wizard__input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  font: inherit;
+}
+
+.wizard__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+.wizard__choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border: 1px solid var(--c-border);
+}
+
+.wizard__choice--on {
+  border-color: var(--c-info);
+  box-shadow: 0 0 0 1px var(--c-info) inset;
+}
+
+.wizard__detail {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-secondary);
+}
+
+.wizard__detail--bad {
+  color: var(--c-error);
+}
+
+.wizard__tunnelState {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.wizard__summary {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}

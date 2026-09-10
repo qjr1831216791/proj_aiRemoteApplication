@@ -12,6 +12,7 @@
 
 ### 🟠 实现中（in-progress）
 - [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）
+- [006-foolproof-install](./006-foolproof-install/spec.md) — 傻瓜式装机向导：五阶段检测驱动（基础/腾讯云前置/HTTPS 栈/访问通道/收尾），断点续跑+办后校验；TLS 改 Caddy tencentcloud 插件自治（ADR-0003）；低频栏瘦身（自动化 164 项全绿，真机/AC 验收进行中）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
@@ -31,13 +32,14 @@
 | Sprint 2 | [003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md) | ddns-go 密码重置脚本与 APP 入口（交互式控制台，密码不落 APP） |
 | Sprint 3 | [004-tunnel-access](./004-tunnel-access/spec.md) | 内网穿透双通道（直连⇄穿透一键切换、DNS 自动暂停/激活、frpc 随包+守护自愈、通道体检）（2026-09-10 验收 done） |
 | Sprint 3 | [005-domain-heartbeat](./005-domain-heartbeat/spec.md) | 域名心跳检测（红绿标记 + 失败分类 + 自愈联动；核心已实现，AC 收口随 Sprint 4） |
-| Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书，reviewed） |
+| Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书，in-progress） |
 
 ## 按主题导航
 
 - 桌面工作台：[001-desktop-console](./001-desktop-console/spec.md)
 - 网络环境：[002-network-profile](./002-network-profile/spec.md)
 - 凭证维护：[003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md)
+- 装机体验：[006-foolproof-install](./006-foolproof-install/spec.md)
 
 <!-- 功能域增多后按主题分区，例如：-->
 <!-- - 用户体系：[001-xxx](./001-xxx/spec.md) · [003-xxx](./003-xxx/spec.md) -->

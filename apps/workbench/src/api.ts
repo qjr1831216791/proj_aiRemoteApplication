@@ -21,6 +21,7 @@ import type {
   ToolKind,
   ToolOpts,
   TunnelStatus,
+  WizardState,
 } from "./types";
 
 export const api = {
@@ -75,6 +76,15 @@ export const api = {
   getDefenderExclusionCmd: () => invoke<string>("get_defender_exclusion_cmd"),
   /** 一键恢复 frpc（官方 CDN 下载 → SHA256 校验 → 落位栈目录） */
   downloadFrpc: () => invoke<string>("download_frpc"),
+
+  // ── 装机向导（spec 006）───────────────────────────────────────────────
+  wizardGetState: () => invoke<WizardState>("wizard_get_state"),
+  /** 全量重探测（外部办理/脚本跑完后的统一「校验」入口） */
+  wizardDetect: () => invoke<WizardState>("wizard_detect"),
+  wizardSetDomain: (domain: string) => invoke<WizardState>("wizard_set_domain", { domain }),
+  /** 分支选择：同步写 Settings.access_channel（frpc/ddns-go 收敛复用 004 守护） */
+  wizardSetBranch: (branch: AccessChannel) => invoke<WizardState>("wizard_set_branch", { branch }),
+  wizardComplete: () => invoke<WizardState>("wizard_complete"),
 };
 
 /** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */
@@ -104,6 +114,11 @@ export function onSettingsRepaired(
   cb: (payload: { backupPath: string }) => void,
 ): Promise<() => void> {
   return listen<{ backupPath: string }>("settings://repaired", (e) => cb(e.payload));
+}
+
+/** 向导状态事件（spec 006：set_domain/set_branch/detect/complete 后推全量） */
+export function onWizardChanged(cb: (state: WizardState) => void): Promise<() => void> {
+  return listen<WizardState>("wizard://changed", (e) => cb(e.payload));
 }
 
 /** 复制到剪贴板：navigator.clipboard 优先，execCommand 兜底（WebView2 兼容） */

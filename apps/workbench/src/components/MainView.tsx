@@ -22,6 +22,7 @@ import type {
   ScriptsAvailability,
   Settings,
   TunnelStatus,
+  WizardStageId,
 } from "../types";
 import { CopyButton } from "./CopyButton";
 import { ToolsSection } from "./ToolsSection";
@@ -46,6 +47,10 @@ export interface MainViewProps {
   onSettingsChange: (s: Settings) => void;
   /** 一键停止在途（防重复点击） */
   stopping: boolean;
+  /** 装机向导是否已完成（spec 006 AC1：未完成 → 引导条） */
+  wizardDone: boolean;
+  /** 跳转装机向导并定位阶段（spec 006 AC14） */
+  onOpenWizard: (stage: WizardStageId) => void;
   onStartAll: () => void;
   onStopAll: () => void;
   onRetry: (id: ComponentId) => void;
@@ -57,6 +62,7 @@ export function MainView(props: MainViewProps) {
     lang, statuses, urls, scripts, netStatus, onNetRefresh,
     settings, tunnelStatus, domainHealth, onSettingsChange,
     stopping, onStartAll, onStopAll, onRetry, onToast,
+    wizardDone, onOpenWizard,
   } = props;
   // 当前态耗时（since → now）每秒刷新
   const [now, setNow] = useState(Date.now());
@@ -94,6 +100,18 @@ export function MainView(props: MainViewProps) {
 
   return (
     <>
+      {/* 装机引导条（spec 006 AC1）：装机未完成时醒目入口，可关闭由向导 done 收敛 */}
+      {!wizardDone ? (
+        <section class="card master">
+          <p class="notice notice--warn">{t("wizard.notice", lang)}</p>
+          <div class="master__actions">
+            <button class="btn btn--primary" onClick={() => onOpenWizard("basis")}>
+              {t("wizard.noticeCta", lang)}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {/* 总开关（spec §4.6 信息分区之首） */}
       <section class="card master">
         <div class="master__actions">
@@ -146,15 +164,7 @@ export function MainView(props: MainViewProps) {
               </button>
             ) : null}
             {s.state === "failed" && s.id === "cloudcli" ? (
-              <button
-                class="btn btn--sm"
-                onClick={() =>
-                  api
-                    .runTool("install_server", { update: false, mirror: false })
-                    .then(() => onToast(t("tools.dispatched", lang), "success"))
-                    .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"))
-                }
-              >
+              <button class="btn btn--sm" onClick={() => onOpenWizard("basis")}>
                 {t("main.goInstall", lang)}
               </button>
             ) : null}
