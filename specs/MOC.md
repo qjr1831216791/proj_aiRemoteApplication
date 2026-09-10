@@ -17,6 +17,7 @@
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
 - [002-network-profile](./002-network-profile/spec.md) — 网络防火墙归类反馈与调整：换网被拦截主动提示 + 用户决策改公用/专用（风险提示先行）
 - [003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md) — ddns-go 密码重置：sprint0 交互式脚本 + APP 低频操作入口（密码不进 APP/IPC/日志）
+- [004-tunnel-access](./004-tunnel-access/spec.md) — 内网穿透双通道：直连（DDNS，默认）⇄ 穿透（SakuraFrp 香港）一键切换（DNS 自动暂停/激活）、frpc 随包分发 + 守护自愈、通道体检；手工验收记录 `acceptance-manual.md`（3 项日常观察遗留已登记）
 
 ### 📦 已归档（archived）
 - 见 [archive/](./archive/)
@@ -28,6 +29,8 @@
 | Sprint 1 | [001-desktop-console](./001-desktop-console/spec.md) | Windows 桌面程序：一键启停三组件、自启托管（含菜单 7/8 回归）、显式收摊、sprint0 全能力入口（**v0.2.0** 已发布，2026-09-09） |
 | Sprint 2 | [002-network-profile](./002-network-profile/spec.md) | 网络防火墙归类：被拦截主动反馈 + 公用/专用调整入口（用户决策，风险提示先行） |
 | Sprint 2 | [003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md) | ddns-go 密码重置脚本与 APP 入口（交互式控制台，密码不落 APP） |
+| Sprint 3 | [004-tunnel-access](./004-tunnel-access/spec.md) | 内网穿透双通道（直连⇄穿透一键切换、DNS 自动暂停/激活、frpc 随包+守护自愈、通道体检）（2026-09-10 验收 done） |
+| Sprint 3 | [005-domain-heartbeat](./005-domain-heartbeat/spec.md) | 域名心跳检测（红绿标记 + 失败分类 + 自愈联动；核心已实现，AC 收口随 Sprint 4） |
 
 ## 按主题导航
 
