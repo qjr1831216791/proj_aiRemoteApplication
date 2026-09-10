@@ -256,6 +256,7 @@ export const en = {
   "wizard.finalize.done": "Finish — back to Main",
   // Wizard detail codes → copy
   "wizard.code.ok": "Verified",
+  "wizard.code.legacy_ok": "Verified (legacy acme.sh certificate chain still serving; not migrated to the plugin style — works fine, migration is optional)",
   "wizard.code.not_installed": "Not installed yet (click the button above to start)",
   "wizard.code.port_held": "Port 3001 is held by another program; investigate and retry",
   "wizard.code.missing_creds": "Tencent Cloud keys not configured yet (follow the steps above)",

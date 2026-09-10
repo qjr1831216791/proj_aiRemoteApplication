@@ -255,6 +255,7 @@ export const zh = {
   "wizard.finalize.done": "完成，回到主界面",
   // 向导 detail 稳定码 → 文案
   "wizard.code.ok": "校验通过",
+  "wizard.code.legacy_ok": "校验通过（检测到旧版 acme.sh 证书链仍在正常服务，未迁移插件式——不影响使用，迁移可选）",
   "wizard.code.not_installed": "尚未安装（点击上方按钮开始）",
   "wizard.code.port_held": "3001 端口被其他程序占用，请排查后重试",
   "wizard.code.missing_creds": "尚未配置腾讯云密钥（按上方步骤操作）",

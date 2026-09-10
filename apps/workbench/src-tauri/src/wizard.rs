@@ -276,21 +276,32 @@ pub fn derive_tencent(creds_present: bool, api: &TencentApiOutcome) -> (StageSta
     }
 }
 
-/// ③ HTTPS 栈（AC6/7）：插件版 caddy + ddns-go 落位 + 插件式 Caddyfile + 443 运行
-pub fn derive_https(caddy_exe: bool, ddnsgo_exe: bool, caddyfile_plugin_style: bool, caddy_running: bool) -> (StageState, Option<String>) {
+/// ③ HTTPS 栈（AC6/7）：caddy + ddns-go 落位 + Caddyfile 存在 + 443 运行。
+/// Caddyfile 分插件式/旧式两种：旧式（acme.sh 证书链）+ 运行中 = 旧机已在工作，
+/// 同样判 Done（detail "legacy_ok"，迁移可选）——不把"旧机不迁移"误报为未装机
+pub fn derive_https(
+    caddy_exe: bool,
+    ddnsgo_exe: bool,
+    caddyfile_present: bool,
+    caddyfile_plugin_style: bool,
+    caddy_running: bool,
+) -> (StageState, Option<String>) {
     if !caddy_exe {
         return (StageState::Pending, Some("missing_caddy".into()));
     }
     if !ddnsgo_exe {
         return (StageState::Pending, Some("missing_ddnsgo".into()));
     }
-    if !caddyfile_plugin_style {
+    if !caddyfile_present {
         return (StageState::Pending, Some("missing_caddyfile".into()));
     }
-    if caddy_running {
+    if !caddy_running {
+        return (StageState::Pending, Some("not_running".into()));
+    }
+    if caddyfile_plugin_style {
         (StageState::Done, Some("ok".into()))
     } else {
-        (StageState::Pending, Some("not_running".into()))
+        (StageState::Done, Some("legacy_ok".into()))
     }
 }
 
@@ -444,6 +455,7 @@ pub fn detect(state: &WizardState, settings: &crate::settings::Settings, probe: 
     let (st, detail) = derive_https(
         file_present(&format!(r"{stack}\caddy.exe")),
         file_present(&format!(r"{stack}\ddns-go.exe")),
+        Path::new(stack).join("Caddyfile").is_file(),
         caddyfile_plugin_style(stack),
         matches!(probe.probe(ComponentId::Caddy, stack), ProbeState::Running { .. }),
     );
@@ -705,12 +717,18 @@ mod tests {
             derive_tencent(true, &TencentApiOutcome::Err("AuthFailure.SignatureFailure".into())).1,
             Some("auth_failed".into())
         );
-        // ③ HTTPS 栈
-        assert_eq!(derive_https(false, true, true, false).1, Some("missing_caddy".into()));
-        assert_eq!(derive_https(true, false, true, false).1, Some("missing_ddnsgo".into()));
-        assert_eq!(derive_https(true, true, false, false).1, Some("missing_caddyfile".into()));
-        assert_eq!(derive_https(true, true, true, false).0, StageState::Pending);
-        assert_eq!(derive_https(true, true, true, true).0, StageState::Done);
+        // ③ HTTPS 栈（旧式 Caddyfile + 运行中 = 旧机已在工作，同样 Done）
+        assert_eq!(derive_https(false, true, true, true, false).1, Some("missing_caddy".into()));
+        assert_eq!(derive_https(true, false, true, true, false).1, Some("missing_ddnsgo".into()));
+        assert_eq!(derive_https(true, true, false, true, false).1, Some("missing_caddyfile".into()));
+        assert_eq!(derive_https(true, true, true, true, false).1, Some("not_running".into()));
+        assert_eq!(derive_https(true, true, true, true, true).0, StageState::Done);
+        assert_eq!(derive_https(true, true, true, true, true).1, Some("ok".into()));
+        assert_eq!(
+            derive_https(true, true, true, false, true),
+            (StageState::Done, Some("legacy_ok".into())),
+            "旧式证书链 + 443 运行中 = 旧机已在工作"
+        );
         // ④ 直连 / 穿透
         assert_eq!(derive_direct(false, false).1, Some("missing_yaml".into()));
         assert_eq!(derive_direct(true, false).1, Some("not_running".into()));
