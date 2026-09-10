@@ -25,7 +25,7 @@
 
 ## 阶段 3: 凭证脚本
 
-- [ ] T10 `set-mesh-secret.ps1`（Read-Host -AsSecureString ×2 不回显、直写 `<stack>/easytier/network-secret`、复核仅显末 4 位，set-frp-key.ps1 惯例）+ `clear-frp-key.ps1`（从栈 `.env` 移除 SAKURA_FRP_KEY 行、复核显示已移除）+ **build.ps1 $ScriptSubset 登记两个新脚本**（006 坑：漏登记打包即删）（验收: AC8/AC10；完成标志：BOM+CRLF、Parser 校验、真机跑一遍脚本流程）
+- [x] T10 `set-mesh-secret.ps1`（Read-Host -AsSecureString ×2 不回显、直写 `<stack>/easytier/network-secret`、复核仅显末 4 位，set-frp-key.ps1 惯例）+ `clear-frp-key.ps1`（从栈 `.env` 移除 SAKURA_FRP_KEY 行、复核显示已移除）+ **build.ps1 $ScriptSubset 登记两个新脚本**（006 坑：漏登记打包即删）（验收: AC8/AC10；完成标志：BOM+CRLF、Parser 校验、真机跑一遍脚本流程）✓ 2026-09-10（编码关键决策：network-secret **UTF-8 无 BOM** 单行——Rust read_to_string 不剥 BOM 且 trim 不除 U+FEFF，BOM 会作为隐藏字符混进密钥值致成员握手失败；与 .env 的 BOM 惯例相反（.env 由 PowerShell 自家回读），脚本内注释固化该差异。clear-frp-key 保持 .env 的 BOM 形态（WriteAllLines + UTF8 BOM，set-frp-key 写入惯例）。实测：clear-frp-key 临时 .env 端到端验证（目标行移除、其余行+BOM 保留、幂等复跑「无可清理即成功」exit 0）；set-mesh-secret 双语/Parser/BOM+CRLF 过，交互流程（不回显×2/末 4 位复核）留 T14 真机。分发三件套齐：build.ps1 $ScriptSubset 登记、resources/bin 副本（源/副本 sha256 两两一致）、manifest.json 14 条目 python 全量复核 OK；manifest 形态考证：HEAD 内本为 BOM+LF（git text=auto 归一化），Edit 产出同形态仅 3 行净增。坑：变量名 $EnvFile 后接全角括号安全（PS 仅在 `$name:` ASCII 冒号时解析作用域——T7 坑的规避形态）。206 绿持平）
 
 ## 阶段 4: 前端
 
