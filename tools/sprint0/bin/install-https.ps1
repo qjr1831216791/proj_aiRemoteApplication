@@ -212,6 +212,10 @@ if (Test-Path $caddyfile) {
     # 变量后紧跟冒号必须写 ${Domain}（§9.5-④ 作用域语法坑）
     # 插件式 TLS（ADR-0003）：DNS-01 自动签发/续期；凭证经 {env.*} 引用不落明文，
     # 由工作台托管 / 自启链 / 总控菜单在 spawn 时从栈 .env 注入
+    # 注意：tencentcloud 插件必须用块内键值（secret_id/secret_key）写法——
+    # 位置参数形式 validate 报 wrong argument count（2026-09-10 实证）
+    # 注意：数组字面量元素不可用 'str' + $var 拼接（PS 5.1 会把逗号解析为
+    # + 的右操作数，导致值被拆分）——一律用 "${var}" 插值（2026-09-10 实证）
     $lines = @(
         '{',
         '    auto_https disable_redirects',
@@ -219,9 +223,12 @@ if (Test-Path $caddyfile) {
         '',
         "${Domain}:443 {",
         '    tls {',
-        '        dns tencentcloud {env.TENCENT_SECRET_ID} {env.TENCENT_SECRET_KEY}',
+        '        dns tencentcloud {',
+        '            secret_id {env.TENCENT_SECRET_ID}',
+        '            secret_key {env.TENCENT_SECRET_KEY}',
+        '        }',
         '    }',
-        '    reverse_proxy 127.0.0.1:' + $Port,
+        "    reverse_proxy 127.0.0.1:${Port}",
         '}'
     )
     Set-Content -Path $caddyfile -Value $lines -Encoding ascii

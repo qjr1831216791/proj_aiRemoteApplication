@@ -34,6 +34,7 @@ sprint0 期 HTTPS 栈选择 acme.sh（Git Bash 脚本生态）签发/续期 `ai.
 
 ## 契约变更
 
-- Caddyfile 模板（新机）：`${Domain}:443 { tls { dns tencentcloud {env.TENCENT_SECRET_ID} {env.TENCENT_SECRET_KEY} } reverse_proxy 127.0.0.1:${Port} }`，顶部保留 `auto_https disable_redirects`（80 端口 Hyper-V 排除惯例不变）。
+- Caddyfile 模板（新机）：`${Domain}:443 { tls { dns tencentcloud { secret_id {env.TENCENT_SECRET_ID} secret_key {env.TENCENT_SECRET_KEY} } } reverse_proxy 127.0.0.1:${Port} }`，顶部保留 `auto_https disable_redirects`（80 端口 Hyper-V 排除惯例不变）。
+  **注意：tencentcloud 插件必须用块内键值（secret_id/secret_key）写法**——位置参数形式 validate 报 `wrong argument count or unexpected line ending`（2026-09-10 插件试用实证，install-https 模板已固化块写法）。
 - Caddy 二进制下载源：`https://caddyserver.com/api/download?os=windows&arch=amd64&p=github.com/caddy-dns/tencentcloud@v0.4.3`（构建参数登记 manifest.json）。
 - caddy spawn（工作台托管）新增：启动前从栈 `.env` 读入 `TENCENT_SECRET_ID/KEY` 注入进程环境（`{env.*}` 消费；密钥不落 Caddyfile 明文）。

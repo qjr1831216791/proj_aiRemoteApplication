@@ -154,3 +154,4 @@ GUI 视觉/交互项（布局、chip 配色、滚动、折叠）→ 手工验收
 |------|----------|------|
 | 2026-09-10 | 初稿 | 收口 spec 三个开放问题：分发=安装时下载+zip 兜底；校验=Rust 复用 dns_api.rs（004 既有 TC3 客户端，node 方案作废）；ddns-go=url 模式 + 网卡交集 CGNAT 判据 |
 | 2026-09-10 | 实现期修订：① wizard_run_stage/wizard_open_key_console 取消，派发复用 run_tool（+2 ToolKind、ToolOpts.domain）；② StageState 不设 Running（派发繁忙为前端局部态）；③ CGNAT 判据落地为"公网 IP ∈ 私网/CGNAT 段"纯函数 + warn_* 警示码（原"网卡交集"方案无法区分真出口）；计划任务路径的 {env.*} 注入由新脚本 run-caddy-hidden.ps1 承担 | 检测驱动架构下向导无需平行派发机制（简单优先）；详勘后更诚实的实现路径 |
+| 2026-09-10 | 插件版 Caddy 真机试用修正两处模板缺陷（install-https.ps1）：① Caddyfile 的 tencentcloud 配置从位置参数改块内键值（secret_id/secret_key）——位置参数 validate 报 wrong argument count；② 数组字面量元素从 `'str' + $var` 拼接改 `${var}` 插值——PS 5.1 把逗号解析为 `+` 右操作数致值拆分。已用真凭证 + LE staging 端到端验证：DNS-01 签发成功 + 8443 TLS 服务 + HTTP 200 | 2026-09-10 插件端到端实测抓出两处会导致新机 Caddyfile 无法解析的模板缺陷 |
