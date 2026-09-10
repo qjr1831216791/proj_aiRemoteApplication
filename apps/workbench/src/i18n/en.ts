@@ -196,6 +196,7 @@ export const en = {
   "tunnel.check.fail": "Problem",
   "tunnel.check.dns": "DNS alignment",
   "tunnel.check.netCategory": "Network category (443 allowed)",
+  "tunnel.check.netNaTunnel": "N/A in tunnel mode: traffic is outbound + loopback, category does not apply",
   "tunnel.check.netPublicWarn": "Public network present; 443 may be blocked",
   "tunnel.check.tunnel": "Tunnel client",
   "tunnel.check.tunnelOff": "Inactive (direct mode)",

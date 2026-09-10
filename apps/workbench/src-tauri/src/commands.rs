@@ -382,13 +382,18 @@ pub fn open_stack_dir() -> Result<(), String> {
         .map_err(|code| format!("打开目录失败（退出码 {code}）"))
 }
 
-/// 即时域名探测（「通道体检」消费；独立于 60s 心跳，单次 8s 超时）
+/// 即时域名探测（「通道体检」消费；单次 8s 超时。探测后 poke 心跳立即
+/// 补测一轮，保持地址区状态点与体检结论一致，避免红绿矛盾）
 #[tauri::command]
-pub async fn check_domain_health_now() -> Result<heartbeat::ProbeOutcome, String> {
+pub async fn check_domain_health_now(
+    monitor: tauri::State<'_, std::sync::Arc<heartbeat::HealthMonitor>>,
+) -> Result<heartbeat::ProbeOutcome, String> {
     use crate::consts::WORKBENCH_URL;
-    tauri::async_runtime::spawn_blocking(|| heartbeat::probe_once(WORKBENCH_URL))
+    let outcome = tauri::async_runtime::spawn_blocking(|| heartbeat::probe_once(WORKBENCH_URL))
         .await
-        .map_err(|e| format!("探测线程失败：{e}"))
+        .map_err(|e| format!("探测线程失败：{e}"))?;
+    monitor.poke();
+    Ok(outcome)
 }
 
 // ── 单元测试（纯逻辑：停止汇总）────────────────────────────────────────────

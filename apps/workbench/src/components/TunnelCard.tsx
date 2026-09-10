@@ -125,21 +125,30 @@ export function TunnelCard(props: TunnelCardProps) {
         items.push({ label: t("tunnel.check.dns", lang), ok: false, detail: failText });
       }
 
-      // ② 网络归类（spec 002 知识：Public 下 443 规则不生效）
-      const net = netR.status === "fulfilled" ? netR.value : null;
-      if (net) {
-        const publicNet = net.networks.filter((n) => n.category === "public");
-        const alert = net.rulePrivateOnly && publicNet.length > 0;
+      // ② 网络归类（spec 002 知识：Public 下 443 规则不生效——仅影响直连入站，
+      // 穿透模式流量为出站 + 本机回环，不受归类影响 → 不适用）
+      if (channel === "tunnel") {
         items.push({
           label: t("tunnel.check.netCategory", lang),
-          ok: !alert,
-          detail: alert
-            ? t("tunnel.check.netPublicWarn", lang).replace(
-                "{names}",
-                publicNet.map((n) => n.name).join("、"),
-              )
-            : okText,
+          ok: null,
+          detail: t("tunnel.check.netNaTunnel", lang),
         });
+      } else {
+        const net = netR.status === "fulfilled" ? netR.value : null;
+        if (net) {
+          const publicNet = net.networks.filter((n) => n.category === "public");
+          const alert = net.rulePrivateOnly && publicNet.length > 0;
+          items.push({
+            label: t("tunnel.check.netCategory", lang),
+            ok: !alert,
+            detail: alert
+              ? t("tunnel.check.netPublicWarn", lang).replace(
+                  "{names}",
+                  publicNet.map((n) => n.name).join("、"),
+                )
+              : okText,
+          });
+        }
       }
 
       // ③ 隧道客户端（穿透模式判状态；直连模式不适用）

@@ -195,6 +195,7 @@ export const zh = {
   "tunnel.check.fail": "异常",
   "tunnel.check.dns": "DNS 解析对齐",
   "tunnel.check.netCategory": "网络归类（443 放行）",
+  "tunnel.check.netNaTunnel": "穿透模式不经本机入站，此项不影响",
   "tunnel.check.netPublicWarn": "存在公用网络，443 可能被拦截",
   "tunnel.check.tunnel": "隧道客户端",
   "tunnel.check.tunnelOff": "未启用（直连模式）",

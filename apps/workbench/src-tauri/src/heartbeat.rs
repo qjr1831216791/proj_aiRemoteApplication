@@ -143,15 +143,37 @@ pub trait HealthSink: Send + Sync {
 /// 跨模块共享的最近心跳快照（monitor 每轮写入；隧道守护读取做会话卡死自愈）
 pub type SharedHealth = Arc<std::sync::Mutex<Option<DomainHealth>>>;
 
-/// 心跳监测器：周期探测 + 防抖 + 变化即发（每轮都发，载荷轻）
+/// 心跳监测器：周期探测 + 防抖 + 变化即发（每轮都发，载荷轻）。
+/// 支持 poke：外部（如「通道体检」）触发即时补测，保持状态点与体检结论一致。
 pub struct HealthMonitor {
     url: String,
     stop: Arc<AtomicBool>,
+    poke: Arc<AtomicBool>,
 }
 
 impl HealthMonitor {
     pub fn new(url: impl Into<String>) -> Self {
-        Self { url: url.into(), stop: Arc::new(AtomicBool::new(false)) }
+        Self {
+            url: url.into(),
+            stop: Arc::new(AtomicBool::new(false)),
+            poke: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// 唤醒心跳立即补测一轮（不等下个周期；通道体检后调用，防红绿不一致）
+    pub fn poke(&self) {
+        self.poke.store(true, Ordering::Relaxed);
+    }
+
+    /// 分段等待：总时长 interval，期间每 100ms 检查一次 poke 提前唤醒
+    fn wait_interval(&self) {
+        let steps = (HEARTBEAT_INTERVAL.as_millis() / 100) as u32;
+        for _ in 0..steps.max(1) {
+            if self.stop.load(Ordering::Relaxed) || self.poke.swap(false, Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 
     /// 启动心跳线程（装配层调用；enabled 源实时读设置，false 时本轮跳过——AC7；
@@ -199,7 +221,7 @@ impl HealthMonitor {
                         }
                         sink.emit_health(&snapshot);
                     }
-                    std::thread::sleep(HEARTBEAT_INTERVAL);
+                    me.wait_interval();
                 }
             })
             .expect("心跳线程创建失败");
