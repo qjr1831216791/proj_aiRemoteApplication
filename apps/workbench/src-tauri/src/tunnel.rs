@@ -24,6 +24,10 @@ pub const EVENT_TUNNEL_STATUS: &str = "tunnel://status";
 pub const FRPC_STARTING_GRACE: Duration = Duration::from_secs(10);
 /// 守护轮询周期（AC3：进程被杀后 ≤ 守护周期 + 退避间隔拉起）
 pub const GUARD_INTERVAL: Duration = Duration::from_secs(5);
+/// 日志新鲜度容差（毫秒）：文件时间戳粒度与写盘先后可能造成毫秒级倒挂
+pub const LOG_FRESHNESS_SLACK_MS: u64 = 2_000;
+/// 登录失败稳定码（detail 载荷；前端按 `tunnel.code.*` 映射文案，不进日志/事件明文）
+pub const LOGIN_FAILED_CODE: &str = "login_failed";
 /// 会话卡死自愈阈值（spec 005 扩展：心跳连续不可达次数 + frpc 存活 → 自动重启。
 /// 2026-09-10 实测故障形态：进程活着、看板"在线"，但节点登录会话已死反复 EOF）
 pub const SELF_HEAL_FAILURES: u32 = 3;
@@ -217,6 +221,9 @@ pub trait FrpcOps: Send + Sync {
     fn is_running(&self) -> bool;
     /// frpc 日志尾部（失败摘要来源；不可读返回 None）
     fn log_tail(&self, max_lines: usize) -> Option<String>;
+    /// frpc 日志最后写入时间（epoch ms；不可读返回 None）
+    /// —— [`log_tail_is_fresh`] 的新鲜度依据
+    fn log_mtime_ms(&self) -> Option<u64>;
 }
 
 /// Windows 真实实现。frpc 随安装包分发（resources/bin，spec 004 plan §4.3 修订）：
@@ -339,6 +346,16 @@ impl FrpcOps for WindowsFrpcOps {
         let lines: Vec<&str> = content.lines().collect();
         let start = lines.len().saturating_sub(max_lines);
         if lines.is_empty() { None } else { Some(lines[start..].join("\n")) }
+    }
+
+    fn log_mtime_ms(&self) -> Option<u64> {
+        std::fs::metadata(self.log_path())
+            .ok()?
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_millis() as u64)
     }
 }
 
@@ -521,13 +538,30 @@ impl TunnelManager {
         // 2026-09-10 死锁复盘：持锁调 restart → start 二次加锁 → 守护线程卡死，
         // 全部状态查询跟着阻塞——IO 一律在锁外，锁内只做状态读写）
         let should_run = channel == AccessChannel::Tunnel && enabled && tunnel_id.is_some();
+        // 决策输入先取（短锁读）：spawn 基准同时充当日志采信的新鲜度依据
+        let (streak, last_restart_ms, mut last_spawn_ms) = {
+            let g = self.inner.lock().expect("隧道状态锁中毒");
+            (g.streak, g.last_restart_ms, g.last_spawn_ms)
+        };
         let alive = should_run && self.ops.is_running();
+        // 异源 frpc（手动启动/上会话残留）采纳为本次会话样本：它的输出在控制台、
+        // 不写本日志文件，只能按「存活超宽限期」判定——否则会一直拿陈旧日志误判
+        if alive && last_spawn_ms.is_none() {
+            self.inner.lock().expect("隧道状态锁中毒").last_spawn_ms = Some(now);
+            last_spawn_ms = Some(now);
+        }
         let health_failures = if alive {
             self.health_view.as_ref().and_then(|v| v())
         } else {
             None
         };
-        let log_tail = if alive { self.ops.log_tail(8).unwrap_or_default() } else { String::new() };
+        // 陈旧日志防护：仅「本会话拉起过 frpc」且「日志写入不早于该次拉起」才采信；
+        // 否则留空 → LogVerdict::Unknown → 退回宽限期逻辑（2026-09-10 真机实证）
+        let log_tail = if alive && log_tail_is_fresh(last_spawn_ms, self.ops.log_mtime_ms()) {
+            self.ops.log_tail(8).unwrap_or_default()
+        } else {
+            String::new()
+        };
 
         // 阶段 2：不应运行的收敛（AC4/AC7/AC8/AC11）——锁外 kill，锁内改状态
         if !should_run {
@@ -548,11 +582,7 @@ impl TunnelManager {
             return;
         }
 
-        // 阶段 3：应运行——读取决策输入（锁内快照，毫秒级）
-        let (streak, last_restart_ms, last_spawn_ms) = {
-            let g = self.inner.lock().expect("隧道状态锁中毒");
-            (g.streak, g.last_restart_ms, g.last_spawn_ms)
-        };
+        // 阶段 3：应运行——决策输入已在阶段 1 取好（IO 在锁外，锁内只读写状态）
 
         if !alive {
             // AC3：应运行而死亡 → 退避重启（IO 在锁外，写状态在锁内）
@@ -607,10 +637,9 @@ impl TunnelManager {
         let verdict = classify_log(&log_tail);
         let since_spawn = last_spawn_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
         let (state, detail) = match verdict {
-            LogVerdict::Failure => (
-                TunnelState::Starting,
-                Some("节点登录失败，自动重试中".to_string()),
-            ),
+            // 稳定码（前端按 `tunnel.code.login_failed` 映射双语文案）：透出可执行
+            // 建议——被网络拦截时换网络（如手机热点）即可恢复（2026-09-10 实测定案）
+            LogVerdict::Failure => (TunnelState::Starting, Some(LOGIN_FAILED_CODE.to_string())),
             _ => {
                 let s = if since_spawn <= FRPC_STARTING_GRACE.as_millis() as u64 {
                     TunnelState::Starting
@@ -638,6 +667,19 @@ impl TunnelManager {
             g.status.since = now;
         }
     }
+}
+
+/// 日志尾部是否可采信（纯函数，陈旧日志防护）。
+///
+/// 采信需同时满足：① 本会话由程序拉起过 frpc（有 spawn 基准）；② 日志写入时间
+/// 不早于该基准（留 [`LOG_FRESHNESS_SLACK_MS`] 容差）。否则读到的是**上一会话的
+/// 残留日志**，或**手动启动的 frpc**（其输出在控制台，不写 `frpc-run.log`）——
+/// 陈旧内容会把「其实已经通了」误判成「连接中」（2026-09-10 真机实证）。
+pub fn log_tail_is_fresh(last_spawn_ms: Option<u64>, log_mtime_ms: Option<u64>) -> bool {
+    let (Some(spawn), Some(mtime)) = (last_spawn_ms, log_mtime_ms) else {
+        return false;
+    };
+    mtime.saturating_add(LOG_FRESHNESS_SLACK_MS) >= spawn
 }
 
 /// frpc 日志尾部判定（进程存活时的登录实况；「进程在 ≠ 隧道通」，
@@ -852,6 +894,23 @@ mod tests {
         assert_eq!(classify_log(failure_tail), LogVerdict::Failure);
         assert_eq!(classify_log(""), LogVerdict::Unknown);
         assert_eq!(classify_log("2026/09/10 [I] 检查更新中..."), LogVerdict::Unknown);
+    }
+
+    #[test]
+    fn log_tail_trust_requires_session_spawn_and_fresh_write() {
+        // 本会话拉起过 + 日志写入不早于该次拉起（含容差内的毫秒倒挂）→ 采信
+        assert!(log_tail_is_fresh(Some(1_000), Some(1_500)));
+        assert!(log_tail_is_fresh(Some(1_000), Some(1_000)));
+        assert!(log_tail_is_fresh(Some(3_000), Some(1_500)), "容差内倒挂仍采信");
+        // 本会话没拉起过（手动启动的 frpc / 上会话残留）→ 一律不采信
+        assert!(
+            !log_tail_is_fresh(None, Some(9_999)),
+            "无 spawn 基准时不得采信陈旧日志（真机：手动 frpc 已通却被判连接中）"
+        );
+        // 日志属于上一会话（早于本次拉起且超出容差）→ 不采信
+        assert!(!log_tail_is_fresh(Some(10_000), Some(1_000)));
+        // 日志不可读 → 不采信
+        assert!(!log_tail_is_fresh(Some(1_000), None));
     }
 
     #[test]

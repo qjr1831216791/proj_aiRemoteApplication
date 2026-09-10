@@ -274,7 +274,7 @@ export function TunnelCard(props: TunnelCardProps) {
               {t(tunnelStateKey(state), lang)}
             </span>
             {tunnelStatus?.detail ? (
-              <span class="settings__desc">{tunnelStatus.detail}</span>
+              <span class="settings__desc">{tunnelDetailText(tunnelStatus.detail, lang)}</span>
             ) : null}
           </>
         ) : (
@@ -390,4 +390,13 @@ function tunnelChipClass(state: TunnelStatus["state"]): string {
 /** 隧道六态 → 词典键 */
 function tunnelStateKey(state: TunnelStatus["state"]): DictKey {
   return `tunnel.state.${state}` as DictKey;
+}
+
+/** detail 载荷有两种形态：Rust 侧稳定码（走词典）与自由文案（如重启原因）。
+ * 词典未命中即视为自由文案原样显示——否则会把「会话无响应，已自动重启…」
+ * 渲染成词条名（`t` 的未知键回退是键本身）。 */
+function tunnelDetailText(detail: string, lang: Lang): string {
+  const key = `tunnel.code.${detail}` as DictKey;
+  const mapped = t(key, lang);
+  return mapped === key ? detail : mapped;
 }

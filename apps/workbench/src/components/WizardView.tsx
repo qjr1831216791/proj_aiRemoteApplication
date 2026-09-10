@@ -311,27 +311,16 @@ export function WizardView(props: WizardViewProps) {
             <p class="wizard__desc">{t("wizard.finalize.desc", lang)}</p>
             <ul class="wizard__summary">
               <li>
-                {t("wizard.summary.lan", lang)}
                 <span class={`hb-dot ${stageOf("basis").state === "done" ? "hb-dot--ok" : "hb-dot--fail"}`} />
+                <span>{t("wizard.summary.lan", lang)}</span>
               </li>
               <li>
-                {t("wizard.summary.domain", lang)} <code>{state.domain}</code>
                 <span class={`hb-dot ${stageOf("channel").state === "done" ? "hb-dot--ok" : "hb-dot--fail"}`} />
+                <span>
+                  {t("wizard.summary.domain", lang)} <code>{state.domain}</code>
+                </span>
               </li>
             </ul>
-            <button
-              class="btn"
-              disabled={busy !== null}
-              onClick={() =>
-                dispatch(
-                  "autostart",
-                  () => api.setAutostartServices(true).then(() => api.setAutostartApp(true)),
-                  false,
-                )
-              }
-            >
-              {t("wizard.finalize.autostart", lang)}
-            </button>
             <button
               class="btn btn--primary"
               disabled={busy !== null}

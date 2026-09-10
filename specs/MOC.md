@@ -8,7 +8,8 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- [006-foolproof-install](./006-foolproof-install/spec.md) — 傻瓜式装机向导：APP 串联专项脚本驱动新机三目标（局域网/直连/穿透）装机，web 端事项文字引导+办后校验；TLS 获取改 Caddy tencentcloud 插件（acme.sh 退役，ADR-0003）；低频栏瘦身（2026-09-10 需求方确认置 reviewed）
+- （暂无）
+<!-- 006-foolproof-install 已实际进入实现（自动化全绿、真机验收中），状态字段与本节均按 in-progress 归位，不再重复登记于本区 -->
 
 ### 🟠 实现中（in-progress）
 - [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）

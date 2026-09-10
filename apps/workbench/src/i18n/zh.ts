@@ -162,6 +162,8 @@ export const zh = {
   "tunnel.state.starting": "连接中",
   "tunnel.state.online": "在线",
   "tunnel.state.offline": "离线",
+  "tunnel.code.login_failed":
+    "节点登录失败，持续重试中。若长时间不恢复，可能是当前网络拦截了 frp——可尝试更换网络环境（如手机热点）",
   "tunnel.enabledLabel": "穿透启用",
   "tunnel.dnsGuideTunnel":
     "DNS 待切换：在腾讯云 DNS 控制台删除 ai.jackqi.cn 的 A 记录，添加 CNAME 记录指向：{target}（公共解析生效最长需等一个 TTL，约 10 分钟）",
@@ -248,10 +250,9 @@ export const zh = {
   "wizard.channel.saveCfg": "保存隧道配置",
   "wizard.channel.tunnelState": "隧道状态",
   "wizard.channel.dnsNote": "切换后 DNS 将自动对齐（CNAME 自动维护）；若自动切换失败，主界面「访问通道」卡会显示手动指引。",
-  "wizard.finalize.desc": "收尾：注册开机自启并确认目标达成情况。",
+  "wizard.finalize.desc": "收尾：确认目标达成情况（开机自启在「设置」页开关）。",
   "wizard.summary.lan": "局域网访问",
   "wizard.summary.domain": "域名访问",
-  "wizard.finalize.autostart": "注册开机自启",
   "wizard.finalize.done": "完成，回到主界面",
   // 向导 detail 稳定码 → 文案
   "wizard.code.ok": "校验通过",

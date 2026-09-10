@@ -907,10 +907,25 @@
   font-size: var(--fs-sm);
 }
 
+/* 目标达成清单（收尾）：无项目符号；状态点在标签左侧（沿地址区「● 文字」排法），
+   两行的点与标签自然对齐成两列；行距拉开避免两个状态点视觉粘连 */
 .wizard__summary {
   margin: 0;
-  padding-left: 1.2em;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.wizard__summary li {
+  display: flex;
+  align-items: center;
   gap: var(--sp-2);
+}
+
+/* 地址区的 .hb-dot 自带 margin-right；此处点与文字间距统一由 flex gap 提供，
+   去掉自带边距避免两处叠加 */
+.wizard__summary .hb-dot {
+  margin-right: 0;
 }

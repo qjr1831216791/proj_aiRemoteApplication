@@ -163,6 +163,8 @@ export const en = {
   "tunnel.state.starting": "Connecting",
   "tunnel.state.online": "Online",
   "tunnel.state.offline": "Offline",
+  "tunnel.code.login_failed":
+    "Node login failed; retrying. If it does not recover, your network may be blocking frp — try a different network (e.g. a phone hotspot)",
   "tunnel.enabledLabel": "Tunnel enabled",
   "tunnel.dnsGuideTunnel":
     "DNS pending: at Tencent Cloud DNS, delete the A record of ai.jackqi.cn and add a CNAME record pointing to: {target} (public resolvers may take up to one TTL, ~10 minutes)",
@@ -249,10 +251,9 @@ export const en = {
   "wizard.channel.saveCfg": "Save tunnel config",
   "wizard.channel.tunnelState": "Tunnel state",
   "wizard.channel.dnsNote": "DNS aligns automatically after switching (CNAME maintained for you); if auto-switching fails, the Access Channel card on Main shows a manual guide.",
-  "wizard.finalize.desc": "Finish: register autostart and review your goals.",
+  "wizard.finalize.desc": "Finish: review your goals (autostart is toggled in Settings).",
   "wizard.summary.lan": "LAN access",
   "wizard.summary.domain": "Domain access",
-  "wizard.finalize.autostart": "Register autostart",
   "wizard.finalize.done": "Finish — back to Main",
   // Wizard detail codes → copy
   "wizard.code.ok": "Verified",
