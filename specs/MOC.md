@@ -5,11 +5,10 @@
 ## 按状态导航
 
 ### 🟡 草稿（draft）
-- [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（secure-mode）替代 frp 零公网暴露 + 停用直连/穿透旧通道（2026-09-10 立项，调研依据 [docs/research/secure-access-alternatives.md](../docs/research/secure-access-alternatives.md)）
+- （暂无）
 
 ### 🔵 已确认（reviewed）
-- （暂无）
-<!-- 006-foolproof-install 已实际进入实现（自动化全绿、真机验收中），状态字段与本节均按 in-progress 归位，不再重复登记于本区 -->
+- [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（secure-mode）替代 frp 零公网暴露 + 停用直连/穿透旧通道（2026-09-10 确认，调研依据 [docs/research/secure-access-alternatives.md](../docs/research/secure-access-alternatives.md)）
 
 ### 🟠 实现中（in-progress）
 - [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）

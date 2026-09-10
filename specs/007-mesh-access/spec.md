@@ -2,10 +2,10 @@
 
 > 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: draft <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: reviewed <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 5
 - **创建日期**: 2026-09-10
-- **最后更新**: 2026-09-10
+- **最后更新**: 2026-09-10（需求方确认并指示实施，draft → reviewed；006 已于同日验收收口，时序约束解除）
 
 ## 1. 背景与问题
 
@@ -107,3 +107,4 @@
 | 日期 | 变更内容 | 原因 |
 |------|----------|------|
 | 2026-09-10 | 初稿 | 需求方对 frp 安全性质疑，经四路调研（[docs/research/secure-access-alternatives.md](../../docs/research/secure-access-alternatives.md)）定案威胁模型后拍板：远程访问改 EasyTier（secure-mode）+ 官方公共共享节点；需求方同时要求**包含停用直连（DDNS）与穿透（frp）两条旧通道的步骤**（安全性质疑对两者同等成立），故停用旧通道列为本 Spec 显式目标（US2/AC5~7） |
+| 2026-09-10 | 状态 draft → reviewed | 需求方确认 spec 结构并指示「实施 007」；同日 006 验收收口 done，§5 时序约束（006 先收口）已满足 |
