@@ -56,6 +56,11 @@ pub const EASYTIER_CORE_EXE_NAME: &str = "easytier-core.exe";
 pub const EASYTIER_CLI_EXE_NAME: &str = "easytier-cli.exe";
 /// TUN 虚拟网卡驱动库（easytier 官方包随附；栈目录落位必须同带，否则服务起不来）
 pub const WINTUN_DLL_NAME: &str = "wintun.dll";
+/// WinDivert 用户态库（easytier-core 的动态依赖——缺它进程直接拒绝启动，
+/// T2 探测实测：`error while loading shared libraries: packet.dll`）
+pub const PACKET_DLL_NAME: &str = "packet.dll";
+/// WinDivert 内核驱动（easytier 包过滤/子网代理用；与 Packet.dll 成对落位）
+pub const WINDIVERT_SYS_NAME: &str = "WinDivert64.sys";
 /// 期望 SHA256：官方 Release easytier-windows-x86_64-v2.6.4.zip 内件
 /// （2026-09-10 经 gh 官方通道下载，zip 完整性 unzip -t 通过；镜像通道文件
 /// 与官方不符已弃用——plan §7-R6 教训）
@@ -65,3 +70,7 @@ pub const EASYTIER_CLI_SHA256: &str =
     "d8783e851e944b44a9b71b39fd02f227ec0a2a82b3165c55ead5dd32dcde53a1";
 pub const WINTUN_DLL_SHA256: &str =
     "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce";
+pub const PACKET_DLL_SHA256: &str =
+    "c7c03a87eac7243ccbe331554624b18803010b740e311fc8cfddb573096eacac";
+pub const WINDIVERT_SYS_SHA256: &str =
+    "8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2";

@@ -11,12 +11,12 @@
 ## 阶段 1: 资源与前置实测
 
 - [x] T1 easytier v2.6.4 二进制入库：下载 windows-x64 官方 Release（easytier-core.exe + easytier-cli.exe + **wintun.dll**——TUN 驱动库随包，落位必须同带），落 `resources/bin/`，consts.rs 登记版本 + 三文件 SHA256，`mesh.rs` 校验函数 + 单测 3 项（真文件/缺失/篡改）。（验收: AC1 前置；完成标志：cargo 168 全绿 ✓。下载经 gh 官方通道；镜像通道文件与官方不符已弃用——供应链教训记 plan §7-R6）
-- [ ] T2 外部事实真机实测（依赖: T1；验收: AC1/AC9 前提 + spec §5 验收前提约束）：①临时 config + 手动服务方式跑通社区节点 `tcp://sh.vomiku.com:7910`（移动网络 + WiFi 双环境）；②Android 官方 App 以 legacy 身份加入 secure-mode 网络，验证连通（plan §3.1 两段加密模型的实证）；③A 记录临时指私网 IP 后公共递归（223.5.5.5 / 8.8.8.8 / 运营商默认）是否照常返回（bogon 风险，异常则启用 hosts/Split DNS 兜底并回填 spec）；④本机物理网卡网段与 10.126.126.0/24 冲突排查。完成标志：四项结论记录于本文件附注（不达标即触发升级路径评估，停实施）
+- [x] T2 外部事实真机实测（依赖: T1；验收: AC1/AC9 前提 + spec §5 验收前提约束）：①临时 config + 手动服务方式跑通社区节点 `tcp://sh.vomiku.com:7910`（移动网络 + WiFi 双环境）；②secure-mode 与 legacy 成员兼容性（Android 官方 App 无 secure UI，以双实例模拟成员互连）——**实测推翻混合组网设想，触发 spec/plan 变更（附注②）**；③A 记录临时指私网 IP 后公共递归（223.5.5.5 / 8.8.8.8 / 运营商默认）是否照常返回（bogon 风险）；④本机物理网卡网段与 10.126.126.0/24 冲突排查。完成标志：四项结论记录于本文件附注（不达标即触发升级路径评估，停实施）✓（2026-09-10，结论见附注①~④；Android 真机加入验证留 T14）
 
 ## 阶段 2: Rust 核心（测试先行）
 
 - [ ] T3 settings 扩展：`AccessChannel::Mesh` + `MeshConfig`（network_name/virtual_ip/virtual_cidr/peers 默认值）+ `tunnel_disabled`/`direct_disabled` 标记；旧 settings.json 兼容加载测试（样板：old_settings_file_without_channel_fields）（验收: AC11；完成标志：兼容与默认值单测通过）
-- [ ] T4 `mesh.rs` 模块（依赖: T3；验收: AC9/AC11）：config.toml 渲染器（toml crate，唯一渲染路径，`[secure_mode] enabled=true` 模板硬编码无开关）+ 渲染产物断言单测 + 启动前校验（`--check-config` 调用 + 非 secure 配置拒绝，篡改模拟单测）+ 网段冲突检测纯函数（物理网卡 IPv4 × virtual_cidr 重叠判定）+ MeshConfig 校验（非空/IP/网段/peers URI 格式）
+- [ ] T4 `mesh.rs` 模块（依赖: T3；验收: AC9/AC11）：config.toml 渲染器（toml crate，唯一渲染路径，模板固化 legacy 形态——**不含 [secure_mode] 段**（T2 实测定案，升级路径注释见 plan §4.3）、hostname/ipv4/listeners 字段按实测形态）+ 渲染前置校验（network_secret 缺失/为空拒绝渲染，AC9 新语义）+ 渲染产物断言单测 + 启动前校验（`--check-config` 调用）+ 网段冲突检测纯函数（物理网卡 IPv4 × virtual_cidr 重叠判定）+ MeshConfig 校验（非空/IP/网段/peers URI 格式）
 - [ ] T5 `dns_api.rs` 调和扩展：`RecordOp` 新增 `UpdateValue`（A 记录改值）与 `Delete`（CNAME 彻底删除——停用语义）；reconcile 单测覆盖 upsert/清理终态（验收: AC5/AC6/AC7 逻辑部分；完成标志：终态记录集断言通过）
 - [ ] T6 通道编排扩展（依赖: T5；验收: AC1/AC5/AC6）：`switch_actions` 三通道矩阵（→mesh：StopFrpc→StopDdnsGo→渲染校验→服务重启→CNAME 删+A upsert 虚拟 IP→Persist；mesh→direct/tunnel 反向）；`disable_tunnel`/`disable_direct` 停用编排（前置校验非现役、CNAME 删除、disabled 标记持久化、A 记录按通道态处理）；mock 组件动作序列单测
 - [ ] T7 服务管理（验收: AC3 前置）：`mesh-service.ps1`（install/uninstall/start/stop/restart/status；sc create delayed-auto + failure recovery restart/60000×3；UAC 自提权，install-https.ps1 惯例）+ Rust 侧栈目录落位（exe 复制 + manifest 哈希校验 + `<stack>/easytier/` 布局）+ 服务 binPath 构造纯函数（**断言参数不含 secret**——AC8）（完成标志：binPath 构造与落位单测通过；BOM+CRLF/Parser 校验）
@@ -47,9 +47,41 @@
 
 ---
 
-## 附注：T2 前置实测结论（实施时回填）
+## 附注：T2 前置实测结论（2026-09-10 回填，spec/plan 变更的实证依据）
 
-- ①社区节点连通（移动网络 / WiFi）：
-- ②Android legacy + secure-mode：
-- ③bogon 公共解析：
-- ④网段冲突排查：
+### ① 社区节点连通（移动网络环境）
+
+**✓ 通过**。legacy 模式双实例均连 `tcp://sh.vomiku.com:7910`：A↔节点 p2p 46.62ms / 0% 丢包（tcp6 隧道）、B↔节点 53.53ms / 0%；A↔B 经节点相遇后互见（0.15ms，tcp6+tcp 双隧道）。本网络 V4 到节点超时、**V6 回退成功**（移动网络 V4 出网受限的既有特征，与 frp 被拦同源——memory `frp-login-eof-network-block`）。WiFi 环境未单独测（T14 真机验收覆盖 AC2 换网场景）。
+
+### ② secure-mode 兼容性矩阵（双实例模拟成员互连，触发 spec 变更）
+
+**✗ 混合组网被证伪 → 产品形态定案 legacy 模式**（spec 变更记录 2026-09-10 第三条）。实测矩阵（easytier v2.6.4-8428a89d）：
+
+| 组合 | 结果 | 报错原文 |
+|---|---|---|
+| legacy 客户端 → legacy 节点 | ✓（①） | — |
+| **secure 客户端 → legacy 社区节点** | ✗ | `conn closed during wait handshake response`（V6 通道，TCP 可达但握手被关） |
+| **legacy 客户端 → secure 宿主机** | ✗ | `secret key error: same-network peers must use the same secure mode`（TCP 连接建立后即断） |
+| secure ↔ secure（直连） | ✓ | 0.40ms / 0% 丢包（升级路径依据） |
+
+结论链：社区节点未开 secure（拒 secure 客户端）+ 同网络成员必须同为 secure + **Android 官方 App 无 secure-mode 配置 UI** → 全链 secure 缺成员不可达 → 宿主机与 Android 成员统一走 legacy（network_secret 派生加密）。官方文档「开启安全模式的服务端可以接受旧客户端连接」与 v2.6.4 实测不符（文档超前或版本差异）。
+
+**secure-mode 配置方法（升级路径已验证，留档）**：`[secure_mode]` 段 `enabled = true` + `local_private_key` + `local_public_key` **成对显提供**——`openssl genpkey -algorithm X25519` 生成、raw hex 转 base64；实测只给私钥报 `local public key is not set`（v2.6.4 不自动派生公钥，core --help 文本与行为不符）；客户端可另在 `[[peer]]` 配 `peer_public_key` 锁定共享节点身份（本期未用）。credential 临时凭据 CLI 确实存在（`credential generate --ttl` 带 groups/allow-relay/allowed-proxy-cidrs 参数），但要求全链 secure（spec §6-Q2 决议理由已修正）。
+
+### ③ bogon 公共解析
+
+**✓ 通过**。`meshprobe.jackqi.cn A 10.126.126.1` 经四路公共递归（223.5.5.5 阿里 / 119.29.29.29 DNSPod / 8.8.8.8 Google / 本网运营商默认）全部照常返回私网 A 值，无过滤——Tailscale 100.x 先例的等价实证，无需 hosts/Split DNS 兜底（dns_api.rs 两个 `#[ignore]` 手动测试 `bogon_probe_create`/`bogon_probe_cleanup` 为操作入口，已清理不留残留）。
+
+### ④ 网段冲突排查
+
+**✓ 无冲突**。本机物理网卡仅 WLAN 192.168.3.0/24（192.168.3.13），与默认虚拟网段 10.126.126.0/24 无重叠；运行期网段变化由 T4 冲突检测函数兜底。
+
+### 工程事实补充（实测踩坑，T4/T7/T8 实现参考）
+
+- **动态依赖**：easytier-core 缺 `packet.dll` 拒绝启动（`error while loading shared libraries`）；`wintun.dll`/`Packet.dll`/`WinDivert64.sys` 须成套落位（已入库，5 文件 SHA256 校验）。
+- **core --help 重定向文件才有输出**（Windows GUI 子系统，终端直看不显示；17KB 完整参数表）。
+- **同机双实例 listeners 端口冲突 fatal**（os error 10048）——第二实例须 `listeners = []`。
+- **连 127.0.0.1 的 peer 报 AddrNotAvailable**（10049，源地址绑定问题）——测试对端用物理网卡 IP。
+- **`--file-log-dir` 须 Windows 原生路径**（msys `/tmp/...` 路径不落盘，`cygpath -w` 转换）；服务形态由 Rust 传原生路径无此问题。
+- **TOML 字段位置实证**：`hostname` 顶层（peer 表显示名，实测生效）；`instance_name` 不进 peer 表 hostname 列；`ipv4` 顶层；默认 listeners 六协议 11010-11013 全开需收敛。
+- 中文 Windows 控制台 GBK 编码：抓 easytier 日志输出需 `tr -d '\0'` / `grep -a`。

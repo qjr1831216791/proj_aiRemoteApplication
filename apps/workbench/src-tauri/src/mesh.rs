@@ -6,22 +6,25 @@
 
 use crate::consts::{
     EASYTIER_CLI_EXE_NAME, EASYTIER_CLI_SHA256, EASYTIER_CORE_EXE_NAME, EASYTIER_CORE_SHA256,
+    PACKET_DLL_NAME, PACKET_DLL_SHA256, WINDIVERT_SYS_NAME, WINDIVERT_SYS_SHA256,
     WINTUN_DLL_NAME, WINTUN_DLL_SHA256,
 };
 use crate::dns_api::sha256_hex;
 use std::path::Path;
 
-/// 校验目录内三个随包文件（easytier-core.exe / easytier-cli.exe / wintun.dll）
-/// 的 SHA256 与版本锁定值一致。
+/// 校验目录内五个随包文件（easytier-core.exe / easytier-cli.exe / wintun.dll /
+/// packet.dll / WinDivert64.sys）的 SHA256 与版本锁定值一致。
 ///
 /// 调用方：栈目录落位复制前（T7，防篡改源）、装机向导组网分支（T13，办后校验）。
 /// 失败返回首个不符项的可读原因（文件缺失或哈希不符，含文件名）——不含密钥
 /// 类敏感信息，可直接透出 UI（spec AC4 口径）。
 pub fn verify_easytier_binaries(dir: &Path) -> Result<(), String> {
-    let checks: [(&str, &str); 3] = [
+    let checks: [(&str, &str); 5] = [
         (EASYTIER_CORE_EXE_NAME, EASYTIER_CORE_SHA256),
         (EASYTIER_CLI_EXE_NAME, EASYTIER_CLI_SHA256),
         (WINTUN_DLL_NAME, WINTUN_DLL_SHA256),
+        (PACKET_DLL_NAME, PACKET_DLL_SHA256),
+        (WINDIVERT_SYS_NAME, WINDIVERT_SYS_SHA256),
     ];
     for (name, expected) in checks {
         let path = dir.join(name);
@@ -40,7 +43,7 @@ pub fn verify_easytier_binaries(dir: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// 随包目录实测：resources/bin 三文件哈希应全部通过（真文件，发布构建同源）
+    /// 随包目录实测：resources/bin 五文件哈希应全部通过（真文件，发布构建同源）
     #[test]
     fn bundled_binaries_pass_verification() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -73,6 +76,8 @@ mod tests {
             EASYTIER_CORE_EXE_NAME,
             EASYTIER_CLI_EXE_NAME,
             WINTUN_DLL_NAME,
+            PACKET_DLL_NAME,
+            WINDIVERT_SYS_NAME,
         ] {
             std::fs::write(dir.join(name), b"tampered").unwrap();
         }

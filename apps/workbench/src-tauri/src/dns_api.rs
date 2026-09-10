@@ -356,6 +356,53 @@ pub fn subdomain_of<'a>(domain: &'a str, root: &str) -> &'a str {
 mod tests {
     use super::*;
 
+    // ── spec 007 T2-③ bogon 解析实测（手动两段式，真实 API）──────────────────
+    // 用法：
+    //   ① cargo test bogon_probe_create -- --ignored --nocapture
+    //   ② 外部验证公共递归是否照常返回私网段 A 值：
+    //      nslookup meshprobe.jackqi.cn 223.5.5.5   （阿里）
+    //      nslookup meshprobe.jackqi.cn 119.29.29.29（DNSPod）
+    //      nslookup meshprobe.jackqi.cn 8.8.8.8     （Google）
+    //      nslookup meshprobe.jackqi.cn             （本网络默认/运营商）
+    //   ③ cargo test bogon_probe_cleanup -- --ignored --nocapture
+    // 结论回填 specs/007-mesh-access/tasks.md 附注③。
+
+    /// 建临时记录 meshprobe.jackqi.cn A 10.126.126.1（幂等：残留先删）
+    #[test]
+    #[ignore = "spec007 T2-③：真实 DNSPod API，建私网 A 记录供外部递归验证"]
+    fn bogon_probe_create() {
+        let cred = read_credential(crate::consts::DEFAULT_STACK_DIR).expect("栈目录凭证缺失");
+        for r in list_records(&cred, crate::consts::DOMAIN_ROOT, "meshprobe").unwrap_or_default() {
+            call_api(
+                &cred,
+                "DeleteRecord",
+                &serde_json::json!({ "Domain": crate::consts::DOMAIN_ROOT, "RecordId": r.record_id }),
+            )
+            .expect("残留记录清理失败");
+        }
+        create_record(&cred, crate::consts::DOMAIN_ROOT, "meshprobe", "A", "10.126.126.1")
+            .expect("建 A 记录失败");
+        println!("已创建 meshprobe.{} A 10.126.126.1，请从各公共递归 nslookup 验证", crate::consts::DOMAIN_ROOT);
+    }
+
+    /// 删除 bogon 实测记录（验证完必跑，不留残留）
+    #[test]
+    #[ignore = "spec007 T2-③：清理 bogon 实测记录"]
+    fn bogon_probe_cleanup() {
+        let cred = read_credential(crate::consts::DEFAULT_STACK_DIR).expect("栈目录凭证缺失");
+        let records = list_records(&cred, crate::consts::DOMAIN_ROOT, "meshprobe").unwrap_or_default();
+        assert!(!records.is_empty(), "meshprobe 记录不存在（可能已清理）");
+        for r in records {
+            call_api(
+                &cred,
+                "DeleteRecord",
+                &serde_json::json!({ "Domain": crate::consts::DOMAIN_ROOT, "RecordId": r.record_id }),
+            )
+            .expect("删除失败");
+        }
+        println!("meshprobe 记录已清理");
+    }
+
     #[test]
     fn env_creds_parsed() {
         let env = "SAKURA_FRP_KEY=x\nTENCENT_SECRET_ID=AKIDtest\nTENCENT_SECRET_KEY=keytest\n";

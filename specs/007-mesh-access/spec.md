@@ -19,7 +19,9 @@
 
 结论：安全模型必须从「暴露公网入口 + 指望应用无漏洞」反转为「**零公网暴露 + 认证下沉到网络层**」——未持密钥者的数据包在网络层不可路由，应用对公网不可达。
 
-需求方决策（2026-09-10）：远程访问通道改 **EasyTier（secure-mode）+ 社区公共节点**（¥0 起步，私有组网）；**同时停用直连（DDNS）与穿透（frp）两条旧通道**（安全性质疑对两者同等成立）；后续公共节点可靠性不达标时再升级自建 VPS 节点（升级路径已备，见调研报告 §6.1 P2）。
+需求方决策（2026-09-10）：远程访问通道改 **EasyTier + 社区公共节点**（¥0 起步，私有组网，传输加密由 network_secret 派生）；**同时停用直连（DDNS）与穿透（frp）两条旧通道**（安全性质疑对两者同等成立）；后续公共节点可靠性不达标时再升级自建 VPS 节点（升级路径已备，见调研报告 §6.1 P2）。
+
+> 事实修正二（2026-09-10，T2 真机实测）：立项时的「secure-mode」设想**不可达**——EasyTier v2.6.4 实测两条硬约束：①secure 客户端连不上未开启 secure 的服务端（`conn closed during wait handshake response`，社区节点未开启 secure）；②同网络成员必须同为 secure（`same-network peers must use the same secure mode`）。而 Android 官方 App 无 secure-mode 配置 UI → 全链 secure 缺成员。本期产品形态定为 **legacy 模式（network_secret 派生传输加密）**：不泄露 network_secret 则无法加入网络、中继节点只见密文（secure-mode 官方文档对旧模式的表述为「密钥泄露才可能被窃听」）；secure↔secure 配置方法已实证可行（成对 X25519 密钥），留作升级路径（详见 plan §7-R4 与 tasks.md T2 附注②）。
 
 > 事实修正（2026-09-10，plan 取证）：原表述「官方公共共享节点」有误——EasyTier 官方隐私政策明示**不提供官方维护的公共服务器**（仅发布软件）；plan 立项时实测原默认公共节点 `public.easytier.cn` 已 NXDOMAIN（本机 + 223.5.5.5 双源），实际可用的是社区公益节点（无 SLA）。默认对端与升级路径见 [plan.md](./plan.md) §2/§7-R1。
 
@@ -33,12 +35,12 @@
 
 ### 目标（Goals）
 
-- **新增「组网（mesh）」访问通道**：EasyTier secure-mode 组建私有虚拟网络（社区公共节点做握手/中继兜底，多对端可配置），域名 `ai.jackqi.cn` 的 A 记录指向组网虚拟 IP；外部成员设备（用户的手机/PC，已加入组网）经 `https://ai.jackqi.cn`（标准 443）访问，**宿主机不向公网暴露任何入站端口**。
+- **新增「组网（mesh）」访问通道**：EasyTier 组建私有虚拟网络（社区公共节点做握手/中继兜底，多对端可配置），域名 `ai.jackqi.cn` 的 A 记录指向组网虚拟 IP；外部成员设备（用户的手机/PC，已加入组网）经 `https://ai.jackqi.cn`（标准 443）访问，**宿主机不向公网暴露任何入站端口**。
 - **组网组件纳入工作台托管**：easytier-core 由工作台 spawn/停止，守护（被杀拉起、退避）、自启、收摊语义与 004 一致。
 - **提供停用直连（DDNS）与停用穿透（frp）的明确步骤与入口**（需求方 2026-09-10 显式要求）：停用后组件不再被守护/自启拉起、DNS 记录清理、密钥清除指引，看板如实显示「已停用」。
 - **停用完成后公网暴露面归零**：外部非成员网络对本机 443 不可达；域名公网解析仅指向私网段虚拟 IP（公网不可路由）。
 - **凭证安全边界优于 frp**：network_secret 经交互式控制台脚本写入栈目录配置文件（沿 003/004 哲学）——不进命令行、不进 APP/IPC/日志、不进 settings.json。
-- **secure-mode 强制**：非 secure-mode 配置不允许启动（遗留模式密钥泄露 = 全网流量可解，与本 Spec 安全目标冲突，不提供关闭开关）。
+- **密钥就绪强制（legacy 模式，传输加密 = network_secret 派生）**：network_secret 未配置（文件缺失/为空）时拒绝启动组网并给出可读指引；secure-mode 因 v2.6.4 成员兼容性阻塞本期不启用（Android App 无配置 UI + 社区节点未开启 secure，见 §1 事实修正二）。legacy 模式安全边界如实声明：不泄露 network_secret 则无法加入网络、中继只见密文；弱点为无前向保密（密钥泄露则历史流量可解，须攻击者已存储流量为前提）。secure↔secure 升级路径已实证（plan §7-R4）。
 - 006 装机向导的通道分支同步改造为组网形态（办理步骤显著简化：无实名、无建隧道、无 CNAME）。
 
 ### 非目标（Non-Goals · 本期明确不做）
@@ -69,8 +71,8 @@
 ### US3: 作为服务端用户，我希望组网密钥的安全边界优于 frp，以便「不泄露密钥则几乎不可能被入侵」。
 
 - [ ] **AC8**: Given 配置组网密钥 When 写入 Then 经交互式控制台脚本完成（不回显输入、两次确认、直写栈目录配置文件、复核仅显示末 4 位）——密钥不经过 APP 界面/IPC/日志；easytier-core 的启动方式不含密钥明文（配置文件注入，**命令行无密钥**——修正 frpc 的已知暴露面）。
-- [ ] **AC9**: Given 组网启动配置 When 工作台校验 Then 非 secure-mode 的配置被拒绝启动并给出可读原因（强制 secure-mode，无关闭开关）。
-- [ ] **AC10**: Given 密钥需要更换 When 重新执行密钥脚本 Then 新密钥写入并生效后，持旧密钥的成员设备无法再接入组网（换钥即全体吊销，成员需更新；吊销语义与 secure-mode 文档一致）。
+- [ ] **AC9**: Given 组网通道切换 When network_secret 未配置（文件缺失或为空）Then 拒绝启动组网并给出可读指引（密钥经脚本写入的入口提示）；配置正常时启动方式不含密钥明文（AC8 口径）。（secure-mode 因 v2.6.4 成员兼容性阻塞改为 legacy 产品形态——变更记录 2026-09-10 第三条）
+- [ ] **AC10**: Given 密钥需要更换 When 重新执行密钥脚本 Then 新密钥写入并生效后，持旧密钥的成员设备无法再接入组网（换钥即全体吊销，成员需更新；legacy 模式下 network_secret 即网络成员资格的唯一凭证）。
 
 ### US4: 作为用户，我希望组网参数在设置区与装机向导中均可配置，以便免手改配置文件完成新机部署。
 
@@ -89,7 +91,7 @@
 ## 5. 约束与假设
 
 - **社区公共节点可用性无 SLA**（官方不提供托管服务、`public.easytier.cn` 已下线；社区公益节点志愿性质，可能限速/变动/消失——多对端可配 + 自建 VPS 升级路径对冲，plan §7-R1）；且宿主机所在移动网络对 UDP 有 QoS 前科（frp 被拦实测、调研报告 §4.2 多源丢包实证）——**真机实测组网可靠性是本 Spec 验收前提**，不达标走升级路径（自建 VPS 节点，另走变更流程）。
-- **EasyTier 安全置信为中上**（Rust + Noise/WireGuard 原语 + secure-mode 设计可靠；但无第三方审计、无 SECURITY.md——调研报告 §4.1），以工程约束补：不用官方安装脚本（工作台自行落位）、rpc 端口绑 127.0.0.1、外部网络白名单收紧、版本跟随安全更新。
+- **EasyTier 安全置信为中上**（Rust + Noise/WireGuard 原语；legacy 模式传输加密由 network_secret 派生、secure-mode 全链实证可行但因成员兼容性本期未启用——§1 事实修正二；无第三方审计、无 SECURITY.md——调研报告 §4.1），以工程约束补：不用官方安装脚本（工作台自行落位）、rpc 端口绑 127.0.0.1、外部网络白名单收紧、版本跟随安全更新。
 - 假设：公网 DNS 允许 A 记录指向私网段 IP 且公共递归正常返回（Tailscale 100.x 有社区先例；EasyTier 默认 10.x 同理）——实测确认，异常则改用成员设备本地 hosts/Split DNS 方案（plan 备选）。
 - 假设：EasyTier Android 官方 App（v2.6.4+）满足成员设备接入；宿主机环境假设与 002 相同（管理员账户、UAC 可弹）。
 - **时序约束**：006 先收口（验收 done），007 再动通道层与向导分支；007 实施期间 004 既有真机部署继续可用（停用动作由用户在 007 交付后显式执行，升级不自动停用旧通道）。
@@ -98,8 +100,8 @@
 ## 6. 开放问题
 
 - [x] WireGuard Portal（手机经官方 WireGuard App 接入）本期是否纳入 → **不纳入**（plan §2：成员统一 EasyTier 客户端，凭证分发/吊销语义一致；WG Portal 留升级路径）。
-- [x] secure-mode 凭证形态：直接用 network_secret vs 签发带 TTL 的临时凭证（设备分级）→ **network_secret 直用**（v2.6.4 无成熟的临时凭证签发 CLI 流，YAGNI；AC10 换钥即全体吊销的语义由 network_secret 更新天然满足）。
-- [ ] A 记录 → 私网 IP 的公共解析兼容性（bogon 过滤风险）→ 真机实测（T1 前置，plan §7-R3 含 hosts/Split DNS 兜底）。
+- [x] secure-mode 凭证形态：直接用 network_secret vs 签发带 TTL 的临时凭证（设备分级）→ **network_secret 直用**（v2.6.4 已有 credential 临时凭据 CLI——generate/revoke/list 带 TTL 与权限分组，实测确认；但凭据体系要求全链 secure-mode（管理节点、临时节点、参与传播的正式节点均需支持），与本期 Android App legacy 接入的硬约束冲突 → 不用。AC10 换钥即全体吊销的语义由 network_secret 更新天然满足）。
+- [ ] A 记录 → 私网 IP 的公共解析兼容性（bogon 过滤风险）→ 真机实测（T1 前置，plan §7-R3 含 hosts/Split DNS 兜底）。**T2 已实测通过**（四路公共递归照常返回私网 A 值，tasks.md 附注③）——待 T14 验收时复测留档。
 - [x] 停用 frp 时 CNAME 选择删除还是暂停（004 调和用暂停语义保留可逆；停用场景或应彻底删除）→ **删除**（停用语义是消除暴露面而非可逆切换；调和层新增 Delete 操作，plan §4）。
 - [ ] 公共节点可靠性不达标时的升级触发条件（连续不可达时长/频率阈值）与自建 VPS 节点流程 → 组网运行期观察后定，另走变更。
 - [x] 虚拟网段规划（EasyTier 默认 10.126.126.0/24 与常见局域网 192.168.x/10.x 的冲突排查）→ **默认 10.126.126.0/24 + 网段可编辑 + 保存/切换时与物理网卡网段重叠检测阻断**（plan §6）。
@@ -112,3 +114,4 @@
 | 2026-09-10 | 状态 draft → reviewed | 需求方确认 spec 结构并指示「实施 007」；同日 006 验收收口 done，§5 时序约束（006 先收口）已满足 |
 | 2026-09-10 | 状态 reviewed → in-progress | plan.md 定稿 + tasks.md 拆解（T1~T15），开始实施 |
 | 2026-09-10 | 三处需求精化 + 事实修正：①「官方公共共享节点」表述全面更正为「社区公共节点」（官方隐私政策明示不托管，`public.easytier.cn` 实测 NXDOMAIN——默认对端改 `tcp://sh.vomiku.com:7910`，多对端可配）；② AC3 守护语义精化：easytier-core 改 Windows 服务承载（TUN 需管理员，spawn+应用层守护不可行），拉起由 SCM 恢复策略承担（≤60s）；③ AC11 对端改列表可编辑多条。§6 开放问题 Q1/Q2/Q4/Q6 随 plan 决议关闭 | plan 立项取证推翻 spec 两项假设（公共节点存在性、无管理员约束下的守护形态），按「实现中改需求先改 spec」流程同步 |
+| 2026-09-10 | **secure-mode 降级为 legacy 模式（产品形态定案）**：T2 双实例真机实测推翻「宿主机 secure + Android legacy 混合组网」设想——①secure 客户端连不上未开启 secure 的服务端（社区节点，报 `conn closed during wait handshake response`）；②同网络成员必须同为 secure（报 `same-network peers must use the same secure mode`）；Android 官方 App 无 secure 配置 UI。§1 决策行加事实修正二、§2 目标「secure-mode 强制」改「密钥就绪强制」、AC9 重写（密钥缺失拒绝启动）、AC10 措辞同步、§5 安全置信声明、§6 Q2 决议理由修正（credential CLI 存在但依赖全链 secure）。secure↔secure 配置方法已实证（成对 X25519），升级路径留 plan §7-R4 | T2 前置实测（tasks.md 附注②）：黑盒证据优先于文档设想，v2.6.4 兼容性矩阵实测为准 |
