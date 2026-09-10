@@ -9,9 +9,10 @@
                   "install-https.ps1":  "6210eccf08164b962618c965aaa208373cf9a34201f4fb299c17c2df937dc517",
                   "enable-https.ps1":  "bb6c801b05bdc1b9e1f7f2218c8f8021d11aec2836fab8466ae92f9558a9956b",
                   "install-client.ps1":  "357ed400ef580a011fa35ab7a5aab7af080619bdaec40b270847795a69f45805",
-                  "reset-ddns-password.ps1":  "f15760467f7b5a206d3c1865391ff130ee2feab043189a6eba86e454547b221c",
-                  "set-frp-key.ps1":  "12da6d0dc4bd15fd28edff093fed2e4c096d2a046acd49a82d3f7fbc3056264d",
+                  "reset-ddns-password.ps1":  "cbe968612e0dd699ed32233c03d9c7d9f1dd6e55da14d5f67042287febfb8b0b",
+                  "set-frp-key.ps1":  "6e106f93e264378edb9f6d705c8e8bbdbce612c54a24439d47d868538c6767ad",
                   "set-tencent-key.ps1":  "f4f1b47cd73e1c7775dbda705467abf2c2aeb42dd2f5c88ddb2a3955bb5d2583",
-                  "config-ddnsgo.ps1":  "1adabd07030b65e8e5e8cb36598915cbf4dd3ad2cfe246237ba235975bb16e07"
+                  "config-ddnsgo.ps1":  "1adabd07030b65e8e5e8cb36598915cbf4dd3ad2cfe246237ba235975bb16e07",
+                  "mesh-service.ps1":  "becf19bc22926849b7b471c048ae9cea02b13d824e992764fc39d7ed3316303a"
               }
 }

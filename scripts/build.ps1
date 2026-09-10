@@ -56,6 +56,7 @@ $ScriptSubset = @(
     'set-frp-key.ps1'         # SakuraFrp 访问密钥写入 .env（交互式，spec 004）
     'set-tencent-key.ps1'     # 腾讯云 CAM 密钥写入 .env（交互式，spec 006）
     'config-ddnsgo.ps1'       # ddns-go 配置生成 + 拉起（spec 006）
+    'mesh-service.ps1'        # EasyTier 组网服务管理（UAC，spec 007）
 )
 
 function Write-Step { param([string]$Msg) Write-Host "`n==> $Msg" -ForegroundColor Cyan }

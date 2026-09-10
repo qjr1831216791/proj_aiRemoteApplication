@@ -14,7 +14,7 @@ use crate::dns_api::sha256_hex;
 use crate::settings::MeshConfig;
 use serde::Serialize;
 use std::net::Ipv4Addr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 栈目录下组网子目录名（plan §4.2：`<stack>/easytier/`）
 pub const MESH_DIR: &str = "easytier";
@@ -27,6 +27,13 @@ pub const MESH_HOSTNAME: &str = "ai-remote-workbench";
 /// 收敛后的监听端口（默认六协议 11010-11013 全开 → 仅 tcp/udp；
 /// T2 实测同机双实例默认端口冲突 fatal 的教训固化）
 pub const MESH_LISTEN_PORT: u16 = 11010;
+/// Windows 服务名（mesh-service.ps1 的管理对象；显示名见 plan §4.4）
+pub const SERVICE_NAME: &str = "EasyTierMesh";
+/// RPC 门户（仅绑 localhost：状态探询通道的安全边界，plan §2；
+/// `easytier-cli --rpc` 探询与服务 binPath 的 `-r` 同值）
+pub const RPC_PORTAL: &str = "127.0.0.1:15888";
+/// 服务日志子目录（binPath `--file-log-dir` 指向；落位时预建，首启即可写日志）
+pub const LOG_DIR: &str = "logs";
 
 /// 校验目录内五个随包文件（easytier-core.exe / easytier-cli.exe / wintun.dll /
 /// packet.dll / WinDivert64.sys）的 SHA256 与版本锁定值一致。
@@ -53,6 +60,58 @@ pub fn verify_easytier_binaries(dir: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// 随包五文件清单（落位复制的对象；哈希校验见 [`verify_easytier_binaries`]）
+const MESH_BIN_FILES: [&str; 5] = [
+    EASYTIER_CORE_EXE_NAME,
+    EASYTIER_CLI_EXE_NAME,
+    WINTUN_DLL_NAME,
+    PACKET_DLL_NAME,
+    WINDIVERT_SYS_NAME,
+];
+
+// ── 服务 binPath 构造与栈目录落位（T7，plan §4.4；AC8 命令行无密钥）─────────
+
+/// 构造 EasyTierMesh 服务 binPath（纯函数，plan §4.4 形态）：
+/// `"<stack>\easytier\easytier-core.exe" -c "<stack>\easytier\config.toml"
+///  -r 127.0.0.1:15888 --file-log-dir "<stack>\easytier\logs"`
+///
+/// AC8：入参只有栈目录，输出是纯路径参数——network_secret 只进 config.toml
+/// （渲染器职责），命令行永不携带密钥。Tauri 命令层（T9）把它经 `-BinPath`
+/// 传给 mesh-service.ps1，脚本侧同公式兜底（支持脱离工作台手工运行）。
+/// 路径全部加引号：栈目录可配置，含空格时 SCM 命令行才不被拆断。
+///
+/// 可行性依据（v2.6.4 源码级取证）：core 的 main 无条件先走
+/// `service_dispatcher::start`——被 SCM 拉起即进 win_service_main（从进程
+/// 命令行解析 `-c` 参数）；控制台启动报 ERROR 0x427 被吞、继续走 CLI。
+pub fn service_bin_path(stack_dir: &str) -> String {
+    let et = Path::new(stack_dir).join(MESH_DIR);
+    let q = |p: PathBuf| format!("\"{}\"", p.display());
+    format!(
+        "{} -c {} -r {RPC_PORTAL} --file-log-dir {}",
+        q(et.join(EASYTIER_CORE_EXE_NAME)),
+        q(et.join(CONFIG_FILE)),
+        q(et.join(LOG_DIR)),
+    )
+}
+
+/// 栈目录落位（T7，plan §4.2）：随包五文件从资源 bin 复制到
+/// `<stack>/easytier/`，并预建 logs/。复制前后各过一遍哈希校验
+/// （防篡改源 + 防复制损坏，frpc 先例加固）；幂等（覆盖复制）。
+/// config.toml / network-secret 不在此列：前者由渲染器产出（T9
+/// mesh_apply_config），后者由 set-mesh-secret.ps1 交互写入（T10）。
+pub fn stage_easytier_binaries(src_bin: &Path, stack_dir: &str) -> Result<PathBuf, String> {
+    verify_easytier_binaries(src_bin)?;
+    let dest = Path::new(stack_dir).join(MESH_DIR);
+    std::fs::create_dir_all(dest.join(LOG_DIR))
+        .map_err(|e| format!("创建 {} 失败：{e}", dest.join(LOG_DIR).display()))?;
+    for name in MESH_BIN_FILES {
+        std::fs::copy(src_bin.join(name), dest.join(name))
+            .map_err(|e| format!("复制 {name} 到 {} 失败：{e}", dest.display()))?;
+    }
+    verify_easytier_binaries(&dest)?;
+    Ok(dest)
 }
 
 // ── config.toml 渲染（plan §4.3；T2 实测字段形态）──────────────────────────
@@ -484,5 +543,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         // 校验失败时带 easytier 的 stderr 摘要，便于诊断字段名回归
         result.unwrap_or_else(|e| panic!("渲染产物应通过 --check-config：{e}\n---\n{toml}"));
+    }
+
+    // ── T7：服务 binPath 构造 + 栈目录落位 ─────────────────────────────────
+
+    /// AC8 断言：binPath 只含路径参数（-c/-r/--file-log-dir），连 secret 文件名
+    /// 都不引用——密钥只经 config.toml 注入（渲染器职责），命令行无密钥
+    #[test]
+    fn bin_path_is_pure_paths_without_secret() {
+        let bp = service_bin_path(r"D:\Software\cloudcli-https");
+        assert!(
+            bp.starts_with(r#""D:\Software\cloudcli-https\easytier\easytier-core.exe""#),
+            "{bp}"
+        );
+        assert!(bp.contains(r#"-c "D:\Software\cloudcli-https\easytier\config.toml""#), "{bp}");
+        assert!(bp.contains("-r 127.0.0.1:15888"), "{bp}");
+        assert!(bp.contains(r#"--file-log-dir "D:\Software\cloudcli-https\easytier\logs""#), "{bp}");
+        assert!(
+            !bp.to_ascii_lowercase().contains("secret"),
+            "binPath 不得含 secret 字样（AC8）：{bp}"
+        );
+        assert_eq!(bp.matches('"').count(), 6, "三个路径各自成对引号（RPC 为字面量）：{bp}");
+    }
+
+    /// 栈目录可配置：含空格时每个路径参数整体加引号，SCM 命令行不拆断
+    #[test]
+    fn bin_path_quotes_paths_with_spaces() {
+        let bp = service_bin_path(r"D:\My Apps\stack");
+        assert!(bp.contains(r#""D:\My Apps\stack\easytier\config.toml""#), "{bp}");
+        assert!(bp.contains(r#""D:\My Apps\stack\easytier\logs""#), "{bp}");
+    }
+
+    /// 落位（真资源目录 → 临时栈目录）：五文件齐 + logs 预建 + 落位后哈希过 + 幂等
+    #[test]
+    fn staging_copies_files_and_passes_verification() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources").join("bin");
+        let stack = std::env::temp_dir().join("et-stage-test");
+        let _ = std::fs::remove_dir_all(&stack);
+        let dest =
+            stage_easytier_binaries(&src, stack.to_str().unwrap()).expect("落位应成功");
+        assert_eq!(dest, stack.join(MESH_DIR));
+        for name in MESH_BIN_FILES {
+            assert!(dest.join(name).is_file(), "落位后缺 {name}");
+        }
+        assert!(dest.join(LOG_DIR).is_dir(), "logs 目录应预建");
+        verify_easytier_binaries(&dest).expect("落位后校验应通过");
+        // 幂等：重复落位（覆盖复制）不报错
+        stage_easytier_binaries(&src, stack.to_str().unwrap()).expect("重复落位应成功");
+        let _ = std::fs::remove_dir_all(&stack);
+    }
+
+    /// 落位拒绝篡改源：复制前哈希校验先行（AC1 供应链防线延伸到复制环节）
+    #[test]
+    fn staging_rejects_tampered_source() {
+        let src = std::env::temp_dir().join("et-stage-badsrc");
+        let _ = std::fs::remove_dir_all(&src);
+        std::fs::create_dir_all(&src).unwrap();
+        for name in MESH_BIN_FILES {
+            std::fs::write(src.join(name), b"tampered").unwrap();
+        }
+        let err = stage_easytier_binaries(&src, "unused").expect_err("篡改源应拒绝");
+        assert!(err.contains("SHA256"), "{err}");
+        let _ = std::fs::remove_dir_all(&src);
     }
 }
