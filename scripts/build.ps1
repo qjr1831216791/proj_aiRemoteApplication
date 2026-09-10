@@ -53,6 +53,8 @@ $ScriptSubset = @(
     'install-client.ps1'      # 客户端配置（交互式）
     'reset-ddns-password.ps1' # ddns-go 密码重置（交互式，spec 003）
     'set-frp-key.ps1'         # SakuraFrp 访问密钥写入 .env（交互式，spec 004）
+    'set-tencent-key.ps1'     # 腾讯云 CAM 密钥写入 .env（交互式，spec 006）
+    'config-ddnsgo.ps1'       # ddns-go 配置生成 + 拉起（spec 006）
 )
 
 function Write-Step { param([string]$Msg) Write-Host "`n==> $Msg" -ForegroundColor Cyan }
