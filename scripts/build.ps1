@@ -46,12 +46,16 @@ $Arch      = 'x64'
 # 停止走程序内等效实现（spec §4.1），脚本保留为仓库内命令行兜底，不入产物）
 $ScriptSubset = @(
     'run-server-hidden.ps1'   # 哨兵：ScriptLocator 以它判定目录有效
+    'run-caddy-hidden.ps1'    # Caddy 计划任务拉起（注入 .env 凭证，spec 006）
     'setup-autostart.ps1'     # 服务自启任务开/关（-Remove）
     'install-server.ps1'      # 安装/升级 CloudCLI（UAC）
     'install-https.ps1'       # HTTPS 栈装机（UAC）
     'enable-https.ps1'        # HTTPS 环境配置（UAC）
     'install-client.ps1'      # 客户端配置（交互式）
     'reset-ddns-password.ps1' # ddns-go 密码重置（交互式，spec 003）
+    'set-frp-key.ps1'         # SakuraFrp 访问密钥写入 .env（交互式，spec 004）
+    'set-tencent-key.ps1'     # 腾讯云 CAM 密钥写入 .env（交互式，spec 006）
+    'config-ddnsgo.ps1'       # ddns-go 配置生成 + 拉起（spec 006）
 )
 
 function Write-Step { param([string]$Msg) Write-Host "`n==> $Msg" -ForegroundColor Cyan }

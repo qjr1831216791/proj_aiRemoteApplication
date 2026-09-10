@@ -238,6 +238,8 @@ CloudCLI 不改动 `~/.claude` 既有数据，卸载无残留顾虑。
 
 ### 9.3 部署步骤（对应 `tools/sprint0/bin/`）
 
+> **新机部署请优先使用工作台「装机向导」**（spec 006，2026-09-10）：装 APP → 按五阶段提示输入参数即完成（含插件版 Caddy 自动签证，免本节的手工 acme.sh 步骤）。以下手工步骤保留作为脚本级兜底与旧机（acme.sh 证书链）维护参考；旧机不受 006 插件化影响（既有 Caddyfile 幂等不覆盖，ADR-0003）。
+
 0. **一键装栈**：双击 `bin\install-https.bat`（管理员）——自动下载 `caddy.exe` / `ddns-go.exe`（GitHub Release 最新版，按资产名正则匹配，幂等可重跑；直连失败可 `-CaddyZip` / `-DdnsZip` 指向手动下载的 zip，升级加 `-Update`）、生成步骤 4 的 Caddyfile、代跑步骤 5 的 enable-https、拉起 ddns-go 并打开管理页。做完本步，下面只剩 2 的密钥配置与 3 的证书签发两件手工活
 1. **DNS 记录**：手动加一条 `ai` 的 A 记录 → 当前服务端 IP；或跳过手动，直接配 ddns-go 自动创建
 2. **ddns-go**：（步骤 0 已拉起）浏览器 `127.0.0.1:9876` → 服务商选腾讯云、填 SecretId/Key、IPv4 取"网卡"WLAN、域名 `ai.jackqi.cn` → 保存即更新记录；`-f 300` = 每 5 分钟校正（换热点/换 WiFi 全自动跟随）

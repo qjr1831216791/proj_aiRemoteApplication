@@ -267,6 +267,8 @@ pub struct OrchestratorConfig {
     pub log_dir: PathBuf,
     /// sprint0 脚本目录（None = 定位失败，CloudCLI 启停禁用并给原因）
     pub scripts_dir: Option<PathBuf>,
+    /// 栈目录（spec 004：用户可配置，Settings.stack_dir，重启生效）
+    pub stack_dir: String,
 }
 
 impl OrchestratorConfig {
@@ -278,6 +280,7 @@ impl OrchestratorConfig {
             stop: StopConfig::default(),
             lang,
             log_dir,
+            stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
             scripts_dir: None,
         }
     }
@@ -314,6 +317,9 @@ pub struct Orchestrator {
     /// 实时语言源（T14：语言切换后脚本 -Lang 与状态 detail 即时跟随；
     /// None = 回落 cfg.lang，单测/默认路径）
     lang_source: Option<Arc<dyn Fn() -> Lang + Send + Sync>>,
+    /// 通道感知源（spec 004 AC8：穿透通道下 start_all 跳过 ddns-go——
+    /// 通道互斥，ddns-go 会在 DNS 上与 CNAME 抢写记录；frpc 由隧道守护负责）
+    channel_source: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 
 impl Orchestrator {
@@ -345,6 +351,7 @@ impl Orchestrator {
             statuses: Arc::new(Mutex::new(statuses)),
             tracker: Arc::new(InFlightTracker::default()),
             lang_source: None,
+            channel_source: None,
         }
     }
 
@@ -352,6 +359,17 @@ impl Orchestrator {
     pub fn with_lang_source(mut self, source: Arc<dyn Fn() -> Lang + Send + Sync>) -> Self {
         self.lang_source = Some(source);
         self
+    }
+
+    /// 注入通道感知源（装配层接 SettingsState；返回 true = 当前为穿透通道）
+    pub fn with_channel_source(mut self, source: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+        self.channel_source = Some(source);
+        self
+    }
+
+    /// 当前是否穿透通道（无通道源 = 直连语义，保持既有行为）
+    fn is_tunnel_channel(&self) -> bool {
+        self.channel_source.as_ref().map(|f| f()).unwrap_or(false)
     }
 
     /// 当前生效语言（语言源实时读取；缺省 cfg.lang）
@@ -386,9 +404,16 @@ impl Orchestrator {
         }
     }
 
-    /// 一键启动：逐组件派发（在途组件跳过，幂等重入）
+    /// 一键启动：逐组件派发（在途组件跳过，幂等重入）。
+    /// 穿透通道下跳过 ddns-go（spec 004 AC8 通道互斥——否则它启动即把 A 记录
+    /// 重新写回，与 CNAME 混挂；2026-09-10 真机实证）。frpc 由隧道守护负责拉起。
     pub fn start_all(&self) {
+        let tunnel_mode = self.is_tunnel_channel();
         for id in COMPONENT_ORDER {
+            if tunnel_mode && id == ComponentId::DdnsGo {
+                log::info!("start_all 跳过 ddns-go（穿透通道互斥，spec 004 AC8）");
+                continue;
+            }
             // 单组件失败已隔离为其 failed 态（AC6），此处只吞"在途跳过"
             if let Err(e) = self.start_one(id) {
                 log::info!("start_all 跳过组件 {}：{e}", id.as_str());
@@ -418,7 +443,7 @@ impl Orchestrator {
                 }
                 log::warn!("组件 {} 在途启动登记超限，自愈清除并按探测实况纠正", id.as_str());
             }
-            let (state, detail) = match self.probe.probe(id) {
+            let (state, detail) = match self.probe.probe(id, &self.cfg.stack_dir) {
                 ProbeState::Running { .. } => (ComponentState::Running, None),
                 ProbeState::Stopped => (ComponentState::Stopped, None),
                 ProbeState::PortHeld { process_name } => (
@@ -480,6 +505,7 @@ impl Orchestrator {
                 cfg,
                 &texts,
                 &self.cfg.log_dir,
+                &self.cfg.stack_dir,
                 deadline,
             ),
             ComponentId::DdnsGo => crate::stop::stop_ddnsgo(
@@ -487,6 +513,7 @@ impl Orchestrator {
                 self.procs.as_ref(),
                 cfg,
                 &texts,
+                &self.cfg.stack_dir,
                 deadline,
             ),
         };
@@ -529,7 +556,7 @@ impl Orchestrator {
         let begun = Instant::now();
         let texts = crate::lang::detail_texts(self.current_lang());
         // 1. 守卫（AC3 幂等）：已运行跳过；被无关进程占如实上报且不拉起（AC7）
-        match self.probe.probe(id) {
+        match self.probe.probe(id, &self.cfg.stack_dir) {
             ProbeState::Running { .. } => {
                 self.set_state(id, ComponentState::Running, None);
                 log::info!("组件 {} 已在运行：守卫跳过（AC3 幂等）", id.as_str());
@@ -604,12 +631,12 @@ impl Orchestrator {
                 }
             }
             ComponentId::Caddy => {
-                if !self.dispatch_native(cancel, &caddy_run(&self.cfg.log_dir), id) {
+                if !self.dispatch_native(cancel, &caddy_run(&self.cfg.log_dir, &self.cfg.stack_dir), id) {
                     return;
                 }
             }
             ComponentId::DdnsGo => {
-                if !self.dispatch_native(cancel, &ddns_go_run(&self.cfg.log_dir), id) {
+                if !self.dispatch_native(cancel, &ddns_go_run(&self.cfg.log_dir, &self.cfg.stack_dir), id) {
                     return;
                 }
             }
@@ -622,7 +649,7 @@ impl Orchestrator {
                 log::info!("组件 {} 启动轮询被取消（停止管线接管）", id.as_str());
                 return;
             }
-            match self.probe.probe(id) {
+            match self.probe.probe(id, &self.cfg.stack_dir) {
                 ProbeState::Running { .. } => {
                     self.set_state_if_active(cancel, id, ComponentState::Running, None);
                     log::info!("组件 {} 就绪（耗时 {:?}）", id.as_str(), begun.elapsed());
@@ -886,7 +913,7 @@ pub(crate) mod test_support {
             }
         }
 
-        fn probe(&self, id: ComponentId) -> ProbeState {
+        fn probe(&self, id: ComponentId, _stack_dir: &str) -> ProbeState {
             self.probe_calls.fetch_add(1, Ordering::SeqCst);
             let popped = self
                 .states

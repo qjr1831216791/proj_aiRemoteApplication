@@ -3,17 +3,25 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  AccessChannel,
   AccessUrls,
   ComponentId,
   ComponentStatus,
+  DnsAlignment,
+  DomainHealth,
   ExternalKind,
   LanguageSetting,
+  NetStatus,
+  NetCategory,
+  ProbeOutcome,
   ScriptsAvailability,
   Settings,
   SettingsPatch,
   TookOverPayload,
   ToolKind,
   ToolOpts,
+  TunnelStatus,
+  WizardState,
 } from "./types";
 
 export const api = {
@@ -38,7 +46,51 @@ export const api = {
   setAutostartServices: (enable: boolean) =>
     invoke<TookOverPayload>("set_autostart_services", { enable }),
   setAutostartApp: (enable: boolean) => invoke<void>("set_autostart_app", { enable }),
+
+  /** 网络环境快照（spec 002）：即时探测；null = 尚无成功探测 */
+  getNetStatus: () => invoke<NetStatus | null>("get_net_status"),
+  /** 网络归类调整（spec 002 AC5/AC6）：UAC 提权派发，生效以 net://changed 复测为准；按网络名定位、序号兜底 */
+  setNetworkCategory: (
+    name: string,
+    ifIndex: number,
+    category: Extract<NetCategory, "private" | "public">,
+  ) => invoke<void>("set_network_category", { name, ifIndex, category }),
+
+  /** 隧道状态快照（spec 004；此后以 tunnel://status 事件为准） */
+  getTunnelStatus: () => invoke<TunnelStatus>("get_tunnel_status"),
+  /** 通道切换（AC5/6）：前置校验失败 → Err（未配置/已处于目标通道） */
+  switchChannel: (target: AccessChannel) =>
+    invoke<Settings>("switch_channel", { target }),
+  /** 穿透启用开关（AC11） */
+  setTunnelEnabled: (enabled: boolean) =>
+    invoke<Settings>("set_tunnel_enabled", { enabled }),
+  /** DNS 对齐检测（AC12/13）：权威 CNAME/A 实况 */
+  checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
+  /** 打开栈目录（穿透设置指引链接） */
+  openStackDir: () => invoke<void>("open_stack_dir"),
+  /** 即时域名探测（通道体检；独立于 60s 心跳） */
+  checkDomainHealthNow: () => invoke<ProbeOutcome>("check_domain_health_now"),
+  /** 手动重启隧道（停止 → flushdns → 重新登录） */
+  restartTunnel: () => invoke<TunnelStatus>("restart_tunnel"),
+  /** Defender 白名单命令文本（frpc 两个运行位置；spec 004 分发保障） */
+  getDefenderExclusionCmd: () => invoke<string>("get_defender_exclusion_cmd"),
+  /** 一键恢复 frpc（官方 CDN 下载 → SHA256 校验 → 落位栈目录） */
+  downloadFrpc: () => invoke<string>("download_frpc"),
+
+  // ── 装机向导（spec 006）───────────────────────────────────────────────
+  wizardGetState: () => invoke<WizardState>("wizard_get_state"),
+  /** 全量重探测（外部办理/脚本跑完后的统一「校验」入口） */
+  wizardDetect: () => invoke<WizardState>("wizard_detect"),
+  wizardSetDomain: (domain: string) => invoke<WizardState>("wizard_set_domain", { domain }),
+  /** 分支选择：同步写 Settings.access_channel（frpc/ddns-go 收敛复用 004 守护） */
+  wizardSetBranch: (branch: AccessChannel) => invoke<WizardState>("wizard_set_branch", { branch }),
+  wizardComplete: () => invoke<WizardState>("wizard_complete"),
 };
+
+/** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */
+export function onNetChanged(cb: (status: NetStatus) => void): Promise<() => void> {
+  return listen<NetStatus>("net://changed", (e) => cb(e.payload));
+}
 
 /** 状态事件（Rust 侧 2s 轮询器驱动；前端不另做轮询） */
 export function onStatusChanged(
@@ -47,11 +99,26 @@ export function onStatusChanged(
   return listen<ComponentStatus[]>("status://changed", (e) => cb(e.payload));
 }
 
+/** 隧道状态事件（spec 004：守护线程 5s 收敛驱动，变化才发） */
+export function onTunnelStatus(cb: (status: TunnelStatus) => void): Promise<() => void> {
+  return listen<TunnelStatus>("tunnel://status", (e) => cb(e.payload));
+}
+
+/** 域名心跳事件（spec 005：60s 周期探测，载荷 healthy 已含 2 次防抖） */
+export function onDomainHealth(cb: (health: DomainHealth) => void): Promise<() => void> {
+  return listen<DomainHealth>("domain://health", (e) => cb(e.payload));
+}
+
 /** 设置损坏恢复事件（AC24：非阻塞提示） */
 export function onSettingsRepaired(
   cb: (payload: { backupPath: string }) => void,
 ): Promise<() => void> {
   return listen<{ backupPath: string }>("settings://repaired", (e) => cb(e.payload));
+}
+
+/** 向导状态事件（spec 006：set_domain/set_branch/detect/complete 后推全量） */
+export function onWizardChanged(cb: (state: WizardState) => void): Promise<() => void> {
+  return listen<WizardState>("wizard://changed", (e) => cb(e.payload));
 }
 
 /** 复制到剪贴板：navigator.clipboard 优先，execCommand 兜底（WebView2 兼容） */

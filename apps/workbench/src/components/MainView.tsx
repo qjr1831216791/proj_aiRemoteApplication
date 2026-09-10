@@ -11,17 +11,46 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
-import type { AccessUrls, ComponentId, ComponentState, ComponentStatus, ScriptsAvailability } from "../types";
+import type {
+  AccessUrls,
+  ComponentId,
+  ComponentState,
+  ComponentStatus,
+  DomainHealth,
+  NetCategory,
+  NetStatus,
+  ScriptsAvailability,
+  Settings,
+  TunnelStatus,
+  WizardStageId,
+} from "../types";
 import { CopyButton } from "./CopyButton";
 import { ToolsSection } from "./ToolsSection";
+import { TunnelCard } from "./TunnelCard";
 
 export interface MainViewProps {
   lang: Lang;
   statuses: ComponentStatus[];
   urls: AccessUrls | null;
   scripts: ScriptsAvailability | null;
+  /** 网络环境快照（spec 002；null = 尚无成功探测） */
+  netStatus: NetStatus | null;
+  /** 主动刷新网络环境（切换派发成功后加速收敛，免等 15s 轮询） */
+  onNetRefresh: () => void;
+  /** 全量设置（spec 004 通道卡数据源；App 持有） */
+  settings: Settings | null;
+  /** 隧道运行状态（spec 004；null = 尚无快照） */
+  tunnelStatus: TunnelStatus | null;
+  /** 域名心跳快照（spec 005；null = 尚无探测结果） */
+  domainHealth: DomainHealth | null;
+  /** 设置回写（通道切换/开关成功后 App 层 setSettings） */
+  onSettingsChange: (s: Settings) => void;
   /** 一键停止在途（防重复点击） */
   stopping: boolean;
+  /** 装机向导是否已完成（spec 006 AC1：未完成 → 引导条） */
+  wizardDone: boolean;
+  /** 跳转装机向导并定位阶段（spec 006 AC14） */
+  onOpenWizard: (stage: WizardStageId) => void;
   onStartAll: () => void;
   onStopAll: () => void;
   onRetry: (id: ComponentId) => void;
@@ -29,13 +58,39 @@ export interface MainViewProps {
 }
 
 export function MainView(props: MainViewProps) {
-  const { lang, statuses, urls, scripts, stopping, onStartAll, onStopAll, onRetry, onToast } = props;
+  const {
+    lang, statuses, urls, scripts, netStatus, onNetRefresh,
+    settings, tunnelStatus, domainHealth, onSettingsChange,
+    stopping, onStartAll, onStopAll, onRetry, onToast,
+    wizardDone, onOpenWizard,
+  } = props;
   // 当前态耗时（since → now）每秒刷新
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // 网络归类切换的两步确认（需求方定：30s 未确认自动还原，给足阅读风险文案时间）
+  const [confirmIf, setConfirmIf] = useState<number | null>(null);
+  const [confirmCat, setConfirmCat] = useState<"private" | "public" | null>(null);
+  useEffect(() => {
+    if (confirmIf === null) return;
+    const id = setTimeout(() => setConfirmIf(null), 30000);
+    return () => clearTimeout(id);
+  }, [confirmIf]);
+
+  const switchNet = (name: string, ifIndex: number, category: "private" | "public") => {
+    setConfirmIf(null);
+    api
+      .setNetworkCategory(name, ifIndex, category)
+      .then(() => {
+        onToast(t("net.dispatched", lang), "success");
+        // UAC 批准后给执行留几秒，主动拉取加速收敛（免干等 15s 轮询）
+        setTimeout(() => onNetRefresh(), 3500);
+      })
+      .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
+  };
 
   const starting = statuses.some((s) => s.state === "starting");
   const anyRunning = statuses.some((s) => s.state === "running");
@@ -45,6 +100,18 @@ export function MainView(props: MainViewProps) {
 
   return (
     <>
+      {/* 装机引导条（spec 006 AC1）：装机未完成时醒目入口，可关闭由向导 done 收敛 */}
+      {!wizardDone ? (
+        <section class="card master">
+          <p class="notice notice--warn">{t("wizard.notice", lang)}</p>
+          <div class="master__actions">
+            <button class="btn btn--primary" onClick={() => onOpenWizard("basis")}>
+              {t("wizard.noticeCta", lang)}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {/* 总开关（spec §4.6 信息分区之首） */}
       <section class="card master">
         <div class="master__actions">
@@ -88,21 +155,16 @@ export function MainView(props: MainViewProps) {
               ) : null}
             </p>
             {s.detail ? <p class="status__detail">{s.detail}</p> : null}
+            {s.id === "ddnsgo" && settings?.accessChannel === "tunnel" && s.state === "stopped" ? (
+              <p class="status__detail">{t("tunnel.ddnsOffInTunnel", lang)}</p>
+            ) : null}
             {s.state === "failed" || s.state === "port-held" ? (
               <button class="btn btn--sm" disabled={busy} onClick={() => onRetry(s.id)}>
                 {t("common.retry", lang)}
               </button>
             ) : null}
             {s.state === "failed" && s.id === "cloudcli" ? (
-              <button
-                class="btn btn--sm"
-                onClick={() =>
-                  api
-                    .runTool("install_server", { update: false, mirror: false })
-                    .then(() => onToast(t("tools.dispatched", lang), "success"))
-                    .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"))
-                }
-              >
+              <button class="btn btn--sm" onClick={() => onOpenWizard("basis")}>
                 {t("main.goInstall", lang)}
               </button>
             ) : null}
@@ -110,13 +172,96 @@ export function MainView(props: MainViewProps) {
         ))}
       </section>
 
+      {/* 网络环境（spec 002）：被拦截反馈 + 用户决策的归类调整 */}
+      <section class="card">
+        <h2 class="card__title">{t("net.title", lang)}</h2>
+        {netStatus?.alert ? (
+          <p class="notice notice--warn">
+            {t("net.alert", lang).replace(
+              "{names}",
+              netStatus.networks
+                .filter((n) => n.category === "public")
+                .map((n) => n.name)
+                .join("、"),
+            )}
+          </p>
+        ) : null}
+        {netStatus === null || netStatus.networks.length === 0 ? (
+          <p class="muted">{t("net.noNetworks", lang)}</p>
+        ) : (
+          netStatus.networks.map((n) => (
+            <div key={n.ifIndex}>
+              <div class="net__row">
+                <span class="net__name">{n.name}</span>
+                <span class={netChipClass(n.category)}>{t(netCatKey(n.category), lang)}</span>
+                <span class="net__spacer" />
+                {n.category === "public" ? (
+                  <button
+                    class="btn btn--sm"
+                    onClick={() => {
+                      setConfirmIf(n.ifIndex);
+                      setConfirmCat("private");
+                    }}
+                  >
+                    {t("net.setPrivate", lang)}
+                  </button>
+                ) : n.category === "private" ? (
+                  <button
+                    class="btn btn--sm"
+                    onClick={() => {
+                      setConfirmIf(n.ifIndex);
+                      setConfirmCat("public");
+                    }}
+                  >
+                    {t("net.setPublic", lang)}
+                  </button>
+                ) : null}
+              </div>
+              {confirmIf === n.ifIndex && confirmCat ? (
+                <div class="net__confirm">
+                  <p class="net__risk">
+                    {confirmCat === "private" ? t("net.riskPrivate", lang) : t("net.riskPublic", lang)}
+                  </p>
+                  <button
+                    class="btn btn--sm btn--primary"
+                    onClick={() => switchNet(n.name, n.ifIndex, confirmCat)}
+                  >
+                    {confirmCat === "private" ? t("net.confirmPrivate", lang) : t("net.confirmPublic", lang)}
+                  </button>
+                  <button class="btn btn--sm" onClick={() => setConfirmIf(null)}>
+                    {t("net.cancel", lang)}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))
+        )}
+      </section>
+
+      {/* 访问通道（spec 004）：直连 ⇄ 穿透切换 + 隧道状态 + DNS 指引 */}
+      <TunnelCard
+        lang={lang}
+        settings={settings}
+        tunnelStatus={tunnelStatus}
+        onToast={onToast}
+        onSettingsChange={onSettingsChange}
+      />
+
       {/* 地址区 */}
       <section class="card">
         <h2 class="card__title">{t("addr.title", lang)}</h2>
         {urls
           ? (["local", "lan", "domain"] as const).map((k) => (
               <div class="addr__row" key={k}>
-                <span class="addr__label">{t(`addr.${k}`, lang)}</span>
+                <span class="addr__label">
+                  {k === "domain" && domainHealth ? (
+                    <span
+                      class={`hb-dot ${domainHealth.healthy ? "hb-dot--ok" : "hb-dot--fail"}`}
+                      title={`${t(`heartbeat.kind.${domainHealth.kind}`, lang).replace("{code}", String(domainHealth.code ?? ""))} · ${t("heartbeat.scopeNote", lang)}`}
+                    />
+                  ) : null}
+                  {t(`addr.${k}`, lang)}
+                </span>
                 <code class="addr__url">{urls[k]}</code>
                 <span class="addr__actions">
                   <CopyButton text={urls[k]} lang={lang} onToast={onToast} />
@@ -146,6 +291,32 @@ export function MainView(props: MainViewProps) {
 function stateLabel(state: ComponentState, lang: Lang): string {
   const key: DictKey = state === "port-held" ? "common.portHeld" : `common.${state}`;
   return t(key, lang);
+}
+
+/** 网络归类 → chip 配色（公用橙警 / 专用绿 / 域与未知灰） */
+function netChipClass(category: NetCategory): string {
+  switch (category) {
+    case "public":
+      return "chip chip--net-public";
+    case "private":
+      return "chip chip--net-private";
+    default:
+      return "chip chip--net-domain";
+  }
+}
+
+/** 网络归类 → 词典标签 */
+function netCatKey(category: NetCategory): DictKey {
+  switch (category) {
+    case "public":
+      return "net.catPublic";
+    case "private":
+      return "net.catPrivate";
+    case "domain":
+      return "net.catDomain";
+    default:
+      return "net.catUnknown";
+  }
 }
 
 /** 耗时格式化：48s / 3m24s / 1h05m（语言无关） */

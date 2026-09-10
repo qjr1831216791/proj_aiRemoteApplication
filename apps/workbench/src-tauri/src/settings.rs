@@ -40,6 +40,26 @@ pub enum ExitAction {
     Stop,
 }
 
+/// 访问通道（spec 004 §4.1）：direct = DDNS 直连（默认），tunnel = SakuraFrp 穿透。
+/// 两条通道互斥运行：tunnel 生效时 ddns-go 停止托管，反之亦然（AC5/6/8）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AccessChannel {
+    Direct,
+    Tunnel,
+}
+
+/// 穿透配置的非敏感部分（spec 004 §4.2：access key 属敏感凭证，
+/// 存栈目录 `.env` 的 `SAKURA_FRP_KEY`，永不进入本结构/设置文件/日志）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelConfig {
+    /// SakuraFrp 隧道 ID（管理面板隧道列表 ID 列）
+    pub tunnel_id: String,
+    /// 节点域名（DNS CNAME 对齐目标，如 `frp-can.com`；spec 004 AC12）
+    pub node_domain: String,
+}
+
 /// 全量设置（plan §4 schema；camelCase 序列化，未知字段忽略、缺失字段回默认，
 /// 兼容旧版/新版文件）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,6 +81,17 @@ pub struct Settings {
     pub open_page_on_start: bool,
     /// 脚本目录覆盖：None = 未设置（用内置/开发态路径）
     pub scripts_dir_override: Option<String>,
+    /// 访问通道（spec 004）：默认 direct，兼容既有部署零感知
+    pub access_channel: AccessChannel,
+    /// 穿透配置：None = 未配置（AC7 切换入口呈引导态，直连行为不受影响）
+    pub tunnel: Option<TunnelConfig>,
+    /// 穿透模式下是否启用运行（AC11 停用语义；未配置时该值无效果）
+    pub tunnel_enabled: bool,
+    /// 域名心跳检测（spec 005 AC7）：关闭则不发探测，既有标记冻结
+    pub domain_heartbeat: bool,
+    /// HTTPS 栈部署目录（spec 004：用户可配置；输入安装根自动追加
+    /// `cloudcli-https` 子目录并规整；**重启工作台后生效**）
+    pub stack_dir: String,
 }
 
 impl Default for Settings {
@@ -74,6 +105,11 @@ impl Default for Settings {
             exit_action: ExitAction::Keep,
             open_page_on_start: false,
             scripts_dir_override: None,
+            access_channel: AccessChannel::Direct,
+            tunnel: None,
+            tunnel_enabled: true,
+            domain_heartbeat: true,
+            stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
         }
     }
 }
@@ -94,6 +130,16 @@ pub struct SettingsPatch {
     /// 故用 deserialize_with 区分：缺省走 default（None），null → Some(None)。
     #[serde(default, deserialize_with = "deserialize_scripts_dir")]
     pub scripts_dir_override: Option<Option<String>>,
+    /// 通道切换（spec 004 AC5/6）：由 switch_channel 命令驱动，此处仅持久化载体
+    pub access_channel: Option<AccessChannel>,
+    /// 穿透配置写入（None 不改）；不支持置空——回退直连保留配置以便再切
+    pub tunnel: Option<TunnelConfig>,
+    /// 穿透启用开关（spec 004 AC11）
+    pub tunnel_enabled: Option<bool>,
+    /// 域名心跳开关（spec 005 AC7）
+    pub domain_heartbeat: Option<bool>,
+    /// 栈目录（spec 004：用户输入安装根，保存时自动规整）
+    pub stack_dir: Option<String>,
 }
 
 /// scriptsDirOverride 三态反序列化（仅字段出现时被调用）：
@@ -207,7 +253,38 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     if let Some(v) = patch.scripts_dir_override.clone() {
         merged.scripts_dir_override = v;
     }
+    if let Some(v) = patch.access_channel {
+        merged.access_channel = v;
+    }
+    if let Some(v) = patch.tunnel.clone() {
+        merged.tunnel = Some(v);
+    }
+    if let Some(v) = patch.tunnel_enabled {
+        merged.tunnel_enabled = v;
+    }
+    if let Some(v) = patch.domain_heartbeat {
+        merged.domain_heartbeat = v;
+    }
+    if let Some(v) = patch.stack_dir.as_deref() {
+        merged.stack_dir = normalize_stack_dir(v);
+    }
     merged
+}
+
+/// 栈目录规整（纯函数）：去首尾空白与尾随分隔符；未以 `cloudcli-https`
+/// 子目录结尾则自动追加（需求方：用户输入安装根，子目录名固定）；
+/// 空输入回落默认值。
+pub fn normalize_stack_dir(input: &str) -> String {
+    let t = input.trim().trim_end_matches(['\\', '/']);
+    if t.is_empty() {
+        return crate::consts::DEFAULT_STACK_DIR.to_string();
+    }
+    let lower = t.to_ascii_lowercase();
+    if lower.ends_with("\\cloudcli-https") || lower.ends_with("/cloudcli-https") {
+        t.to_string()
+    } else {
+        format!("{t}\\cloudcli-https")
+    }
 }
 
 /// 原子保存：写同目录临时文件后 rename 覆盖（半写防护）
@@ -308,6 +385,7 @@ mod tests {
         // plan §4：version=1 / language=auto / autostartServices=true /
         // autostartApp=false / linkStartServices=true / exitAction=keep /
         // openPageOnStart=false / scriptsDirOverride=null
+        // spec 004 §4.1：accessChannel=direct / tunnel=null / tunnelEnabled=true
         let d = Settings::default();
         assert_eq!(d.version, 1);
         assert_eq!(d.language, LanguageSetting::Auto);
@@ -317,6 +395,27 @@ mod tests {
         assert_eq!(d.exit_action, ExitAction::Keep);
         assert!(!d.open_page_on_start);
         assert_eq!(d.scripts_dir_override, None);
+        assert_eq!(d.access_channel, AccessChannel::Direct, "默认通道=直连（兼容既有部署）");
+        assert_eq!(d.tunnel, None, "穿透默认未配置（AC7）");
+        assert!(d.tunnel_enabled);
+        assert!(d.domain_heartbeat, "心跳默认开（spec 005 AC1）");
+        assert_eq!(d.stack_dir, crate::consts::DEFAULT_STACK_DIR);
+    }
+
+    #[test]
+    fn stack_dir_normalization() {
+        // 需求方 2026-09-10：输入安装根，自动追加 cloudcli-https 子目录
+        assert_eq!(normalize_stack_dir("D:\\Software\\"), "D:\\Software\\cloudcli-https");
+        assert_eq!(normalize_stack_dir(" D:\\Software "), "D:\\Software\\cloudcli-https");
+        // 完整路径原样（大小写/尾斜杠容忍）
+        assert_eq!(
+            normalize_stack_dir("d:\\software\\CloudCLI-HTTPS\\"),
+            "d:\\software\\CloudCLI-HTTPS"
+        );
+        assert_eq!(normalize_stack_dir("E:\\MyStack"), "E:\\MyStack\\cloudcli-https");
+        // 空输入回落默认
+        assert_eq!(normalize_stack_dir(""), crate::consts::DEFAULT_STACK_DIR);
+        assert_eq!(normalize_stack_dir("   "), crate::consts::DEFAULT_STACK_DIR);
     }
 
     #[test]
@@ -332,6 +431,9 @@ mod tests {
             "\"exitAction\":\"keep\"",
             "\"openPageOnStart\":false",
             "\"scriptsDirOverride\":null",
+            "\"accessChannel\":\"direct\"",
+            "\"tunnel\":null",
+            "\"tunnelEnabled\":true",
         ] {
             assert!(json.contains(key), "序列化结果缺 {key}：{json}");
         }
@@ -367,6 +469,12 @@ mod tests {
         s.exit_action = ExitAction::Stop;
         s.autostart_app = true;
         s.scripts_dir_override = Some("D:\\my-scripts".into());
+        s.access_channel = AccessChannel::Tunnel;
+        s.tunnel = Some(TunnelConfig {
+            tunnel_id: "29080263".into(),
+            node_domain: "frp-can.com".into(),
+        });
+        s.tunnel_enabled = false;
         save_to(&path, &s).expect("保存失败");
         match load_from(&path) {
             LoadOutcome::Loaded(loaded) => assert_eq!(loaded, s),
@@ -466,6 +574,63 @@ mod tests {
         assert_eq!(patch.scripts_dir_override, Some(None));
         let patch: SettingsPatch = serde_json::from_str("{}").expect("解析失败");
         assert_eq!(patch.scripts_dir_override, None);
+    }
+
+    #[test]
+    fn apply_patch_channel_and_tunnel_fields() {
+        // spec 004：通道/穿透配置的补丁合并语义
+        let mut base = Settings::default();
+        base.tunnel = Some(TunnelConfig {
+            tunnel_id: "111".into(),
+            node_domain: "old.example.com".into(),
+        });
+
+        // 空补丁不动
+        let untouched = apply_patch(&base, &SettingsPatch::default());
+        assert_eq!(untouched.access_channel, AccessChannel::Direct);
+        assert_eq!(untouched.tunnel, base.tunnel);
+        assert!(untouched.tunnel_enabled);
+
+        // 各字段独立生效
+        let patch = SettingsPatch {
+            access_channel: Some(AccessChannel::Tunnel),
+            tunnel: Some(TunnelConfig {
+                tunnel_id: "29080263".into(),
+                node_domain: "frp-can.com".into(),
+            }),
+            tunnel_enabled: Some(false),
+            stack_dir: Some("D:\\Software\\".into()),
+            ..Default::default()
+        };
+        let merged = apply_patch(&base, &patch);
+        assert_eq!(merged.access_channel, AccessChannel::Tunnel);
+        assert_eq!(
+            merged.tunnel.as_ref().expect("tunnel 应被设置").tunnel_id,
+            "29080263"
+        );
+        assert!(!merged.tunnel_enabled);
+        // 栈目录输入安装根 → 规整追加子目录（需求方 2026-09-10）
+        assert_eq!(merged.stack_dir, "D:\\Software\\cloudcli-https");
+    }
+
+    #[test]
+    fn old_settings_file_without_channel_fields_loads_as_direct() {
+        // 向后兼容：004 之前的 settings.json（无 accessChannel/tunnel 字段）→ 默认直连，
+        // 既有部署升级零感知（spec 004 §5「兼容性假设」）
+        let path = temp_settings_path("legacy");
+        fs::write(
+            &path,
+            r#"{"version":1,"language":"auto","autostartServices":true,"autostartApp":false,"linkStartServices":true,"exitAction":"keep","openPageOnStart":false,"scriptsDirOverride":null}"#,
+        )
+        .expect("写入失败");
+        match load_from(&path) {
+            LoadOutcome::Loaded(s) => {
+                assert_eq!(s.access_channel, AccessChannel::Direct);
+                assert_eq!(s.tunnel, None);
+            }
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        cleanup(&path);
     }
 
     #[test]

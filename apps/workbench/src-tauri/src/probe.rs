@@ -10,7 +10,7 @@
 //! API 采集层（netstat2 + sysinfo），mock/真实实现可替换。
 
 use crate::consts::{
-    CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT, DDNSGO_PORT, STACK_DIR,
+    CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT, DDNSGO_PORT, DEFAULT_STACK_DIR,
 };
 use std::net::IpAddr;
 
@@ -82,14 +82,15 @@ pub struct PortHolders {
     pub processes: Vec<ProbeProcess>,
 }
 
-/// 三组件期望身份（集中定义；修改与部署知识同步）
-pub fn expected_identity(id: ComponentId) -> Identity {
+/// 三组件期望身份（集中定义；修改与部署知识同步）。
+/// `stack_dir` 为用户可配置的栈目录（spec 004：Settings.stack_dir，重启生效）
+pub fn expected_identity(id: ComponentId, stack_dir: &str) -> Identity {
     match id {
         // run-server-hidden.ps1 经 npm 全局拉起 node.exe，安装路径不定 → 按名
         ComponentId::CloudCli => Identity::ExeName(CLOUDCLI_EXE_NAME.into()),
         // caddy/ddns-go 固定居于栈目录（setup-autostart.ps1 的 Check 判据）
-        ComponentId::Caddy => Identity::ExePath(format!(r"{STACK_DIR}\caddy.exe")),
-        ComponentId::DdnsGo => Identity::ExePath(format!(r"{STACK_DIR}\ddns-go.exe")),
+        ComponentId::Caddy => Identity::ExePath(format!(r"{stack_dir}\caddy.exe")),
+        ComponentId::DdnsGo => Identity::ExePath(format!(r"{stack_dir}\ddns-go.exe")),
     }
 }
 
@@ -125,15 +126,15 @@ pub fn classify(holders: &PortHolders, identity: &Identity) -> ProbeState {
 }
 
 /// 探测接口：`port_holders` 为采集（实现注入便于 mock），`probe` 复用纯 classify。
-/// Send + Sync：编排器（T8）跨线程持有 Arc<dyn StatusProbe>
+/// `stack_dir` 由编排器传入（用户可配置，spec 004）。Send + Sync：编排器跨线程持有。
 pub trait StatusProbe: Send + Sync {
     /// 采集指定端口的监听快照（Listen 套接字 + 各监听 PID 的 exe）
     fn port_holders(&self, port: u16) -> PortHolders;
 
     /// 单组件探测 = 采集 + 分类（默认实现即 trait 存在的意义）
-    fn probe(&self, id: ComponentId) -> ProbeState {
+    fn probe(&self, id: ComponentId, stack_dir: &str) -> ProbeState {
         let holders = self.port_holders(id.port());
-        classify(&holders, &expected_identity(id))
+        classify(&holders, &expected_identity(id, stack_dir))
     }
 }
 
@@ -273,17 +274,17 @@ mod tests {
     fn expected_identity_matches_deployment() {
         // cloudcli = node.exe 按名；caddy/ddns-go = 栈目录全路径（与
         // setup-autostart.ps1 的 Check 判据一致）
-        assert_eq!(expected_identity(ComponentId::CloudCli), Identity::ExeName("node.exe".into()));
+        assert_eq!(expected_identity(ComponentId::CloudCli, DEFAULT_STACK_DIR), Identity::ExeName("node.exe".into()));
         assert_eq!(
-            expected_identity(ComponentId::Caddy),
+            expected_identity(ComponentId::Caddy, DEFAULT_STACK_DIR),
             Identity::ExePath(r"D:\Software\cloudcli-https\caddy.exe".into())
         );
         assert_eq!(
-            expected_identity(ComponentId::DdnsGo),
+            expected_identity(ComponentId::DdnsGo, DEFAULT_STACK_DIR),
             Identity::ExePath(r"D:\Software\cloudcli-https\ddns-go.exe".into())
         );
-        // 与 consts 同源（STACK_DIR 变更时此处兜底提醒）
-        assert!(matches!(expected_identity(ComponentId::Caddy), Identity::ExePath(p) if p.starts_with(STACK_DIR)));
+        // 与 consts 同源（DEFAULT_STACK_DIR 变更时此处兜底提醒）
+        assert!(matches!(expected_identity(ComponentId::Caddy, DEFAULT_STACK_DIR), Identity::ExePath(p) if p.starts_with(DEFAULT_STACK_DIR)));
     }
 
     #[test]
@@ -379,9 +380,9 @@ mod tests {
             &[addr([127, 0, 0, 1])],
             &[(9, Some(r"C:\Program Files\nodejs\node.exe"), Some("node.exe"))],
         ));
-        assert!(matches!(probe.probe(ComponentId::CloudCli), ProbeState::Running { .. }));
+        assert!(matches!(probe.probe(ComponentId::CloudCli, DEFAULT_STACK_DIR), ProbeState::Running { .. }));
         // 同一快照对 caddy 组件（全路径判据）→ port-held
-        match probe.probe(ComponentId::Caddy) {
+        match probe.probe(ComponentId::Caddy, DEFAULT_STACK_DIR) {
             ProbeState::PortHeld { process_name } => assert_eq!(process_name, "node.exe"),
             other => panic!("应为 PortHeld，实际 {other:?}"),
         }

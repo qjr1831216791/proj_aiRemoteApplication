@@ -9,8 +9,11 @@
 mod autostart;
 mod commands;
 mod consts;
+pub mod dns_api;
 mod exit_flow;
+mod heartbeat;
 mod lang;
+mod network;
 mod orchestrator;
 mod probe;
 mod scripts;
@@ -19,7 +22,9 @@ mod single_instance;
 mod startup;
 mod stop;
 mod tray;
+mod tunnel;
 mod urls;
+mod wizard;
 
 use tauri::{Emitter, Manager};
 
@@ -89,6 +94,26 @@ pub fn run() {
             commands::run_tool,
             commands::scripts_availability,
             commands::open_logs_dir,
+            // spec 002：网络环境反馈与归类调整
+            commands::get_net_status,
+            commands::set_network_category,
+            // spec 004：穿透通道
+            commands::get_tunnel_status,
+            commands::switch_channel,
+            commands::set_tunnel_enabled,
+            commands::check_dns_alignment,
+            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启 + frpc 分发保障
+            commands::open_stack_dir,
+            commands::check_domain_health_now,
+            commands::restart_tunnel,
+            commands::get_defender_exclusion_cmd,
+            commands::download_frpc,
+            // spec 006：装机向导
+            wizard::wizard_get_state,
+            wizard::wizard_detect,
+            wizard::wizard_set_domain,
+            wizard::wizard_set_branch,
+            wizard::wizard_complete,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -167,24 +192,99 @@ pub fn run() {
                 orchestrator::OrchestratorConfig::new(effective_lang, log_dir.clone());
             orch_cfg.scripts_dir = scripts_dir.clone();
             let lang_handle = app.handle().clone();
+            let channel_handle = app.handle().clone();
             let orch = build_orchestrator(app.handle().clone(), orch_cfg)
                 // 语言切换后脚本 -Lang 与状态 detail 即时跟随（AC25）
                 .with_lang_source(std::sync::Arc::new(move || {
                     lang_handle.state::<lang::LanguageState>().current()
+                }))
+                // 通道感知（spec 004 AC8）：穿透通道下 start_all/联动跳过 ddns-go
+                .with_channel_source(std::sync::Arc::new(move || {
+                    channel_handle
+                        .state::<settings::SettingsState>()
+                        .current()
+                        .access_channel == settings::AccessChannel::Tunnel
                 }));
             app.manage(orch.clone());
             // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：句柄随 setup 结束丢弃——
             // PollerHandle 无 Drop 停止语义，轮询线程随进程退出而止
             let _poller = orch.spawn_poller();
 
+            // ── 网络环境监测（spec 002）：15s 轮询，变化才发 net://changed ──
+            let net_monitor = build_net_monitor(app.handle().clone());
+            app.manage(net_monitor.clone());
+            let _net_poller = net_monitor.spawn_poller();
+
+            // ── 穿透通道（spec 004）：frpc 管理器 + 守护线程 ────────────────
+            // 栈目录为设置快照（用户可配置，重启生效）
+            let stack_dir = app.state::<settings::SettingsState>().current().stack_dir;
+            // frpc 随包分发（resources/bin），ops 用已解析的脚本目录定位；
+            // 通道源/事件出口接 AppHandle（装配层适配，tunnel.rs 保持无 Tauri 依赖）；
+            // 守护线程每 5s 收敛「期望通道×开关 ↔ frpc 实况」（AC3/8/11），
+            // 并消费心跳快照做会话卡死自愈（心跳 ≥3 次不可达 + frpc 存活 → 重启）
+            let shared_health: heartbeat::SharedHealth =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+            let health_handle = app.handle().clone();
+            let shared_for_view = std::sync::Arc::clone(&shared_health);
+            let tunnel_mgr = std::sync::Arc::new(tunnel::TunnelManager::new(
+                std::sync::Arc::new(tunnel::WindowsFrpcOps::new(scripts_dir.clone(), stack_dir.clone())),
+                std::sync::Arc::new(AppChannelSource { app: app.handle().clone() }),
+                std::sync::Arc::new(TauriTunnelEmitter { app: app.handle().clone() }),
+                Some(std::sync::Arc::new(move || {
+                    health_handle
+                        .state::<settings::SettingsState>()
+                        .current()
+                        .domain_heartbeat
+                        .then(|| {
+                            shared_for_view
+                                .lock()
+                                .ok()
+                                .and_then(|slot| slot.as_ref().map(|h| h.failures))
+                        })
+                        .flatten()
+                })),
+            ));
+            app.manage(tunnel_mgr.clone());
+            tunnel_mgr.spawn_guard();
+
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
 
-            // ── 自启上下文（T11/T15）：脚本目录 + 禁用原因 + 日志目录 ────────
+            // ── 域名心跳（spec 005）：60s 周期探测，变化/每轮发 domain://health ──
+            let health_sink_handle = app.handle().clone();
+            let health_enabled_handle = app.handle().clone();
+            let monitor = std::sync::Arc::new(heartbeat::HealthMonitor::new(
+                consts::WORKBENCH_URL,
+            ));
+            monitor.spawn(
+                std::sync::Arc::new(HealthSinkImpl { app: health_sink_handle }),
+                std::sync::Arc::new(move || {
+                    health_enabled_handle
+                        .state::<settings::SettingsState>()
+                        .current()
+                        .domain_heartbeat
+                }),
+                std::sync::Arc::clone(&shared_health),
+            );
+
+            app.manage(monitor);
+
+            // ── 自启上下文（T11/T15）：脚本目录 + 禁用原因 + 日志目录 + 栈目录 ──
+            let stack_dir = {
+                let s = app.state::<settings::SettingsState>().current();
+                s.stack_dir.clone()
+            };
             app.manage(autostart::AutostartContext {
                 scripts_dir,
                 scripts_disabled_reason,
                 log_dir,
+                stack_dir: Some(stack_dir),
+            });
+
+            // ── 装机向导（spec 006）：状态持有 + 探测源 ─────────────────────
+            app.manage(wizard::WizardHolder::load_at(wizard::wizard_state_path()));
+            app.manage(wizard::WizardDeps {
+                probe: std::sync::Arc::new(probe::WindowsProbe),
             });
 
             tray::setup(app, effective_lang)?;
@@ -216,6 +316,9 @@ pub fn run() {
                 // ADR-0002：三组件独立于程序存活、不挂 kill-on-close Job，
                 // 退出绝不无条件携带服务进程。
                 log::info!("ExitRequested(code={code:?})");
+                // spec 004 AC10：收摊语义覆盖隧道——frpc 与三组件一并退出
+                // （幂等：未运行时 kill 为无操作；state 类型与 manage 一致为 Arc 包裹）
+                app.state::<std::sync::Arc<tunnel::TunnelManager>>().stop();
                 let stopper: std::sync::Arc<dyn exit_flow::ServiceStopper> = {
                     let orch = app.state::<orchestrator::Orchestrator>();
                     std::sync::Arc::new(orch.inner().clone())
@@ -246,6 +349,66 @@ fn build_orchestrator(
     {
         let _ = (app, cfg);
         unreachable!("本项目仅面向 Windows（ADR-0001）")
+    }
+}
+
+/// 网络环境监测装配（平台探测层注入；Windows-only，ADR-0001，spec 002）
+fn build_net_monitor(app: tauri::AppHandle) -> network::NetMonitor {
+    #[cfg(windows)]
+    {
+        network::NetMonitor::new(
+            std::sync::Arc::new(network::PsNetProbe),
+            std::sync::Arc::new(network::TauriNetEmitter::new(app)),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        unreachable!("本项目仅面向 Windows（ADR-0001）")
+    }
+}
+
+/// 通道感知配置源（spec 004）：实时读 SettingsState，供守护线程每轮取期望状态
+struct AppChannelSource {
+    app: tauri::AppHandle,
+}
+
+impl tunnel::ChannelSource for AppChannelSource {
+    fn channel_state(&self) -> (settings::AccessChannel, bool, Option<String>) {
+        let s = self.app.state::<settings::SettingsState>().current();
+        (
+            s.access_channel,
+            s.tunnel_enabled,
+            s.tunnel.as_ref().map(|t| t.tunnel_id.clone()),
+        )
+    }
+}
+
+/// 隧道状态事件出口（`tunnel://status`；载荷 TunnelStatus）
+struct TauriTunnelEmitter {
+    app: tauri::AppHandle,
+}
+
+impl tunnel::TunnelEventSink for TauriTunnelEmitter {
+    fn emit_tunnel_status(&self, status: &tunnel::TunnelStatus) {
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit(tunnel::EVENT_TUNNEL_STATUS, status) {
+            log::error!("发送 {} 失败：{e}", tunnel::EVENT_TUNNEL_STATUS);
+        }
+    }
+}
+
+/// 域名心跳事件出口（`domain://health`；载荷 DomainHealth）
+struct HealthSinkImpl {
+    app: tauri::AppHandle,
+}
+
+impl heartbeat::HealthSink for HealthSinkImpl {
+    fn emit_health(&self, health: &heartbeat::DomainHealth) {
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit(heartbeat::EVENT_DOMAIN_HEALTH, health) {
+            log::error!("发送 {} 失败：{e}", heartbeat::EVENT_DOMAIN_HEALTH);
+        }
     }
 }
 

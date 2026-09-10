@@ -3,11 +3,15 @@
     "source":  "tools/sprint0/bin",
     "files":  {
                   "run-server-hidden.ps1":  "95f18e832c4e8eed909027db41106ab0acb5c78b8a2cb72bf76c9340f781deb0",
-                  "setup-autostart.ps1":  "643822e6b57ac9eeea83bb9cc85e845080623539e7e44f742b7792a19cebe5df",
+                  "run-caddy-hidden.ps1":  "918b85714a1c215502da7f57ead2c942743482422cad4d7827109ead988b74d8",
+                  "setup-autostart.ps1":  "683c5d622080e9aefd9bcaceb736b4441defc5743e4bcfd5a41775fd5708ce6a",
                   "install-server.ps1":  "6788847ae27dfac03d2583298331014ef9022d21209ebac07b8f2b759f660a9e",
-                  "install-https.ps1":  "37379d7974df92b138af42df91178fa37c92313c2ab35839b279d3485b0d57c7",
+                  "install-https.ps1":  "6210eccf08164b962618c965aaa208373cf9a34201f4fb299c17c2df937dc517",
                   "enable-https.ps1":  "bb6c801b05bdc1b9e1f7f2218c8f8021d11aec2836fab8466ae92f9558a9956b",
                   "install-client.ps1":  "357ed400ef580a011fa35ab7a5aab7af080619bdaec40b270847795a69f45805",
-                  "reset-ddns-password.ps1":  "7952510bed946f62f0f3a3e6e508aa5700146e66b1288c0ce4ac6a572e0c7028"
+                  "reset-ddns-password.ps1":  "f15760467f7b5a206d3c1865391ff130ee2feab043189a6eba86e454547b221c",
+                  "set-frp-key.ps1":  "12da6d0dc4bd15fd28edff093fed2e4c096d2a046acd49a82d3f7fbc3056264d",
+                  "set-tencent-key.ps1":  "f4f1b47cd73e1c7775dbda705467abf2c2aeb42dd2f5c88ddb2a3955bb5d2583",
+                  "config-ddnsgo.ps1":  "1adabd07030b65e8e5e8cb36598915cbf4dd3ad2cfe246237ba235975bb16e07"
               }
 }

@@ -7,7 +7,9 @@
 //! - `open_external` / `run_tool` / `open_logs_dir` / `scripts_availability`：低频操作区
 
 use crate::autostart::AutostartContext;
+use crate::heartbeat;
 use crate::lang::{self, LanguageState};
+use crate::network::{self, NetMonitor, NetStatus};
 use crate::orchestrator::{ComponentStatus, Orchestrator};
 use crate::probe::ComponentId;
 use crate::scripts::{self, ToolKind, ToolOpts};
@@ -114,8 +116,12 @@ pub async fn run_tool(
             .unwrap_or_else(|| lang::detail_texts(lang).scripts_dir_unavailable());
         return Err(reason);
     };
+    let stack_dir = ctx
+        .stack_dir
+        .clone()
+        .unwrap_or_else(|| crate::consts::DEFAULT_STACK_DIR.to_string());
     tauri::async_runtime::spawn_blocking(move || {
-        let plan = scripts::tool_plan(kind, opts, &dir, lang);
+        let plan = scripts::tool_plan(kind, opts, &dir, lang, &stack_dir);
         if plan.elevated {
             scripts::shell_execute(Some("runas"), "powershell.exe", &plan.params)
         } else {
@@ -154,6 +160,301 @@ pub fn open_logs_dir(
     std::fs::create_dir_all(dir)
         .map_err(|e| lang::err_texts(lang_state.current()).log_dir_create_failed(&e.to_string()))?;
     scripts::open_dir(dir).map_err(|code| lang::shell_error_text(code, lang_state.current()))
+}
+
+/// 网络环境快照（spec 002 AC1/AC2）：即时探测（成功同时刷新监测器缓存，
+/// 变化经 `net://changed` 去重发声）；探测失败回上次状态，无缓存则 None（AC4）
+#[tauri::command]
+pub async fn get_net_status(
+    monitor: tauri::State<'_, NetMonitor>,
+) -> Result<Option<NetStatus>, String> {
+    let m = monitor.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || m.refresh())
+        .await
+        .map_err(|e| format!("网络探测线程失败：{e}"))
+}
+
+/// 网络归类调整（spec 002 AC5/AC6/AC7）：UAC 提权派发、立即返回，
+/// 生效以 `net://changed` 复测为准；非法归类/UAC 拒绝 → Err 明确提示。
+/// 定位以网络名优先、接口序号兜底（序号随适配器重枚举漂移，真机实测）。
+#[tauri::command]
+pub async fn set_network_category(
+    lang_state: tauri::State<'_, LanguageState>,
+    name: String,
+    if_index: u32,
+    category: String,
+) -> Result<(), String> {
+    let lang = lang_state.current();
+    let params = network::set_category_params(&name, if_index, &category)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        scripts::shell_execute(Some("runas"), "powershell.exe", &params)
+    })
+    .await
+    .map_err(|e| format!("提权派发线程失败：{e}"))?
+    .map_err(|code| lang::shell_error_text(code, lang))
+}
+
+// ── 穿透通道（spec 004：AC5/6/7/11/12/13 命令层；逻辑在 tunnel/settings）────
+
+use crate::settings::SettingsPatch;
+use crate::tunnel::{
+    judge_dns, switch_actions, DnsAlignment, FrpcOps, SwitchAction, SwitchReject, TunnelManager,
+    TunnelStatus,
+};
+
+/// 隧道状态快照（启动兜底；此后以 `tunnel://status` 事件为准）。
+/// State 泛型须与 lib.rs manage 的类型精确一致（Arc 包裹），
+/// 否则 Tauri 找不到状态（"state not managed"）。
+#[tauri::command]
+pub fn get_tunnel_status(mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>) -> TunnelStatus {
+    mgr.status()
+}
+
+/// 通道切换（AC5/6/7）：前置就绪校验（无副作用拒绝）→ 按状态机动作序执行 →
+/// 持久化。「先起新再停旧」序保证起新失败时旧通道无恙（tunnel.rs 状态机注释）。
+#[tauri::command]
+pub async fn switch_channel(
+    ctx: tauri::State<'_, AutostartContext>,
+    orch: tauri::State<'_, Orchestrator>,
+    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    target: crate::settings::AccessChannel,
+) -> Result<crate::settings::Settings, String> {
+    use crate::tunnel::WindowsFrpcOps;
+
+    let cur = settings.current();
+    // 前置就绪：穿透配置（settings.tunnel）∧ frpc 二进制 ∧ 访问密钥（AC7/AC14）
+    let ops = WindowsFrpcOps::new(ctx.scripts_dir.clone(), cur.stack_dir.clone());
+    let tunnel_ready = cur.tunnel.is_some() && ops.exe_exists() && ops.access_key().is_some();
+    let actions = switch_actions(cur.access_channel, target, tunnel_ready).map_err(|e| match e {
+        SwitchReject::NotConfigured { .. } => {
+            "穿透未就绪：请先在穿透设置中填写隧道 ID 与节点域名，并按指引配置 frpc.exe 与访问密钥"
+                .to_string()
+        }
+        SwitchReject::AlreadyOnTarget => "已处于目标通道".to_string(),
+    })?;
+
+    for action in actions {
+        match action {
+            SwitchAction::StartFrpc => mgr.start()?,
+            SwitchAction::StopFrpc => mgr.stop(),
+            SwitchAction::StartDdnsGo => orch
+                .start_one(ComponentId::DdnsGo)
+                .map_err(|e| format!("ddns-go 启动派发失败：{e}"))?,
+            SwitchAction::StopDdnsGo => {
+                // 停止管线有 10s 预算 → spawn_blocking 不阻塞 UI 线程（沿 stop_all）
+                let orch2 = orch.inner().clone();
+                let outcome = tauri::async_runtime::spawn_blocking(move || {
+                    orch2.stop_one(ComponentId::DdnsGo)
+                })
+                .await
+                .map_err(|e| format!("停止线程失败：{e}"))?;
+                if !matches!(outcome, StopOutcome::Stopped | StopOutcome::AlreadyStopped) {
+                    return Err(format!(
+                        "ddns-go 停止未确认（{outcome:?}）：frpc 已启动，请检查 ddns-go 状态后重试"
+                    ));
+                }
+            }
+            SwitchAction::SyncDns(to) => {
+                // DNS 自动切换（AC12/13 升级）：凭证缺失/API 失败仅记录不阻断——
+                // 检测循环会继续显示手动指引（降级闭环）。凭证复用机器上已有的
+                // 腾讯云密钥（.env → ddns-go.yaml），不新增用户输入
+                use crate::consts::{DOMAIN, DOMAIN_ROOT};
+                use crate::dns_api;
+                use crate::settings::AccessChannel as Ac;
+                let Some(cred) = dns_api::read_credential(&cur.stack_dir) else {
+                    log::warn!("DNS 自动切换跳过：未找到腾讯云凭证（.env / ddns-go.yaml），请按指引手动修改解析");
+                    continue;
+                };
+                let sub = dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
+                let node_domain = cur.tunnel.as_ref().map(|t| t.node_domain.clone());
+                let result = tauri::async_runtime::spawn_blocking(move || match to {
+                    Ac::Tunnel => match node_domain {
+                        Some(nd) => dns_api::sync_to_tunnel(&cred, DOMAIN_ROOT, &sub, &nd),
+                        None => Err("穿透配置缺失，无法同步 CNAME".into()),
+                    },
+                    Ac::Direct => dns_api::sync_to_direct(&cred, DOMAIN_ROOT, &sub),
+                })
+                .await;
+                match result {
+                    Ok(Ok(n)) => log::info!("DNS 自动切换完成（{to:?}），应用 {n} 条记录操作"),
+                    Ok(Err(e)) => log::warn!("DNS 自动切换失败（回退手动指引）：{e}"),
+                    Err(e) => log::warn!("DNS 切换线程失败：{e}"),
+                }
+            }
+            SwitchAction::Persist(ch) => {
+                settings
+                    .patch(&SettingsPatch { access_channel: Some(ch), ..Default::default() })
+                    .map_err(|e| format!("通道持久化失败：{e}"))?;
+            }
+        }
+    }
+    Ok(settings.current())
+}
+
+/// 穿透启用/停用（AC11）：非穿透通道下仅改开关（守护循环按通道×开关收敛，
+/// 不在此处拉起/停止，避免与守护竞争）
+#[tauri::command]
+pub fn set_tunnel_enabled(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    enabled: bool,
+) -> Result<crate::settings::Settings, String> {
+    settings.patch(&SettingsPatch {
+        tunnel_enabled: Some(enabled),
+        ..Default::default()
+    })
+}
+
+/// DNS 对齐检测（AC12/13）：权威 NS 上的 CNAME/A 实况 → 对齐结论。
+/// `Err` = 查询本身失败（网络/解析器异常），前端如实显示"检测失败"。
+#[tauri::command]
+pub async fn check_dns_alignment(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<DnsAlignment, String> {
+    use crate::consts::{DOMAIN, DOMAIN_ROOT};
+    let node_domain = settings
+        .current()
+        .tunnel
+        .map(|t| t.node_domain)
+        .ok_or("穿透未配置，无需 DNS 对齐检测")?;
+    let probe = tauri::async_runtime::spawn_blocking(move || run_dns_probe(DOMAIN_ROOT, DOMAIN))
+        .await
+        .map_err(|e| format!("DNS 检测线程失败：{e}"))??;
+    Ok(judge_dns(probe.cname.as_deref(), probe.has_a, &node_domain))
+}
+
+/// Resolve-DnsName 三连查（NS → 权威 CNAME/A）的合成输出
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DnsProbeResult {
+    ns: Option<String>,
+    cname: Option<String>,
+    has_a: bool,
+}
+
+/// PowerShell 采集（沿 network.rs 先例：UTF8 输出 + CREATE_NO_WINDOW，一次
+/// 进程调用完成三查）。CNAME/A 无记录时字段为 null/false；NS 失败 = 权威
+/// 不可达 = 整体 Err。
+fn run_dns_probe(domain_root: &str, domain: &str) -> Result<DnsProbeResult, String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    let script = format!(
+        r#"[Console]::OutputEncoding=[Text.Encoding]::UTF8;
+$ErrorActionPreference='SilentlyContinue';
+$ns=@(Resolve-DnsName -Name {root} -Type NS -Server 223.5.5.5 -ErrorAction SilentlyContinue | Where-Object {{[string]$_.NameHost}} | Select-Object -First 1).NameHost;
+if(-not $ns){{ Write-Output '{{"ns":null,"cname":null,"hasA":false}}'; exit }};
+$cn=@(Resolve-DnsName -Name {dom} -Type CNAME -Server $ns -ErrorAction SilentlyContinue | Where-Object {{[string]$_.NameHost}} | Select-Object -First 1).NameHost;
+$aa=@(Resolve-DnsName -Name {dom} -Type A -Server $ns -ErrorAction SilentlyContinue | Where-Object {{[string]$_.IPAddress}});
+[pscustomobject]@{{ns=[string]$ns;cname=[string]$cn;hasA=($aa.Count -gt 0)}} | ConvertTo-Json -Compress"#,
+        root = domain_root,
+        dom = domain,
+    );
+    let output = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(crate::scripts::CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("PowerShell 拉起失败：{e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: DnsProbeResult = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("DNS 探测输出解析失败：{e}（输出：{:.200}）", stdout.trim()))?;
+    if parsed.ns.is_none() {
+        return Err("权威 DNS 查询失败：无法获取 NS 记录".into());
+    }
+    Ok(parsed)
+}
+
+// ── 域名可达性（spec 005）：打开目录 / 即时探测 / 隧道重启 ──────────────────
+
+/// 手动重启隧道（停止 → flushdns → 重新登录；「重启隧道」按钮）
+#[tauri::command]
+pub async fn restart_tunnel(
+    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
+) -> Result<TunnelStatus, String> {
+    let runner = mgr.inner().clone();
+    let reporter = runner.clone();
+    tauri::async_runtime::spawn_blocking(move || runner.restart("手动重启"))
+        .await
+        .map_err(|e| format!("重启线程失败：{e}"))??;
+    Ok(reporter.status())
+}
+
+/// 打开栈目录（穿透设置指引的「栈目录」超链接目标）
+#[tauri::command]
+pub fn open_stack_dir(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<(), String> {
+    let dir = settings.current().stack_dir;
+    scripts::open_dir(std::path::Path::new(&dir))
+        .map_err(|code| format!("打开目录失败（退出码 {code}）"))
+}
+
+/// 即时域名探测（「通道体检」消费；单次 8s 超时。探测后 poke 心跳立即
+/// 补测一轮，保持地址区状态点与体检结论一致，避免红绿矛盾）
+#[tauri::command]
+pub async fn check_domain_health_now(
+    monitor: tauri::State<'_, std::sync::Arc<heartbeat::HealthMonitor>>,
+) -> Result<heartbeat::ProbeOutcome, String> {
+    use crate::consts::WORKBENCH_URL;
+    let outcome = tauri::async_runtime::spawn_blocking(|| heartbeat::probe_once(WORKBENCH_URL))
+        .await
+        .map_err(|e| format!("探测线程失败：{e}"))?;
+    monitor.poke();
+    Ok(outcome)
+}
+
+// ── frpc 分发保障（spec 004：杀软误报的自助恢复，需求方 2026-09-10）─────────
+
+/// Defender 白名单命令文本（「复制白名单命令」按钮；覆盖 frpc 的两个运行位置：
+/// 资源目录（脚本定位解析，安装/开发态都准确）+ 栈目录）
+#[tauri::command]
+pub fn get_defender_exclusion_cmd(
+    ctx: tauri::State<'_, AutostartContext>,
+) -> String {
+    let res_bin = ctx
+        .scripts_dir
+        .clone()
+        .map(|d| d.join(crate::consts::FRPC_EXE_NAME).to_string_lossy().into_owned())
+        .unwrap_or_else(|| format!("安装目录\\resources\\bin\\{}", crate::consts::FRPC_EXE_NAME));
+    format!(
+        "Add-MpPreference -ExclusionPath '{}\\{}', '{}'",
+        crate::consts::DEFAULT_STACK_DIR,
+        crate::consts::FRPC_EXE_NAME,
+        res_bin
+    )
+}
+
+/// 一键恢复 frpc（「下载 frpc」按钮）：官方 CDN 下载 → SHA256 校验 → 落位栈目录
+/// （WindowsFrpcOps 的栈目录回退保证可用）。校验不符一律放弃写入。
+#[tauri::command]
+pub async fn download_frpc() -> Result<String, String> {
+    use crate::consts::{FRPC_EXE_NAME, DEFAULT_STACK_DIR};
+    use crate::dns_api::sha256_hex;
+    use std::io::Read;
+
+    const URL: &str = "https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe";
+    const EXPECTED: &str = "b705262edad9f0de04b38f342e811e9d97d0beada75edab3f790e105dcfb5234";
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let resp = ureq::get(URL)
+            .timeout(std::time::Duration::from_secs(180))
+            .call()
+            .map_err(|e| format!("下载失败：{e}"))?;
+        let mut bytes = Vec::new();
+        resp.into_reader()
+            .take(64 * 1024 * 1024)
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("下载读取失败：{e}"))?;
+        if sha256_hex(&bytes) != EXPECTED {
+            return Err("下载文件 SHA256 校验不符，已放弃写入（请检查网络或稍后重试）".into());
+        }
+        let target = std::path::PathBuf::from(DEFAULT_STACK_DIR).join(FRPC_EXE_NAME);
+        std::fs::write(&target, &bytes)
+            .map_err(|e| format!("写入 {DEFAULT_STACK_DIR}\\{FRPC_EXE_NAME} 失败：{e}"))?;
+        Ok(format!("frpc 已恢复到 {DEFAULT_STACK_DIR}\\{FRPC_EXE_NAME}"))
+    })
+    .await
+    .map_err(|e| format!("下载线程失败：{e}"))?
 }
 
 // ── 单元测试（纯逻辑：停止汇总）────────────────────────────────────────────

@@ -9,20 +9,25 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onSettingsRepaired, onStatusChanged } from "./api";
+import { api, onDomainHealth, onNetChanged, onSettingsRepaired, onStatusChanged, onTunnelStatus, onWizardChanged } from "./api";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
   AccessUrls,
   ComponentId,
   ComponentStatus,
+  DomainHealth,
   LanguageSetting,
+  NetStatus,
   ScriptsAvailability,
   Settings,
+  TunnelStatus,
+  WizardStageId,
 } from "./types";
 import { MainView } from "./components/MainView";
 import { SettingsView } from "./components/SettingsView";
+import { WizardView } from "./components/WizardView";
 
-type View = "main" | "settings";
+type View = "main" | "settings" | "wizard";
 type ToastKind = "info" | "success" | "error";
 interface Toast {
   id: number;
@@ -39,8 +44,14 @@ export function App() {
   const [statuses, setStatuses] = useState<ComponentStatus[]>([]);
   const [urls, setUrls] = useState<AccessUrls | null>(null);
   const [scripts, setScripts] = useState<ScriptsAvailability | null>(null);
+  const [netStatus, setNetStatus] = useState<NetStatus | null>(null);
+  const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
+  const [domainHealth, setDomainHealth] = useState<DomainHealth | null>(null);
   const [stopping, setStopping] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // 装机向导（spec 006）：装机未完成 → 主看板引导条；跳转定位阶段（AC14）
+  const [wizardFocus, setWizardFocus] = useState<WizardStageId | null>(null);
+  const [wizardDone, setWizardDone] = useState(true);
 
   /** 非阻塞提示（自动 6s 消失） */
   const pushToast = (text: string, kind: ToastKind = "info") => {
@@ -77,11 +88,25 @@ export function App() {
       api.getStatus().then(setStatuses).catch(() => {});
       api.getUrls().then(setUrls).catch(() => {});
       api.scriptsAvailability().then(setScripts).catch(() => {});
+      api.getNetStatus().then(setNetStatus).catch(() => {});
+      api.getTunnelStatus().then(setTunnelStatus).catch(() => {});
+      api
+        .wizardGetState()
+        .then((s) => setWizardDone(s.done))
+        .catch(() => {});
 
       // 状态事件：此后状态以事件为准（前端零轮询）
       track(await onStatusChanged(setStatuses));
+      // 网络环境事件（spec 002）：变化才发（Rust 侧 15s 轮询去重）
+      track(await onNetChanged(setNetStatus));
+      // 隧道状态事件（spec 004）：守护线程 5s 收敛驱动，变化才发
+      track(await onTunnelStatus(setTunnelStatus));
+      // 域名心跳事件（spec 005）：60s 周期探测
+      track(await onDomainHealth(setDomainHealth));
       // 设置损坏恢复：非阻塞提示（AC24）
       track(await onSettingsRepaired(() => pushToast(t("settings.repaired", lang), "info")));
+      // 向导状态事件（spec 006）：引导条随 done 收敛
+      track(await onWizardChanged((s) => setWizardDone(s.done)));
     })();
     return () => {
       disposed = true;
@@ -93,6 +118,11 @@ export function App() {
   // ── 操作 ──────────────────────────────────────────────────────────────────
   const startAll = () =>
     api.startAll().catch((e) => pushToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
+
+  /** 网络环境主动刷新（切换派发后加速收敛；spec 002） */
+  const refreshNet = () => {
+    api.getNetStatus().then(setNetStatus).catch(() => {});
+  };
 
   const stopAll = async () => {
     setStopping(true);
@@ -134,6 +164,15 @@ export function App() {
             {t("nav.main", lang)}
           </button>
           <button
+            class={`nav-btn${view === "wizard" ? " nav-btn--active" : ""}`}
+            onClick={() => {
+              setWizardFocus(null);
+              setView("wizard");
+            }}
+          >
+            {t("nav.wizard", lang)}
+          </button>
+          <button
             class={`nav-btn${view === "settings" ? " nav-btn--active" : ""}`}
             onClick={() => setView("settings")}
           >
@@ -148,11 +187,32 @@ export function App() {
           statuses={statuses}
           urls={urls}
           scripts={scripts}
+          netStatus={netStatus}
+          onNetRefresh={refreshNet}
+          settings={settings}
+          tunnelStatus={tunnelStatus}
+          domainHealth={domainHealth}
+          onSettingsChange={setSettings}
           stopping={stopping}
           onStartAll={startAll}
           onStopAll={stopAll}
           onRetry={retryOne}
           onToast={pushToast}
+          wizardDone={wizardDone}
+          onOpenWizard={(stage) => {
+            setWizardFocus(stage);
+            setView("wizard");
+          }}
+        />
+      ) : view === "wizard" && settings ? (
+        <WizardView
+          lang={lang}
+          settings={settings}
+          tunnelStatus={tunnelStatus}
+          focusStage={wizardFocus}
+          onToast={pushToast}
+          onSettingsChange={setSettings}
+          onFinished={() => setView("main")}
         />
       ) : settings ? (
         <SettingsView
