@@ -399,20 +399,21 @@ pub async fn check_domain_health_now(
 // ── frpc 分发保障（spec 004：杀软误报的自助恢复，需求方 2026-09-10）─────────
 
 /// Defender 白名单命令文本（「复制白名单命令」按钮；覆盖 frpc 的两个运行位置：
-/// 当前安装/运行目录的 resources\bin + 栈目录）
+/// 资源目录（脚本定位解析，安装/开发态都准确）+ 栈目录）
 #[tauri::command]
-pub fn get_defender_exclusion_cmd() -> String {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("resources").join("bin")))
-        .map(|d| d.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "安装目录\\resources\\bin".to_string());
+pub fn get_defender_exclusion_cmd(
+    ctx: tauri::State<'_, AutostartContext>,
+) -> String {
+    let res_bin = ctx
+        .scripts_dir
+        .clone()
+        .map(|d| d.join(crate::consts::FRPC_EXE_NAME).to_string_lossy().into_owned())
+        .unwrap_or_else(|| format!("安装目录\\resources\\bin\\{}", crate::consts::FRPC_EXE_NAME));
     format!(
-        "Add-MpPreference -ExclusionPath '{}\\{}', '{}\\{}'",
+        "Add-MpPreference -ExclusionPath '{}\\{}', '{}'",
         crate::consts::STACK_DIR,
         crate::consts::FRPC_EXE_NAME,
-        exe_dir,
-        crate::consts::FRPC_EXE_NAME
+        res_bin
     )
 }
 
