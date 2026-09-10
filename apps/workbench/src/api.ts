@@ -69,6 +69,8 @@ export const api = {
   openStackDir: () => invoke<void>("open_stack_dir"),
   /** 即时域名探测（通道体检；独立于 60s 心跳） */
   checkDomainHealthNow: () => invoke<ProbeOutcome>("check_domain_health_now"),
+  /** 手动重启隧道（停止 → flushdns → 重新登录） */
+  restartTunnel: () => invoke<TunnelStatus>("restart_tunnel"),
 };
 
 /** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */

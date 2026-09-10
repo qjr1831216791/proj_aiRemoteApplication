@@ -101,9 +101,10 @@ pub fn run() {
             commands::switch_channel,
             commands::set_tunnel_enabled,
             commands::check_dns_alignment,
-            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）
+            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启
             commands::open_stack_dir,
             commands::check_domain_health_now,
+            commands::restart_tunnel,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -208,11 +209,29 @@ pub fn run() {
             // ── 穿透通道（spec 004）：frpc 管理器 + 守护线程 ────────────────
             // frpc 随包分发（resources/bin），ops 用已解析的脚本目录定位；
             // 通道源/事件出口接 AppHandle（装配层适配，tunnel.rs 保持无 Tauri 依赖）；
-            // 守护线程每 5s 收敛「期望通道×开关 ↔ frpc 实况」（AC3/8/11）
+            // 守护线程每 5s 收敛「期望通道×开关 ↔ frpc 实况」（AC3/8/11），
+            // 并消费心跳快照做会话卡死自愈（心跳 ≥3 次不可达 + frpc 存活 → 重启）
+            let shared_health: heartbeat::SharedHealth =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+            let health_handle = app.handle().clone();
+            let shared_for_view = std::sync::Arc::clone(&shared_health);
             let tunnel_mgr = std::sync::Arc::new(tunnel::TunnelManager::new(
                 std::sync::Arc::new(tunnel::WindowsFrpcOps::new(scripts_dir.clone())),
                 std::sync::Arc::new(AppChannelSource { app: app.handle().clone() }),
                 std::sync::Arc::new(TauriTunnelEmitter { app: app.handle().clone() }),
+                Some(std::sync::Arc::new(move || {
+                    health_handle
+                        .state::<settings::SettingsState>()
+                        .current()
+                        .domain_heartbeat
+                        .then(|| {
+                            shared_for_view
+                                .lock()
+                                .ok()
+                                .and_then(|slot| slot.as_ref().map(|h| h.failures))
+                        })
+                        .flatten()
+                })),
             ));
             app.manage(tunnel_mgr.clone());
             tunnel_mgr.spawn_guard();
@@ -234,7 +253,9 @@ pub fn run() {
                         .current()
                         .domain_heartbeat
                 }),
+                std::sync::Arc::clone(&shared_health),
             );
+
             app.manage(monitor);
 
             // ── 自启上下文（T11/T15）：脚本目录 + 禁用原因 + 日志目录 ────────

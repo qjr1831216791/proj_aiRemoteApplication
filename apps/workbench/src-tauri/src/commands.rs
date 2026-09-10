@@ -360,7 +360,20 @@ $aa=@(Resolve-DnsName -Name {dom} -Type A -Server $ns -ErrorAction SilentlyConti
     Ok(parsed)
 }
 
-// ── 域名可达性（spec 005）：打开目录 / 即时探测 ─────────────────────────────
+// ── 域名可达性（spec 005）：打开目录 / 即时探测 / 隧道重启 ──────────────────
+
+/// 手动重启隧道（停止 → flushdns → 重新登录；「重启隧道」按钮）
+#[tauri::command]
+pub async fn restart_tunnel(
+    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
+) -> Result<TunnelStatus, String> {
+    let runner = mgr.inner().clone();
+    let reporter = runner.clone();
+    tauri::async_runtime::spawn_blocking(move || runner.restart("手动重启"))
+        .await
+        .map_err(|e| format!("重启线程失败：{e}"))??;
+    Ok(reporter.status())
+}
 
 /// 打开栈目录（穿透设置指引的「栈目录」超链接目标）
 #[tauri::command]

@@ -140,6 +140,9 @@ pub trait HealthSink: Send + Sync {
     fn emit_health(&self, health: &DomainHealth);
 }
 
+/// 跨模块共享的最近心跳快照（monitor 每轮写入；隧道守护读取做会话卡死自愈）
+pub type SharedHealth = Arc<std::sync::Mutex<Option<DomainHealth>>>;
+
 /// 心跳监测器：周期探测 + 防抖 + 变化即发（每轮都发，载荷轻）
 pub struct HealthMonitor {
     url: String,
@@ -151,11 +154,13 @@ impl HealthMonitor {
         Self { url: url.into(), stop: Arc::new(AtomicBool::new(false)) }
     }
 
-    /// 启动心跳线程（装配层调用；enabled 源实时读设置，false 时本轮跳过——AC7）
+    /// 启动心跳线程（装配层调用；enabled 源实时读设置，false 时本轮跳过——AC7；
+    /// shared 每轮写入最新快照，供隧道守护自愈判定）
     pub fn spawn(
         self: &Arc<Self>,
         sink: Arc<dyn HealthSink>,
         enabled: Arc<dyn Fn() -> bool + Send + Sync>,
+        shared: SharedHealth,
     ) {
         let me = Arc::clone(self);
         std::thread::Builder::new()
@@ -181,14 +186,18 @@ impl HealthMonitor {
                             healthy = now_healthy;
                             since = now_ms();
                         }
-                        sink.emit_health(&DomainHealth {
+                        let snapshot = DomainHealth {
                             healthy,
                             kind: outcome.kind,
                             code: outcome.code,
                             latency_ms: outcome.latency_ms,
                             failures,
                             since,
-                        });
+                        };
+                        if let Ok(mut slot) = shared.lock() {
+                            *slot = Some(snapshot.clone());
+                        }
+                        sink.emit_health(&snapshot);
                     }
                     std::thread::sleep(HEARTBEAT_INTERVAL);
                 }

@@ -14,7 +14,7 @@ use crate::settings::AccessChannel;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// 隧道状态事件名（前端 T10 监听；载荷 [`TunnelStatus`]）
@@ -24,6 +24,9 @@ pub const EVENT_TUNNEL_STATUS: &str = "tunnel://status";
 pub const FRPC_STARTING_GRACE: Duration = Duration::from_secs(10);
 /// 守护轮询周期（AC3：进程被杀后 ≤ 守护周期 + 退避间隔拉起）
 pub const GUARD_INTERVAL: Duration = Duration::from_secs(5);
+/// 会话卡死自愈阈值（spec 005 扩展：心跳连续不可达次数 + frpc 存活 → 自动重启。
+/// 2026-09-10 实测故障形态：进程活着、看板"在线"，但节点登录会话已死反复 EOF）
+pub const SELF_HEAL_FAILURES: u32 = 3;
 
 // ── 通道状态机（AC5/6/7/8，纯函数）──────────────────────────────────────────
 
@@ -386,6 +389,8 @@ pub struct TunnelManager {
     ops: std::sync::Arc<dyn FrpcOps>,
     channel: std::sync::Arc<dyn ChannelSource>,
     events: std::sync::Arc<dyn TunnelEventSink>,
+    /// 心跳快照视图（spec 005 自愈判定；None = 心跳未装配，不自愈）
+    health_view: Option<Arc<dyn Fn() -> Option<u32> + Send + Sync>>,
     policy: BackoffPolicy,
     inner: Mutex<GuardState>,
     /// 守护线程停止旗标
@@ -408,6 +413,7 @@ impl TunnelManager {
         ops: std::sync::Arc<dyn FrpcOps>,
         channel: std::sync::Arc<dyn ChannelSource>,
         events: std::sync::Arc<dyn TunnelEventSink>,
+        health_view: Option<Arc<dyn Fn() -> Option<u32> + Send + Sync>>,
     ) -> Self {
         let status = TunnelStatus {
             state: TunnelState::NotConfigured,
@@ -418,6 +424,7 @@ impl TunnelManager {
             ops,
             channel,
             events,
+            health_view,
             policy: BackoffPolicy::default(),
             inner: Mutex::new(GuardState {
                 status,
@@ -469,6 +476,22 @@ impl TunnelManager {
         g.last_restart_ms = None;
         g.streak = 0;
         self.set_state(&mut g, TunnelState::Inactive, None, now_ms());
+    }
+
+    /// 手动/自动重启 frpc：停止 → 刷新本机 DNS 缓存（切换/重连后旧解析残留会
+    /// 让本机测试误判，2026-09-10 实测）→ 重新启动登录。reason 进状态 detail
+    pub fn restart(&self, reason: &str) -> Result<(), String> {
+        log::info!("重启 frpc：{reason}");
+        let _ = self.ops.kill();
+        flush_dns_cache();
+        std::thread::sleep(Duration::from_millis(500));
+        let result = self.start();
+        if result.is_ok() {
+            let mut g = self.inner.lock().expect("隧道状态锁中毒");
+            g.status.detail = Some(reason.to_string());
+            self.events.emit_tunnel_status(&g.status);
+        }
+        result
     }
 
     /// 启动守护线程（装配层调用一次；返回停止旗标句柄语义由进程退出兜底）
@@ -548,7 +571,23 @@ impl TunnelManager {
             return;
         }
 
-        // 存活：宽限期内 Starting，超时 Online（AC2 口径）；稳定期重置退避档
+        // 存活：宽限期内 Starting，超时 Online（AC2 口径）；稳定期重置退避档。
+        // 会话卡死自愈（spec 005 扩展）：frpc 存活但心跳连续 ≥3 次不可达 →
+        // 进程活着而隧道会话已死（EOF 卡死形态，2026-09-10 实测）→ 自动重启
+        if let Some(view) = &self.health_view {
+            if let Some(failures) = view() {
+                if failures >= SELF_HEAL_FAILURES {
+                    log::warn!(
+                        "心跳连续 {failures} 次不可达且 frpc 存活：判定会话卡死，自动重启"
+                    );
+                    if let Err(e) = self.restart("会话无响应，已自动重启（心跳持续不可达）") {
+                        log::error!("自愈重启失败：{e}");
+                    }
+                    return;
+                }
+            }
+        }
+        let since_spawn = g.last_spawn_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
         let since_spawn = g.last_spawn_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
         let state = if since_spawn <= FRPC_STARTING_GRACE.as_millis() as u64 {
             TunnelState::Starting
@@ -589,6 +628,15 @@ fn summarize(line: &str) -> Option<String> {
         return None;
     }
     Some(line.chars().take(160).collect())
+}
+
+/// 刷新本机 DNS 缓存（重连/切换后旧解析残留会让本机测试误判；无害操作）
+fn flush_dns_cache() {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("ipconfig")
+        .arg("/flushdns")
+        .creation_flags(crate::scripts::CREATE_NO_WINDOW)
+        .output();
 }
 
 fn now_ms() -> u64 {

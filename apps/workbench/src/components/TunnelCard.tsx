@@ -290,6 +290,21 @@ export function TunnelCard(props: TunnelCardProps) {
         ) : (
           <span class="muted">—</span>
         )}
+        <span class="net__spacer" />
+        {channel === "tunnel" && configured && settings?.tunnelEnabled ? (
+          <button
+            class="btn btn--sm"
+            disabled={switching}
+            onClick={() =>
+              api
+                .restartTunnel()
+                .then(() => onToast(t("tunnel.restarted", lang), "success"))
+                .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"))
+            }
+          >
+            {t("tunnel.restart", lang)}
+          </button>
+        ) : null}
       </div>
 
       {/* DNS 指引（穿透待切换 / 直连待恢复 / 目标不符 / 已对齐；AC12/13） */}
