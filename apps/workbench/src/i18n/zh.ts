@@ -133,7 +133,11 @@ export const zh = {
     "密钥获取：natfrp.com 用户中心 → 查看访问密钥；存放于栈目录 .env 的 SAKURA_FRP_KEY",
   "settings.openStackDir": "打开栈目录",
   "settings.frpcDeploy":
-    "frpc 客户端已随程序内置（版本 0.51.0-sakura-14），换机无需单独下载；若资源缺失，可从面板「软件下载」页下载 frpc Windows amd64，放入安装目录 resources\\bin 或栈目录并命名 frpc.exe",
+    "frpc 客户端已随程序内置（版本 0.51.0-sakura-14），换机无需单独下载；若被杀毒软件误报删除，先「复制白名单命令」在管理员终端执行，再「下载恢复 frpc」即可",
+  "settings.copyWhitelist": "复制白名单命令",
+  "settings.whitelistCopied": "白名单命令已复制，请在管理员终端中执行",
+  "settings.downloadFrpc": "下载恢复 frpc",
+  "settings.downloadFrpcDone": "frpc 已恢复",
 
   // 穿透通道（spec 004）
   "tunnel.title": "访问通道",

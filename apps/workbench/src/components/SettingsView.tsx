@@ -9,7 +9,7 @@
  */
 
 import { useState } from "preact/hooks";
-import { api } from "../api";
+import { api, copyText } from "../api";
 import { t, type Lang } from "../i18n";
 import type { ExitAction, LanguageSetting, Settings, SettingsPatch } from "../types";
 import { CopyButton } from "./CopyButton";
@@ -221,6 +221,36 @@ export function SettingsView(props: SettingsViewProps) {
           </div>
         </div>
         <p class="muted">{t("settings.frpcDeploy", lang)}</p>
+        <div class="settings__actions">
+          <button
+            class="btn btn--sm"
+            onClick={() =>
+              api
+                .getDefenderExclusionCmd()
+                .then(copyText)
+                .then((ok) =>
+                  onToast(
+                    ok ? t("settings.whitelistCopied", lang) : t("toast.copyFailed", lang),
+                    ok ? "success" : "error",
+                  ),
+                )
+                .catch((e) => onToast(String(e), "error"))
+            }
+          >
+            {t("settings.copyWhitelist", lang)}
+          </button>
+          <button
+            class="btn btn--sm"
+            onClick={() =>
+              api
+                .downloadFrpc()
+                .then((msg) => onToast(`${t("settings.downloadFrpcDone", lang)}：${msg}`, "success"))
+                .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"))
+            }
+          >
+            {t("settings.downloadFrpc", lang)}
+          </button>
+        </div>
       </section>
 
       {/* 域名心跳（spec 005 AC7） */}

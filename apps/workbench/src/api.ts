@@ -71,6 +71,10 @@ export const api = {
   checkDomainHealthNow: () => invoke<ProbeOutcome>("check_domain_health_now"),
   /** 手动重启隧道（停止 → flushdns → 重新登录） */
   restartTunnel: () => invoke<TunnelStatus>("restart_tunnel"),
+  /** Defender 白名单命令文本（frpc 两个运行位置；spec 004 分发保障） */
+  getDefenderExclusionCmd: () => invoke<string>("get_defender_exclusion_cmd"),
+  /** 一键恢复 frpc（官方 CDN 下载 → SHA256 校验 → 落位栈目录） */
+  downloadFrpc: () => invoke<string>("download_frpc"),
 };
 
 /** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */

@@ -74,7 +74,8 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     mac.finalize().into_bytes().to_vec()
 }
 
-fn sha256_hex(data: &[u8]) -> String {
+/// SHA256 hex(公开:frpc 下载恢复的完整性校验复用)
+pub fn sha256_hex(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);
     hex::encode(h.finalize())

@@ -396,6 +396,59 @@ pub async fn check_domain_health_now(
     Ok(outcome)
 }
 
+// ── frpc 分发保障（spec 004：杀软误报的自助恢复，需求方 2026-09-10）─────────
+
+/// Defender 白名单命令文本（「复制白名单命令」按钮；覆盖 frpc 的两个运行位置：
+/// 当前安装/运行目录的 resources\bin + 栈目录）
+#[tauri::command]
+pub fn get_defender_exclusion_cmd() -> String {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("resources").join("bin")))
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "安装目录\\resources\\bin".to_string());
+    format!(
+        "Add-MpPreference -ExclusionPath '{}\\{}', '{}\\{}'",
+        crate::consts::STACK_DIR,
+        crate::consts::FRPC_EXE_NAME,
+        exe_dir,
+        crate::consts::FRPC_EXE_NAME
+    )
+}
+
+/// 一键恢复 frpc（「下载 frpc」按钮）：官方 CDN 下载 → SHA256 校验 → 落位栈目录
+/// （WindowsFrpcOps 的栈目录回退保证可用）。校验不符一律放弃写入。
+#[tauri::command]
+pub async fn download_frpc() -> Result<String, String> {
+    use crate::consts::{FRPC_EXE_NAME, STACK_DIR};
+    use crate::dns_api::sha256_hex;
+    use std::io::Read;
+
+    const URL: &str = "https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe";
+    const EXPECTED: &str = "b705262edad9f0de04b38f342e811e9d97d0beada75edab3f790e105dcfb5234";
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let resp = ureq::get(URL)
+            .timeout(std::time::Duration::from_secs(180))
+            .call()
+            .map_err(|e| format!("下载失败：{e}"))?;
+        let mut bytes = Vec::new();
+        resp.into_reader()
+            .take(64 * 1024 * 1024)
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("下载读取失败：{e}"))?;
+        if sha256_hex(&bytes) != EXPECTED {
+            return Err("下载文件 SHA256 校验不符，已放弃写入（请检查网络或稍后重试）".into());
+        }
+        let target = std::path::PathBuf::from(STACK_DIR).join(FRPC_EXE_NAME);
+        std::fs::write(&target, &bytes)
+            .map_err(|e| format!("写入 {STACK_DIR}\\{FRPC_EXE_NAME} 失败：{e}"))?;
+        Ok(format!("frpc 已恢复到 {STACK_DIR}\\{FRPC_EXE_NAME}"))
+    })
+    .await
+    .map_err(|e| format!("下载线程失败：{e}"))?
+}
+
 // ── 单元测试（纯逻辑：停止汇总）────────────────────────────────────────────
 
 #[cfg(test)]

@@ -101,10 +101,12 @@ pub fn run() {
             commands::switch_channel,
             commands::set_tunnel_enabled,
             commands::check_dns_alignment,
-            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启
+            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启 + frpc 分发保障
             commands::open_stack_dir,
             commands::check_domain_health_now,
             commands::restart_tunnel,
+            commands::get_defender_exclusion_cmd,
+            commands::download_frpc,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；

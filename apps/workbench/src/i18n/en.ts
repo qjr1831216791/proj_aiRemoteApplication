@@ -134,7 +134,11 @@ export const en = {
     "Get the key: natfrp.com user center → View Access Key; stored as SAKURA_FRP_KEY in the stack directory .env",
   "settings.openStackDir": "Open stack directory",
   "settings.frpcDeploy":
-    "The frpc client ships with this app (version 0.51.0-sakura-14); no separate download is needed on a new machine. If the binary is missing, download frpc Windows amd64 from the panel \"Software Download\" page and place it as frpc.exe under the install directory resources\\bin or the stack directory",
+    "The frpc client ships with this app (version 0.51.0-sakura-14); no separate download is needed on a new machine. If your antivirus deleted it, run \"Copy whitelist command\" in an admin terminal first, then \"Restore frpc\"",
+  "settings.copyWhitelist": "Copy whitelist command",
+  "settings.whitelistCopied": "Whitelist command copied; run it in an admin terminal",
+  "settings.downloadFrpc": "Restore frpc",
+  "settings.downloadFrpcDone": "frpc restored",
 
   // Tunnel channel (spec 004)
   "tunnel.title": "Access Channel",
