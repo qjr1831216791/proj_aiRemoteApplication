@@ -14,7 +14,7 @@
 
 | 领域 | 选型 | 理由 | 放弃的备选及原因 |
 |------|------|------|------------------|
-| 穿透服务商 | SakuraFrp（香港建站节点） | 免实名门槛已过、免费档 2 隧道/10Mbps、HTTPS 隧道标准 443、非内地节点免备案（官方文档实证） | Cloudflare Tunnel（国内速度实测差 + 需迁 NS）；自建 frp+VPS（花钱，记为未来升级）；花生壳/cpolar 免费档（1Mbps + 随机域名） |
+| 穿透服务商 | SakuraFrp（海外建站节点，实际部署 `frp-can.com`） | 免实名门槛已过、免费档 2 隧道/10Mbps、HTTPS 隧道标准 443、非内地节点免备案（官方文档实证） | Cloudflare Tunnel（国内速度实测差 + 需迁 NS）；自建 frp+VPS（花钱，记为未来升级）；花生壳/cpolar 免费档（1Mbps + 随机域名） |
 | 隧道类型 | HTTPS 隧道 + 「创建 HTTP 重定向」开关 | 标准 443 访问；重定向开关省一条隧道（免费档仅 2 条）；TLS 透传端到端（节点只见密文） | TCP 隧道（远程端口随机，访问须带端口号）；HTTP 隧道（明文） |
 | TLS 终结 | 本地 caddy（现状不变） | caddy 已有 acme.sh DNS-01 签发的真证书；frpc→caddy 走 127.0.0.1，零新证书、零配置变更 | 节点终结（证书需交付第三方/上传同步，续期后还要重传） |
 | 隧道客户端 | SakuraFrp 定制版 frpc（Windows amd64） | 命令行 `frpc -f <key>:<id>`，无头友好，工作台可直接托管 | 官方启动器（GUI，与工作台托管语义冲突） |
@@ -36,7 +36,7 @@ flowchart LR
         DNS1[A 记录 → 出口IP] --> R1[路由器端口映射] --> C
     end
     subgraph Tunnel[穿透通道 · opt-in]
-        DNS2[CNAME → 节点域名] --> SF[SakuraFrp 香港节点:443<br/>按SNI分流 · TLS透传] --> F[frpc<br/>-f key:id]
+        DNS2[CNAME → 节点域名] --> SF[SakuraFrp 海外节点:443<br/>按SNI分流 · TLS透传] --> F[frpc<br/>-f key:id]
     end
     V --> DNS1
     V --> DNS2
@@ -82,7 +82,7 @@ pub enum AccessChannel { Direct, Tunnel }   // 默认 Direct；反序列化缺�
 
 pub struct TunnelConfig {
     pub tunnel_id: String,    // SakuraFrp 隧道 ID（非敏感，可进 settings.json）
-    pub node_domain: String,  // 节点域名，如 cn-hk-nf-1.natfrp.cloud（DNS 比对目标）
+    pub node_domain: String,  // 节点域名，如 frp-can.com（DNS 比对目标）
 }
 
 pub struct Settings {
@@ -132,7 +132,7 @@ pub struct Settings {
 | 风险 | 影响 | 对策 |
 |------|------|------|
 | SakuraFrp 免费档条款变化（如绑自定义域名受限） | 穿透通道不可用 | T1 建隧道时即时验证；通道互斥架构保证直连随时回退 |
-| 香港节点速度不达预期（免费档 10Mbps + 线路波动） | 远程体验差 | 验收真机实测如实记录；不达标属预期内（spec §5），升级路径（自建 VPS）已记 spec 开放问题 |
+| 海外节点速度不达预期（免费档 10Mbps + 线路波动） | 远程体验差 | 验收真机实测如实记录；不达标属预期内（spec §5），升级路径（自建 VPS）已记 spec 开放问题 |
 | frpc 命令行暴露 access key | 本机其他用户可读 | 单人自用接受；文档提示；未来评估配置文件/环境变量通道 |
 | CNAME 公共解析缓存致切换观察延迟（TTL 内旧记录） | 用户误判切换失败 | 指引检测以权威 DNS 为准；文案说明公共解析生效窗口 |
 | frpc 下载源不可达 / 版本漂移 | 打包失败 | manifest 锁哈希；文档附手动下载与校验步骤 |

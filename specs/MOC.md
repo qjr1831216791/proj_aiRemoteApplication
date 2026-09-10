@@ -18,7 +18,7 @@
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
 - [002-network-profile](./002-network-profile/spec.md) — 网络防火墙归类反馈与调整：换网被拦截主动提示 + 用户决策改公用/专用（风险提示先行）
 - [003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md) — ddns-go 密码重置：sprint0 交互式脚本 + APP 低频操作入口（密码不进 APP/IPC/日志）
-- [004-tunnel-access](./004-tunnel-access/spec.md) — 内网穿透双通道：直连（DDNS，默认）⇄ 穿透（SakuraFrp 香港）一键切换（DNS 自动暂停/激活）、frpc 随包分发 + 守护自愈、通道体检；手工验收记录 `acceptance-manual.md`（3 项日常观察遗留已登记）
+- [004-tunnel-access](./004-tunnel-access/spec.md) — 内网穿透双通道：直连（DDNS，默认）⇄ 穿透（SakuraFrp 海外节点）一键切换（DNS 自动暂停/激活）、frpc 随包分发 + 守护自愈、通道体检；手工验收记录 `acceptance-manual.md`（3 项日常观察遗留已登记）
 
 ### 📦 已归档（archived）
 - 见 [archive/](./archive/)

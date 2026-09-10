@@ -241,7 +241,7 @@ export const en = {
   "wizard.channel.direct": "Direct (DDNS)",
   "wizard.channel.directDesc": "Domain resolves to this PC's egress IP; visitors must reach this PC directly (not feasible on cellular hotspots / some home broadband)",
   "wizard.channel.tunnel": "Tunnel (SakuraFrp)",
-  "wizard.channel.tunnelDesc": "Relayed via an HK node, no inbound required; needs a SakuraFrp account (real-name)",
+  "wizard.channel.tunnelDesc": "Relayed via an overseas node, no inbound required; needs a SakuraFrp account (real-name)",
   "wizard.channel.ddnsBtn": "Configure & start ddns-go (maintains the A record)",
   "wizard.channel.frpKeyBtn": "Enter SakuraFrp access key (hidden input)",
   "wizard.channel.tunnelId": "Tunnel ID",

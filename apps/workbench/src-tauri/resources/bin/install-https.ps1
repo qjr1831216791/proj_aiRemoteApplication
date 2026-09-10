@@ -5,7 +5,9 @@
 
 .DESCRIPTION
   自动覆盖 docs/research/sprint0-cloudcli-lan-deploy.md §9.3 中可脚本化的部分：
-    1. 创建 StackDir（默认 D:\Software\cloudcli-https）与 certs\ 子目录
+    1. 创建 StackDir（默认 D:\Software\cloudcli-https）与 certs\ 子目录，并把目录权限收紧
+       为「运行账户 + SYSTEM + Administrators」（断开 D:\ 的默认继承——该继承把
+       Authenticated Users 授为可修改，本机任何登录用户都能读写 .env 与 caddy.exe）
     2. 下载 caddy.exe（caddyserver.com 按需构建，内置 tencentcloud DNS 插件，ADR-0003）
        与 ddns-go.exe（GitHub Release；已存在则跳过，-Update 升级；
        失败可 -CaddyZip / -DdnsZip 指向手动下载的文件——Caddy 侧接受构建站下载的
@@ -187,12 +189,51 @@ function Install-CaddyPluginBuild {
     }
 }
 
+# ---------- 权限收紧辅助（栈目录含密钥与证书私钥） ----------
+# 背景：D:\ 的默认继承把 Authenticated Users 授为「可修改」——本机任何登录用户既能
+# 读走 .env 里的 SAKURA_FRP_KEY / 腾讯云 SecretId/Key，也能覆写 caddy.exe（后者等于
+# 以托管账户执行任意代码，危害更甚）。故建目录后立即断开继承、只授三方。
+# 运行时账户取「当前身份」∪「交互登录用户」：本脚本需管理员提权，正常提权不换 SID，
+# 但若以另一个管理员账户提权，只授当前身份会把真正的运行账户（自启任务用 Interactive
+# 登录用户）挡在门外，进而打断 Caddy 读证书 / 写日志、frpc 读 .env。
+# 失败不中断安装（栈仍可用），但如实报红——安全属性未达成必须显式可见。
+function Protect-StackDir {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $Path = $Path.TrimEnd('\')
+    $sids = [ordered]@{}
+    $sids[[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value] = $true
+    $interactive = ''
+    try { $interactive = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).UserName } catch { }
+    if ($interactive) {
+        try {
+            $sids[(New-Object System.Security.Principal.NTAccount($interactive)).Translate(
+                [System.Security.Principal.SecurityIdentifier]).Value] = $true
+        } catch {
+            Write-Warn (T "无法解析交互登录用户 $interactive，跳过该项授权" "Could not resolve interactive user $interactive; skipping that grant")
+        }
+    }
+    $sids['S-1-5-18']     = $true  # NT AUTHORITY\SYSTEM
+    $sids['S-1-5-32-544'] = $true  # BUILTIN\Administrators
+
+    # 用 SID 而非账户名：中文账户名经 icacls 命令行会遇编码 / 本地化问题
+    $grants = @($sids.Keys | ForEach-Object { "*${_}:(OI)(CI)(F)" })
+    & icacls.exe $Path /inheritance:r /grant:r $grants | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Bad (T "权限收紧失败（icacls 退出码 $LASTEXITCODE）：$Path 仍为继承的宽松权限，.env 与 caddy.exe 对本机其他用户可读写" "Failed to tighten ACL (icacls exit $LASTEXITCODE): $Path keeps its inherited permissive ACL - .env and caddy.exe stay readable/writable by other local users")
+        return $false
+    }
+    Write-Ok (T "权限已收紧：$Path（仅运行账户 + SYSTEM + Administrators）" "ACL tightened: $Path (runtime account + SYSTEM + Administrators only)")
+    return $true
+}
+
 # ---------- 1. 目录 ----------
 Write-Step (T '步骤 1/5：创建栈目录' 'Step 1/5: Creating stack directories')
 New-Item -ItemType Directory -Path $StackDir -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $StackDir 'certs') -Force | Out-Null
 Write-Ok (T "栈目录就绪：$StackDir（含 certs\，证书将放这里）" "Stack directory ready: $StackDir (certs\ included; certificates go there)")
 Write-Info (T '此目录今后含密钥与证书私钥，勿分发（§9.1）' 'It will hold secrets and private keys from now on - do not distribute (see deploy doc section 9.1)')
+Protect-StackDir -Path $StackDir | Out-Null
 
 # ---------- 2. 下载 caddy.exe（插件构建）/ ddns-go.exe ----------
 Write-Step (T '步骤 2/5：安装 Caddy（tencentcloud 插件构建）与 ddns-go（幂等）' 'Step 2/5: Installing Caddy (tencentcloud build) and ddns-go (idempotent)')

@@ -240,7 +240,7 @@ export const zh = {
   "wizard.channel.direct": "直连（DDNS）",
   "wizard.channel.directDesc": "域名解析到本机出口 IP；要求访客能直连到本机（蜂窝热点/部分家庭宽带不可行）",
   "wizard.channel.tunnel": "穿透（SakuraFrp）",
-  "wizard.channel.tunnelDesc": "经香港节点中转，免公网入站；需 SakuraFrp 账号（实名）",
+  "wizard.channel.tunnelDesc": "经海外节点中转，免公网入站；需 SakuraFrp 账号（实名）",
   "wizard.channel.ddnsBtn": "配置 ddns-go 并启动（自动维护 A 记录）",
   "wizard.channel.frpKeyBtn": "输入 SakuraFrp 访问密钥（不回显）",
   "wizard.channel.tunnelId": "隧道 ID",
