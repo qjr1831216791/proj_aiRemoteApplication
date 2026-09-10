@@ -29,9 +29,9 @@
 
 ## 阶段 4: 前端
 
-- [ ] T11 通道与设置 UI（依赖: T9；验收: AC1/AC4/AC5/AC6/AC11）：`types.ts` AccessChannel 加 "mesh" + MeshConfigView；`TunnelCard.tsx` 三通道单选 + 停用态（「已停用」chip + 重新启用安全警示确认）；`SettingsView.tsx` 组网设置卡（网络名/IP/网段/对端列表行内编辑即时校验，无密钥输入框仅脚本指引）；`api.ts` 对接新命令
-- [ ] T12 i18n 双语同步（验收: AC4/AC11/AC12 呈现层）：zh.ts/en.ts 扁平键新增 `mesh.*`/`channel.disabled.*`/`wizard.channel.mesh*` 等，两侧同步无缺键
-- [ ] T13 向导组网分支（依赖: T9/T10；验收: AC12）：`WizardView.tsx` channel 阶段组网分支（默认推荐）：装服务（UAC）→ 成员设备客户端指引（官方下载地址）→ set-mesh-secret.ps1 → apply + 在线校验 → A 记录 upsert + 解析校验；移除 SakuraFrp 分支；直连分支加安全警示；收尾页接停用入口（wizard.rs 检测步骤同步）
+- [x] T11 通道与设置 UI（依赖: T9；验收: AC1/AC4/AC5/AC6/AC11）：`types.ts` AccessChannel 加 "mesh" + MeshConfigView；`TunnelCard.tsx` 三通道单选 + 停用态（「已停用」chip + 重新启用安全警示确认）；`SettingsView.tsx` 组网设置卡（网络名/IP/网段/对端列表行内编辑即时校验，无密钥输入框仅脚本指引）；`api.ts` 对接新命令 ✓ 2026-09-11（提交 8b1f85a。要点：切 mesh 无前端预判——mesh_status 的 inactive 态 monitor 不报密钥/服务信息，预判必假，Rust MeshNotReady 拒绝文案透出；DNS 轮询条件从「非 tunnel」改「direct 例外」防 mesh 态漏检；DnsNotice 目标值按结论 kind 取（nodeDomain/virtualIp）而非当前通道；体检网络归类 mesh 态 N/A 中性文案——TUN 网卡防火墙归类影响留 T14 真机验证；预检 ipv4ToLong 数值判 IP∈CIDR 与 Rust validate 同形。npm run build 绿）
+- [x] T12 i18n 双语同步（验收: AC4/AC11/AC12 呈现层）：zh.ts/en.ts 扁平键新增 `mesh.*`/`channel.disabled.*`/`wizard.channel.mesh*` 等，两侧同步无缺键 ✓ 2026-09-11（提交 1f4a41c。T13 向导键先行（缺键即 tsc 挂，UI 与词典分提交需词典预置）；直连分支文案加安全警示；wizard.code 五稳定码命名沿 serpent 先例；穿透分支专属键随 T13 代码移除时一并清理）
+- [x] T13 向导组网分支（依赖: T9/T10；验收: AC12）：`WizardView.tsx` channel 阶段组网分支（默认推荐）：装服务（UAC）→ 成员设备客户端指引（官方下载地址）→ set-mesh-secret.ps1 → apply + 在线校验 → A 记录 upsert + 解析校验；移除 SakuraFrp 分支；直连分支加安全警示；收尾页接停用入口（wizard.rs 检测步骤同步）✓ 2026-09-11（步骤序定案「密钥先行」：mesh_install_service 内部 prepare_stack→read_network_secret 拒绝，顺序①密钥②装服务③成员指引④应用（次级，修 service_stopped）⑤同步 DNS。新增 Rust 命令 `mesh_sync_dns`（plan §5.1 表外→变更记录补录）：向导分支选择只 patch channel 不做编排，新装机默认 mesh 时 switch_channel AlreadyOnTarget 短路致 A=虚拟 IP 无人创建。wizard.rs derive_mesh 矩阵（密钥>未装>停止/禁用>等成员；「运行无成员」不判 Done——漏配成员设备即收尾会无人能访问）+ mesh_detail_with_dns（ENABLE A==虚拟 IP）；存量 branch="tunnel" 向导呈迁移提示（Rust detect Tunnel 分支保留兼容，wizard.code.missing_key/tunnel_unset 键保留）；穿透面板七 UI 键两侧清理。cargo test 209 running 全绿（206+3 ignored）、npm build 绿）
 
 ## 阶段 5: 验收与收尾
 

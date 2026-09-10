@@ -483,6 +483,34 @@ pub async fn mesh_uninstall_service(
     dispatch_elevated(params).await
 }
 
+/// 同步 DNS 到组网通道（spec 007 AC13，T13 新增，见 plan 变更记录 2026-09-11）：
+/// CNAME 全删 + A upsert 虚拟 IP。前置：现役通道为 mesh + 腾讯云凭证存在。
+/// 为什么独立于 switch_channel 的 SyncDns 编排臂：向导分支选择
+/// （wizard_set_branch）只 patch access_channel 不做编排——新装机默认 mesh 时
+/// 切换命令 AlreadyOnTarget 短路，A 记录无人创建，AC13 需要显式入口。
+#[tauri::command]
+pub async fn mesh_sync_dns(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<usize, String> {
+    use crate::consts::{DOMAIN, DOMAIN_ROOT};
+
+    let cur = settings.current();
+    if cur.access_channel != crate::settings::AccessChannel::Mesh {
+        return Err("组网通道未现役：请先在向导选择组网，或到主界面切换到组网".into());
+    }
+    let cred = crate::dns_api::read_credential(&cur.stack_dir)
+        .ok_or("腾讯云凭证不存在：请先完成向导「腾讯云前置」阶段（写入密钥）")?;
+    let sub = crate::dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
+    let virtual_ip = cur.mesh.virtual_ip.clone();
+    let count = tauri::async_runtime::spawn_blocking(move || {
+        crate::dns_api::sync_to_mesh(&cred, DOMAIN_ROOT, &sub, &virtual_ip)
+    })
+    .await
+    .map_err(|e| format!("DNS 同步线程失败：{e}"))??;
+    log::info!("组网 DNS 同步完成（{count} 条记录操作）");
+    Ok(count)
+}
+
 /// 停用旧通道（AC5/AC6，plan §5.2）：前置校验非现役（disable_actions 纯函数
 /// 拒绝）→ 停组件 → DNS 清理（凭证缺失降级 warn，前端呈现手动指引）→
 /// 持久化停用标记。返回更新后的 Settings（看板「已停用」态数据源）。

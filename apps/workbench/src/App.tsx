@@ -214,8 +214,6 @@ export function App() {
         <WizardView
           lang={lang}
           settings={settings}
-          tunnelStatus={tunnelStatus}
-          meshStatus={meshStatus}
           focusStage={wizardFocus}
           onToast={pushToast}
           onSettingsChange={setSettings}

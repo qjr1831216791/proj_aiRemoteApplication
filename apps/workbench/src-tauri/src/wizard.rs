@@ -326,6 +326,36 @@ pub fn derive_tunnel(key_present: bool, tunnel_configured: bool) -> (StageState,
     }
 }
 
+/// ④c 组网分支（spec 007 AC12/AC13）：密钥就绪 + 服务运行 + 有非本机成员在线。
+/// 判定矩阵对齐 judge_mesh_state（mesh.rs）但输出向导阶段态：装机完成的标杆是
+/// 「有成员设备真正连上来」（mesh_wait_peer 不算 Done——用户可能只装了本机端，
+/// 漏配成员设备就收尾会以为装机完成却无人能访问）。
+pub fn derive_mesh(
+    secret_present: bool,
+    service: crate::mesh::MeshServiceState,
+    peers_online: bool,
+) -> (StageState, Option<String>) {
+    if !secret_present {
+        return (StageState::Pending, Some("missing_secret".into()));
+    }
+    match service {
+        crate::mesh::MeshServiceState::NotFound => {
+            (StageState::Pending, Some("missing_service".into()))
+        }
+        crate::mesh::MeshServiceState::Stopped | crate::mesh::MeshServiceState::Disabled => {
+            // 停止与禁用的修复动作相同（应用配置重装/重启），共用一个码
+            (StageState::Pending, Some("service_stopped".into()))
+        }
+        crate::mesh::MeshServiceState::Running | crate::mesh::MeshServiceState::StartPending => {
+            if peers_online {
+                (StageState::Done, Some("ok".into()))
+            } else {
+                (StageState::Pending, Some("mesh_wait_peer".into()))
+            }
+        }
+    }
+}
+
 // ── 采集（IO 层：探针装配消费；Windows-only，ADR-0001）──────────────────────
 
 #[cfg(windows)]
@@ -370,8 +400,28 @@ fn probe_channel_stage(state: &WizardState, settings: &crate::settings::Settings
                 .unwrap_or(false);
             derive_tunnel(sakura, settings.tunnel.is_some())
         }
-        // spec 007 T13 实现组网分支检测（服务/密钥/在线校验）；此前呈待办态
-        Some(AccessChannel::Mesh) => (StageState::Pending, Some("mesh_stage_todo".into())),
+        // spec 007 AC12/AC13：密钥 → 服务 → 成员在线逐级判定（derive_mesh 矩阵）。
+        // cli 只锚定栈目录落位副本（apply/install 已落位；资源 bin 候选归
+        // mesh://status 监视器，向导探针不重复装配上下文）
+        Some(AccessChannel::Mesh) => {
+            use crate::mesh::MeshOps;
+
+            let stack = &settings.stack_dir;
+            let ops = crate::mesh::WindowsMeshOps::new(None, stack.clone());
+            let secret = crate::mesh::read_network_secret(stack).is_some();
+            let service = ops.service_state();
+            let peers_online = ops
+                .query_peers()
+                .map(|list| list.iter().any(|p| !p.is_local))
+                .unwrap_or(false);
+            let (st, mut detail) = derive_mesh(secret, service, peers_online);
+            // AC13：Done 后附 DNS 对齐（A=虚拟 IP；未对齐 → mesh_dns_pending，
+            // 前端呈现「同步 DNS」按钮——向导分支选择不做编排，A 记录由显式入口建）
+            if st == StageState::Done {
+                detail = mesh_detail_with_dns(stack, &state.domain, &settings.mesh.virtual_ip);
+            }
+            (st, detail)
+        }
     }
 }
 
@@ -420,6 +470,41 @@ fn direct_detail_with_dns(stack_dir: &str, domain: &str) -> Option<String> {
 #[cfg(windows)]
 fn running_on(id: ComponentId, stack_dir: &str) -> bool {
     matches!(crate::probe::WindowsProbe.probe(id, stack_dir), ProbeState::Running { .. })
+}
+
+/// 组网 detail 附加 DNS 对齐码（"ok" / "mesh_dns_pending"）：
+/// ENABLE A 记录值 == 虚拟 IP 才算对齐（spec 007 体检重定义）。
+/// 查询失败不阻断装机完成态（沿 direct_detail_with_dns 先例，可达性归 005 心跳）。
+#[cfg(windows)]
+fn mesh_detail_with_dns(stack_dir: &str, domain: &str, virtual_ip: &str) -> Option<String> {
+    let Some(cred) = crate::dns_api::read_credential(stack_dir) else {
+        return Some("mesh_dns_pending".into());
+    };
+    let (root, sub) = split_domain(domain);
+    let Ok(records) = crate::dns_api::signed_request(
+        &cred,
+        "DescribeRecordList",
+        &serde_json::json!({ "Domain": root, "SubDomain": sub, "Offset": 0, "Limit": 100 }),
+        std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+    ) else {
+        return Some("ok".into());
+    };
+    let aligned = records
+        .pointer("/Response/RecordList")
+        .and_then(|v| v.as_array())
+        .and_then(|list| {
+            list.iter().find(|r| {
+                r.get("Type").and_then(|t| t.as_str()) == Some("A")
+                    && r.get("Status").and_then(|s| s.as_str()) == Some("ENABLE")
+            })
+        })
+        .and_then(|r| r.get("Value").and_then(|v| v.as_str()))
+        .is_some_and(|v| v == virtual_ip);
+    if aligned {
+        Some("ok".into())
+    } else {
+        Some("mesh_dns_pending".into())
+    }
 }
 
 /// 全量重探测（AC1/2：检测驱动 + 已完成自动跳过）
@@ -731,13 +816,44 @@ mod tests {
             (StageState::Done, Some("legacy_ok".into())),
             "旧式证书链 + 443 运行中 = 旧机已在工作"
         );
-        // ④ 直连 / 穿透
+        // ④ 直连 / 穿透 / 组网（spec 007 T13）
         assert_eq!(derive_direct(false, false).1, Some("missing_yaml".into()));
         assert_eq!(derive_direct(true, false).1, Some("not_running".into()));
         assert_eq!(derive_direct(true, true).0, StageState::Done);
         assert_eq!(derive_tunnel(false, true).1, Some("missing_key".into()));
         assert_eq!(derive_tunnel(true, false).1, Some("tunnel_unset".into()));
         assert_eq!(derive_tunnel(true, true), (StageState::Done, Some("ok".into())));
+        // 组网矩阵：密钥缺失优先于服务态；NotFound/Stopped+Disabled/运行无对端逐级 Pending
+        use crate::mesh::MeshServiceState as Ms;
+        assert_eq!(
+            derive_mesh(false, Ms::NotFound, false),
+            (StageState::Pending, Some("missing_secret".into())),
+            "密钥缺失优先于服务缺失"
+        );
+        assert_eq!(
+            derive_mesh(true, Ms::NotFound, true),
+            (StageState::Pending, Some("missing_service".into()))
+        );
+        assert_eq!(
+            derive_mesh(true, Ms::Stopped, true),
+            (StageState::Pending, Some("service_stopped".into()))
+        );
+        assert_eq!(
+            derive_mesh(true, Ms::Disabled, false),
+            (StageState::Pending, Some("service_stopped".into())),
+            "禁用与停止共用修复路径（应用配置重装/重启）"
+        );
+        assert_eq!(
+            derive_mesh(true, Ms::Running, false),
+            (StageState::Pending, Some("mesh_wait_peer".into())),
+            "运行但无成员 = 未完成（漏配成员设备即收尾会无人能访问）"
+        );
+        assert_eq!(
+            derive_mesh(true, Ms::StartPending, true),
+            (StageState::Done, Some("ok".into())),
+            "启动中宽限：成员已在即可过"
+        );
+        assert_eq!(derive_mesh(true, Ms::Running, true), (StageState::Done, Some("ok".into())));
     }
 
     #[test]

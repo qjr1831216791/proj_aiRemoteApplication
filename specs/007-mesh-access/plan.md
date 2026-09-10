@@ -180,6 +180,7 @@ uri = "tcp://sh.vomiku.com:7910"
 | `mesh_install_service` / `mesh_uninstall_service` | — | 复制 exe（校验 manifest）+ sc create + failure 配置 / sc delete（先 stop） | 是 |
 | `disable_legacy_channel` | `{ target: "tunnel" \| "direct" }` | 停用编排（§5.2），前置校验非现役通道 | 停 ddns-go 托管部分否 / CNAME 删除走 API 否 |
 | `clear_frp_key` | — | 指引呈现 + 拉起清除脚本（`clear-frp-key.ps1`：从栈 `.env` 移除 SAKURA_FRP_KEY 行、复核显示已移除） | 否 |
+| `mesh_sync_dns` | — | CNAME 全删 + A upsert 虚拟 IP（复用 `sync_to_mesh`）；前置：现役通道为 mesh + 腾讯云凭证存在。**T13 新增，见变更记录 2026-09-11** | 否（DNSPod API） |
 
 既有命令变更：`switch_channel` 入参枚举加 `"mesh"`；`channel_health`（体检）六项在 mesh 下重定义两项（隧道客户端→组网服务/对端、DNS 对齐→A 记录=虚拟 IP），其余不变；`get_settings`/`save_settings` 随 Settings 结构自动扩展（serde default 向后兼容）。
 
@@ -258,3 +259,4 @@ disable_direct（前置：channel ≠ direct；典型时序 = 切 mesh 后执行
 | 2026-09-10 | **secure-mode 降级为 legacy 模式**：§1 概述与降级决策注记、§2 选型表、§3.1 两段加密模型改单段、§4.3 渲染模板去 [secure_mode] 段（+hostname/listeners 字段实测修正 + 渲染前置校验=密钥就绪）、§6 AC9 测试映射、§7-R4 改写为升级路径 | T2 双实例真机实测（tasks.md 附注②）：secure 客户端→legacy 社区节点被拒（conn closed during wait handshake response）、legacy→secure 同网络被拒（same-network peers must use the same secure mode）、Android App 无 secure UI → 全链 secure 不可达；legacy 全链（双实例+社区节点中继）实测互通（46ms/0% 丢包） |
 | 2026-09-10 | T7 实现期两处事实修正：①§4.4 提权惯例措辞对齐实际（install-https.ps1 并非自提权，是「自检管理员身份 + 拒绝提示」，UAC 由工作台 runas 拉起提供）；②§2 运行形态备选补④——`easytier-cli service install` 官方装服务路径 | T7 源码级取证：core main 无条件先走 `service_dispatcher::start`（被 SCM 拉起即进 win_service_main、从进程命令行解析 `-c`；控制台启动报 ERROR 0x427 被吞走 CLI）→ `sc create` 直装成立；但官方 cli 装服务会把网络参数（含密钥）写进服务命令行，违背 AC8 → 弃用，自有脚本 binPath 只含 `-c config.toml` 路径参数 |
 | 2026-09-10 | T8 实现期三处修正：①§2 状态探询命令形态实测修正——全局选项为 `-p/--rpc-portal`（非 `--rpc`）且必须在子命令之前（`easytier-cli -p 127.0.0.1:15888 -o json peer list`），并确认 peer list 首项恒为本机（cost="Local"），在线判定须排除本机项；②状态四态之外增设 `inactive`（现役通道非 mesh 时的看板呈现，对齐 004 TunnelState::Inactive 惯例）；③§3.2「StopDdnsGo + 取消自启托管」对切 tunnel 方向同适用（004 补强） | easytier-cli v2.6.4 clap 结构实测（选项置后报 unexpected argument）+ easytier-cli.rs 源码取证（PeerTableItem 首项 From&lt;NodeInfo&gt; 恒为本机）——「peers 非空即在线」在单机无成员时会误判，必须排除 is_local 项；切通道后仅停进程不取消自启任务，下次开机 ddns-go 被任务拉起即通道互踩（与 004 AC8 同源） |
+| 2026-09-11 | §5.1 命令表新增 `mesh_sync_dns`（表外命令补录，AC13 的 A 记录 upsert 入口落地） | T13 向导组网分支实现时发现缺口：向导分支选择（wizard_set_branch）只 patch access_channel 不做编排，新装机默认 mesh 时 switch_channel 的 AlreadyOnTarget 短路使 A=虚拟 IP 记录无人创建——§5.3「A 记录 upsert」步骤在「分支选择≠switch_channel 编排」的向导架构（006 遗产）下需独立命令入口（前端「同步 DNS」按钮消费） |

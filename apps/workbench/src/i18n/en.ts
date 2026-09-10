@@ -352,21 +352,16 @@ export const en = {
   "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
   "wizard.channel.meshDnsHint":
     "Automatically points the ai.jackqi.cn A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
+  "wizard.channel.meshDnsDone": "DNS synced ({n} record operations)",
   "wizard.channel.tunnelDeprecated":
     "This wizard previously picked the tunnel channel: the tunnel entry has been removed from the wizard (security reasons — relayed via a third-party node). Existing tunnel config is unaffected — keep using it under Main → Access Channel, or disable it in Settings. Switching to mesh is recommended.",
-  "wizard.channel.tunnel": "Tunnel (SakuraFrp)",
-  "wizard.channel.tunnelDesc": "Relayed via an overseas node, no inbound required; needs a SakuraFrp account (real-name)",
   "wizard.channel.ddnsBtn": "Configure & start ddns-go (maintains the A record)",
-  "wizard.channel.frpKeyBtn": "Enter SakuraFrp access key (hidden input)",
-  "wizard.channel.tunnelId": "Tunnel ID",
-  "wizard.channel.nodeDomain": "Node domain",
-  "wizard.channel.saveCfg": "Save tunnel config",
-  "wizard.channel.tunnelState": "Tunnel state",
-  "wizard.channel.dnsNote": "DNS aligns automatically after switching (CNAME maintained for you); if auto-switching fails, the Access Channel card on Main shows a manual guide.",
   "wizard.finalize.desc": "Finish: review your goals (autostart is toggled in Settings).",
   "wizard.summary.lan": "LAN access",
   "wizard.summary.domain": "Domain access",
   "wizard.finalize.done": "Finish — back to Main",
+  "wizard.finalize.meshHint":
+    "Mesh setup complete. If you no longer use the legacy channels (direct/tunnel), disable them under Settings → Disable legacy channels to shrink the public exposure surface.",
   // Wizard detail codes → copy
   "wizard.code.ok": "Verified",
   "wizard.code.legacy_ok": "Verified (legacy acme.sh certificate chain still serving; not migrated to the plugin style — works fine, migration is optional)",

@@ -351,21 +351,16 @@ export const zh = {
   "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
   "wizard.channel.meshDnsHint":
     "把 ai.jackqi.cn 的 A 记录自动同步为虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
+  "wizard.channel.meshDnsDone": "DNS 同步完成（{n} 条记录操作）",
   "wizard.channel.tunnelDeprecated":
     "此向导此前选择了穿透通道：穿透入口已从向导移除（安全考量，经第三方节点中转）。既有穿透配置不受影响——可在主界面「访问通道」继续使用，或在设置页停用。建议改选组网。",
-  "wizard.channel.tunnel": "穿透（SakuraFrp）",
-  "wizard.channel.tunnelDesc": "经海外节点中转，免公网入站；需 SakuraFrp 账号（实名）",
   "wizard.channel.ddnsBtn": "配置 ddns-go 并启动（自动维护 A 记录）",
-  "wizard.channel.frpKeyBtn": "输入 SakuraFrp 访问密钥（不回显）",
-  "wizard.channel.tunnelId": "隧道 ID",
-  "wizard.channel.nodeDomain": "节点域名",
-  "wizard.channel.saveCfg": "保存隧道配置",
-  "wizard.channel.tunnelState": "隧道状态",
-  "wizard.channel.dnsNote": "切换后 DNS 将自动对齐（CNAME 自动维护）；若自动切换失败，主界面「访问通道」卡会显示手动指引。",
   "wizard.finalize.desc": "收尾：确认目标达成情况（开机自启在「设置」页开关）。",
   "wizard.summary.lan": "局域网访问",
   "wizard.summary.domain": "域名访问",
   "wizard.finalize.done": "完成，回到主界面",
+  "wizard.finalize.meshHint":
+    "组网装机完成。旧通道（直连/穿透）如已不再使用，可到「设置 → 旧通道停用」关停，收敛公网暴露面。",
   // 向导 detail 稳定码 → 文案
   "wizard.code.ok": "校验通过",
   "wizard.code.legacy_ok": "校验通过（检测到旧版 acme.sh 证书链仍在正常服务，未迁移插件式——不影响使用，迁移可选）",

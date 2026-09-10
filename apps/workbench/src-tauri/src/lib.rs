@@ -108,6 +108,7 @@ pub fn run() {
             commands::mesh_apply_config,
             commands::mesh_install_service,
             commands::mesh_uninstall_service,
+            commands::mesh_sync_dns,
             commands::disable_legacy_channel,
             commands::clear_frp_key,
             // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启 + frpc 分发保障
