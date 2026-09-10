@@ -19,7 +19,7 @@
 - [ ] T4 `settings.rs` 扩展：`AccessChannel` / `TunnelConfig` / `tunnel_enabled` 字段 + 向后兼容迁移（缺省 Direct）+ 单测（迁移往返、非法值回落）（依赖: 无）（验收: AC8 持久化基础）
 - [ ] T5 新增 `tunnel.rs`：frpc spawn/停止（`.env` 读 key 拼装 `-f key:id`）、进程存活探测、key 不入日志断言（依赖: T1/T4）（验收: AC1 启动、AC3 存活探测）
 - [ ] T6 `orchestrator.rs` 集成：`ComponentId::Frpc` 组件化；守护决策纯函数（应运行∧死亡∧退避时钟 → 重启，5s/15s/60s 封顶）+ 接入轮询；通道切换原子操作（停旧启新 + 持久化）+ 状态机单测（依赖: T5）（验收: AC3/AC5/AC6/AC8）
-- [ ] T7 DNS 对齐检测：`nslookup` 查询封装 + 判定纯函数（CNAME→natfrp.cloud / 残留 CNAME / A 恢复 / 无记录 四态）+ 输出样本单测（依赖: T4）（验收: AC12/AC13）
+- [x] T7 DNS 对齐检测：`nslookup` 查询封装 + 判定纯函数（CNAME→节点域名 / 残留 CNAME / A 恢复 / 无记录 四态）+ 输出样本单测；后增补 `dns_api.rs`（TC3 签名对齐官方 SDK + 暂停/激活调和，真机验证 HTTP 200）（依赖: T4）（验收: AC12/AC13 + 自动切换）
 - [ ] T8 `commands.rs` 接线：`switch_channel` / `set_tunnel_enabled` / `check_dns_alignment` + 事件扩展；现有测试回归全绿（依赖: T6/T7）（验收: AC5/6/7/11 命令层）
 
 ## 阶段 3: 前端

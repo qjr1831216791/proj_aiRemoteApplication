@@ -141,6 +141,15 @@ pub struct Settings {
 
 ## 8. 影响范围
 
+### 8.1 DNS 自动切换（2026-09-10 增补，见 spec 变更记录）
+
+- **模块**：新增 `dns_api.rs`——TC3 签名（对齐官方 SDK 形态：**只签 `content-type;host` 两头、Content-Type 为 `application/json` 无 charset、CanonicalRequest 的 headers 段与 SignedHeaders 段之间有空行**——通用 TC3 文档的三头形态实测被网关拒 `AuthFailure.SignatureFailure`）；API 端点 `dnspod.tencentcloudapi.com`（service=dnspod，2021-03-23）。
+- **凭证**：复用机器上 ddns-go 既有的腾讯云密钥（读 `.env` 的 TENCENT_SECRET_ID/KEY → `ddns-go.yaml` dnsconf 段回退），不新增用户输入；凭证不进日志。
+- **调和语义（暂停/激活，需求方提议）**：切穿透 = 全部 A 暂停（ModifyRecordStatus DISABLE）+ CNAME 激活/新建；切直连 = 全部 CNAME 暂停 + A 激活（A 值由 ddns-go 维护/新建）。记录 ID 保留，完全可逆；`reconcile` 为纯函数幂等（已满足 → 空操作集）。
+- **降级**：凭证缺失/API 失败 → 仅日志告警，不阻断切换；DNS 检测循环继续显示手动指引（既有闭环）。
+- **依赖**：`ureq`（rustls）+ `sha2`/`hmac`/`hex`（RustCrypto 成熟库，仅 TC3 签名用）——宪法 §3 依赖说明即此。
+- **验证**：真机调和（A 停 + CNAME 活）后 `https://ai.jackqi.cn/` HTTP 200 端到端（2026-09-10）。
+
 - **Rust**：`settings.rs`（结构扩展+迁移）、`orchestrator.rs`（frpc 组件化+守护+切换原子操作）、`commands.rs`（3 新命令）、`consts.rs`（路径/常量）、新增 `tunnel.rs`
 - **前端**：主界面新增「访问通道」卡（通道显示/切换确认/隧道状态/DNS 指引条）；双语文案
 - **打包**：`resources/bin/frpc.exe` + manifest；`scripts/build.ps1` 同步；`tools/sprint0/bin` 打包副本

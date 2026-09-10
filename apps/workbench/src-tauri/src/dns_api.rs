@@ -452,9 +452,9 @@ mod tests {
     #[test]
     fn civil_date_conversion() {
         // 已知锚点：1970-01-01 epoch 0；2026-08-25 / 2026-09-10 00:00 UTC
-        assert_eq!(chrono_date(0), "1970-01-01");
-        assert_eq!(chrono_date(1_787_616_000), "2026-08-25");
-        assert_eq!(chrono_date(1_788_998_400), "2026-09-10");
-        assert_eq!(chrono_date(1_788_998_399), "2026-09-09", "日界边界");
+        assert_eq!(utc_date(0), "1970-01-01");
+        assert_eq!(utc_date(1_787_616_000), "2026-08-25");
+        assert_eq!(utc_date(1_788_998_400), "2026-09-10");
+        assert_eq!(utc_date(1_788_998_399), "2026-09-09", "日界边界");
     }
 }
