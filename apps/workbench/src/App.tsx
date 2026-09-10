@@ -9,12 +9,13 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onNetChanged, onSettingsRepaired, onStatusChanged, onTunnelStatus } from "./api";
+import { api, onDomainHealth, onNetChanged, onSettingsRepaired, onStatusChanged, onTunnelStatus } from "./api";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
   AccessUrls,
   ComponentId,
   ComponentStatus,
+  DomainHealth,
   LanguageSetting,
   NetStatus,
   ScriptsAvailability,
@@ -43,6 +44,7 @@ export function App() {
   const [scripts, setScripts] = useState<ScriptsAvailability | null>(null);
   const [netStatus, setNetStatus] = useState<NetStatus | null>(null);
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
+  const [domainHealth, setDomainHealth] = useState<DomainHealth | null>(null);
   const [stopping, setStopping] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -90,6 +92,8 @@ export function App() {
       track(await onNetChanged(setNetStatus));
       // 隧道状态事件（spec 004）：守护线程 5s 收敛驱动，变化才发
       track(await onTunnelStatus(setTunnelStatus));
+      // 域名心跳事件（spec 005）：60s 周期探测
+      track(await onDomainHealth(setDomainHealth));
       // 设置损坏恢复：非阻塞提示（AC24）
       track(await onSettingsRepaired(() => pushToast(t("settings.repaired", lang), "info")));
     })();
@@ -167,6 +171,7 @@ export function App() {
           onNetRefresh={refreshNet}
           settings={settings}
           tunnelStatus={tunnelStatus}
+          domainHealth={domainHealth}
           onSettingsChange={setSettings}
           stopping={stopping}
           onStartAll={startAll}

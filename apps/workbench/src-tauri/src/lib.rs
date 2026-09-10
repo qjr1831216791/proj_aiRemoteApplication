@@ -11,6 +11,7 @@ mod commands;
 mod consts;
 pub mod dns_api;
 mod exit_flow;
+mod heartbeat;
 mod lang;
 mod network;
 mod orchestrator;
@@ -100,6 +101,9 @@ pub fn run() {
             commands::switch_channel,
             commands::set_tunnel_enabled,
             commands::check_dns_alignment,
+            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）
+            commands::open_stack_dir,
+            commands::check_domain_health_now,
         ])
         .setup(move |app| {
             // 防御：同会话重复实例本应已被插件在其 setup（早于本回调）拦截退出；
@@ -216,6 +220,23 @@ pub fn run() {
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
 
+            // ── 域名心跳（spec 005）：60s 周期探测，变化/每轮发 domain://health ──
+            let health_sink_handle = app.handle().clone();
+            let health_enabled_handle = app.handle().clone();
+            let monitor = std::sync::Arc::new(heartbeat::HealthMonitor::new(
+                consts::WORKBENCH_URL,
+            ));
+            monitor.spawn(
+                std::sync::Arc::new(HealthSinkImpl { app: health_sink_handle }),
+                std::sync::Arc::new(move || {
+                    health_enabled_handle
+                        .state::<settings::SettingsState>()
+                        .current()
+                        .domain_heartbeat
+                }),
+            );
+            app.manage(monitor);
+
             // ── 自启上下文（T11/T15）：脚本目录 + 禁用原因 + 日志目录 ────────
             app.manage(autostart::AutostartContext {
                 scripts_dir,
@@ -330,6 +351,20 @@ impl tunnel::TunnelEventSink for TauriTunnelEmitter {
         use tauri::Emitter;
         if let Err(e) = self.app.emit(tunnel::EVENT_TUNNEL_STATUS, status) {
             log::error!("发送 {} 失败：{e}", tunnel::EVENT_TUNNEL_STATUS);
+        }
+    }
+}
+
+/// 域名心跳事件出口（`domain://health`；载荷 DomainHealth）
+struct HealthSinkImpl {
+    app: tauri::AppHandle,
+}
+
+impl heartbeat::HealthSink for HealthSinkImpl {
+    fn emit_health(&self, health: &heartbeat::DomainHealth) {
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit(heartbeat::EVENT_DOMAIN_HEALTH, health) {
+            log::error!("发送 {} 失败：{e}", heartbeat::EVENT_DOMAIN_HEALTH);
         }
     }
 }

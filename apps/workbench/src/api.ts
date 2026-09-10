@@ -8,10 +8,12 @@ import type {
   ComponentId,
   ComponentStatus,
   DnsAlignment,
+  DomainHealth,
   ExternalKind,
   LanguageSetting,
   NetStatus,
   NetCategory,
+  ProbeOutcome,
   ScriptsAvailability,
   Settings,
   SettingsPatch,
@@ -63,6 +65,10 @@ export const api = {
     invoke<Settings>("set_tunnel_enabled", { enabled }),
   /** DNS 对齐检测（AC12/13）：权威 CNAME/A 实况 */
   checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
+  /** 打开栈目录（穿透设置指引链接） */
+  openStackDir: () => invoke<void>("open_stack_dir"),
+  /** 即时域名探测（通道体检；独立于 60s 心跳） */
+  checkDomainHealthNow: () => invoke<ProbeOutcome>("check_domain_health_now"),
 };
 
 /** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */
@@ -80,6 +86,11 @@ export function onStatusChanged(
 /** 隧道状态事件（spec 004：守护线程 5s 收敛驱动，变化才发） */
 export function onTunnelStatus(cb: (status: TunnelStatus) => void): Promise<() => void> {
   return listen<TunnelStatus>("tunnel://status", (e) => cb(e.payload));
+}
+
+/** 域名心跳事件（spec 005：60s 周期探测，载荷 healthy 已含 2 次防抖） */
+export function onDomainHealth(cb: (health: DomainHealth) => void): Promise<() => void> {
+  return listen<DomainHealth>("domain://health", (e) => cb(e.payload));
 }
 
 /** 设置损坏恢复事件（AC24：非阻塞提示） */

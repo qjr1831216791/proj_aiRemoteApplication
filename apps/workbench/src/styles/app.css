@@ -121,6 +121,58 @@
   outline-offset: -1px;
 }
 
+/* 穿透设置表单：两输入并排 + 保存按钮行尾（spec 004 设置页优化） */
+.tunnel-form-row {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.tunnel-form-field {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 160px;
+}
+
+/* 链接式按钮（提示文案中的可点击路径） */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--c-ok);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 域名心跳状态点（spec 005 地址区红/绿标记） */
+.hb-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.hb-dot--ok {
+  background: var(--c-ok);
+}
+
+.hb-dot--fail {
+  background: #dc2626;
+}
+
+/* 通道体检清单 */
+.checkup__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
 .notice__detail {
   display: block;
   margin-top: var(--sp-1);

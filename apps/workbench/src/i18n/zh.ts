@@ -130,7 +130,8 @@ export const zh = {
   "settings.setFrpKey": "设置访问密钥…",
   "settings.setFrpKeyDispatched": "密钥设置窗口已打开，请在弹出的控制台中输入",
   "settings.setFrpKeyHint":
-    "密钥获取：natfrp.com 用户中心 → 查看访问密钥；存放：栈目录 .env 的 SAKURA_FRP_KEY",
+    "密钥获取：natfrp.com 用户中心 → 查看访问密钥；存放于栈目录 .env 的 SAKURA_FRP_KEY",
+  "settings.openStackDir": "打开栈目录",
   "settings.frpcDeploy":
     "frpc 客户端已随程序内置（版本 0.51.0-sakura-14），换机无需单独下载；若资源缺失，可从面板「软件下载」页下载 frpc Windows amd64，放入安装目录 resources\\bin 或栈目录并命名 frpc.exe",
 
@@ -171,6 +172,36 @@ export const zh = {
   "tunnel.dnsFailed": "DNS 检测失败（网络或解析异常），请稍后重试",
   "tunnel.dnsOkTunnel": "DNS 解析已对齐穿透通道",
   "tunnel.dnsOkDirect": "DNS 解析已恢复直连",
+
+  // 域名心跳（spec 005）
+  "heartbeat.dotOk": "可达",
+  "heartbeat.dotFail": "不可达",
+  "heartbeat.kind.ok": "正常",
+  "heartbeat.kind.dns": "DNS 解析失败",
+  "heartbeat.kind.connect": "连接失败",
+  "heartbeat.kind.tls": "TLS 证书异常",
+  "heartbeat.kind.timeout": "超时",
+  "heartbeat.kind.status": "HTTP {code}",
+  "heartbeat.scopeNote": "本机视角（外部可达性可能不同）",
+  "settings.heartbeat": "域名心跳检测",
+  "settings.heartbeatDesc":
+    "每分钟探测一次访问域名，连续 2 次失败时在地址区显示红色标记，恢复后自动消除",
+
+  // 通道体检（spec 004/005 知识复用）
+  "tunnel.checkup": "通道体检",
+  "tunnel.checkupRun": "开始体检",
+  "tunnel.checkupRunning": "体检中…",
+  "tunnel.check.ok": "正常",
+  "tunnel.check.fail": "异常",
+  "tunnel.check.dns": "DNS 解析对齐",
+  "tunnel.check.netCategory": "网络归类（443 放行）",
+  "tunnel.check.netPublicWarn": "存在公用网络，443 可能被拦截",
+  "tunnel.check.tunnel": "隧道客户端",
+  "tunnel.check.tunnelOff": "未启用（直连模式）",
+  "tunnel.check.caddy": "本机 HTTPS 服务（caddy:443）",
+  "tunnel.check.upstream": "上游服务（:3001）",
+  "tunnel.check.domain": "域名全链路（本机视角）",
+  "tunnel.checkupDnsHint": "未对齐，见上方 DNS 指引",
 
   // 提示（toast）
   "toast.opFailed": "操作失败",

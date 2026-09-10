@@ -18,6 +18,14 @@ import type {
   TunnelStatus,
 } from "../types";
 
+/** 体检单项结论 */
+interface CheckItem {
+  label: string;
+  /** true=正常 false=异常 null=不适用（直连模式下的隧道项） */
+  ok: boolean | null;
+  detail?: string;
+}
+
 export interface TunnelCardProps {
   lang: Lang;
   settings: Settings | null;
@@ -47,6 +55,9 @@ export function TunnelCard(props: TunnelCardProps) {
   // DNS 对齐检测：穿透通道常态轮询；直连通道仅在「有未对齐结论待恢复」时轮询
   const [dns, setDns] = useState<DnsAlignment | null>(null);
   const [dnsChecking, setDnsChecking] = useState(false);
+  // 通道体检（聚合 DNS/归类/隧道/本机组件/域名全链路，复用既有检查通道）
+  const [checkup, setCheckup] = useState<CheckItem[] | null>(null);
+  const [checking, setChecking] = useState(false);
   const checkDns = () => {
     if (dnsChecking) return;
     setDnsChecking(true);
@@ -92,6 +103,108 @@ export function TunnelCard(props: TunnelCardProps) {
 
   const configured = tunnelCfg !== null;
   const state = tunnelStatus?.state ?? (configured ? null : "notConfigured");
+
+  /** 通道体检（需求方 2026-09-10：复用 DNS/归类/隧道/组件/可达性检查知识） */
+  const runCheckup = async () => {
+    setChecking(true);
+    try {
+      const [netR, dnsR, tunR, compR, healthR] = await Promise.allSettled([
+        api.getNetStatus(),
+        api.checkDnsAlignment(),
+        api.getTunnelStatus(),
+        api.getStatus(),
+        api.checkDomainHealthNow(),
+      ]);
+      const items: CheckItem[] = [];
+      const okText = t("tunnel.check.ok", lang);
+      const failText = t("tunnel.check.fail", lang);
+
+      // ① DNS 解析对齐（权威口径，与上方指引同源）
+      if (dnsR.status === "fulfilled") {
+        const d = dnsR.value;
+        const aligned =
+          channel === "tunnel" ? d.kind === "alignedTunnel" : d.kind === "alignedDirect";
+        items.push({
+          label: t("tunnel.check.dns", lang),
+          ok: aligned,
+          detail: aligned ? okText : t("tunnel.checkupDnsHint", lang),
+        });
+      } else {
+        items.push({ label: t("tunnel.check.dns", lang), ok: false, detail: failText });
+      }
+
+      // ② 网络归类（spec 002 知识：Public 下 443 规则不生效）
+      const net = netR.status === "fulfilled" ? netR.value : null;
+      if (net) {
+        const publicNet = net.networks.filter((n) => n.category === "public");
+        const alert = net.rulePrivateOnly && publicNet.length > 0;
+        items.push({
+          label: t("tunnel.check.netCategory", lang),
+          ok: !alert,
+          detail: alert
+            ? t("tunnel.check.netPublicWarn", lang).replace(
+                "{names}",
+                publicNet.map((n) => n.name).join("、"),
+              )
+            : okText,
+        });
+      }
+
+      // ③ 隧道客户端（穿透模式判状态；直连模式不适用）
+      if (tunR.status === "fulfilled") {
+        const s = tunR.value.state;
+        if (channel === "tunnel") {
+          const ok = s === "online" || s === "starting";
+          items.push({
+            label: t("tunnel.check.tunnel", lang),
+            ok,
+            detail: t(tunnelStateKey(s), lang),
+          });
+        } else {
+          items.push({
+            label: t("tunnel.check.tunnel", lang),
+            ok: null,
+            detail: t("tunnel.check.tunnelOff", lang),
+          });
+        }
+      }
+
+      // ④⑤ 本机组件（caddy 443 / 上游 3001，spec 001 probe 快照）
+      if (compR.status === "fulfilled") {
+        for (const id of ["caddy", "cloudcli"] as const) {
+          const c = compR.value.find((s) => s.id === id);
+          const running = c?.state === "running";
+          items.push({
+            label: t(id === "caddy" ? "tunnel.check.caddy" : "tunnel.check.upstream", lang),
+            ok: running,
+            detail: running ? okText : t(`common.${c?.state ?? "stopped"}` as DictKey, lang),
+          });
+        }
+      }
+
+      // ⑥ 域名全链路（本机视角，spec 005 口径如实标注）
+      if (healthR.status === "fulfilled") {
+        const h = healthR.value;
+        items.push({
+          label: t("tunnel.check.domain", lang),
+          ok: h.kind === "ok",
+          detail:
+            h.kind === "ok"
+              ? `${h.latencyMs}ms`
+              : t(`heartbeat.kind.${h.kind}` as DictKey, lang).replace(
+                  "{code}",
+                  String(h.code ?? ""),
+                ),
+        });
+      } else {
+        items.push({ label: t("tunnel.check.domain", lang), ok: false, detail: failText });
+      }
+
+      setCheckup(items);
+    } finally {
+      setChecking(false);
+    }
+  };
 
   return (
     <section class="card">
@@ -186,6 +299,28 @@ export function TunnelCard(props: TunnelCardProps) {
           <button class="btn btn--sm" disabled={dnsChecking} onClick={checkDns}>
             {dnsChecking ? t("tunnel.dnsChecking", lang) : t("tunnel.dnsRecheck", lang)}
           </button>
+        </div>
+      ) : null}
+
+      {/* 通道体检（复用 DNS/归类/隧道/组件/全链路检查知识） */}
+      <div class="settings__actions">
+        <button class="btn btn--sm" disabled={checking} onClick={() => void runCheckup()}>
+          {checking ? t("tunnel.checkupRunning", lang) : t("tunnel.checkupRun", lang)}
+        </button>
+      </div>
+      {checkup ? (
+        <div class="checkup__list">
+          {checkup.map((item) => (
+            <div class="net__row" key={item.label}>
+              <span class="net__name">{item.label}</span>
+              <span
+                class={`chip ${item.ok === null ? "chip--stopped" : item.ok ? "chip--running" : "chip--failed"}`}
+              >
+                {item.ok === null ? "—" : item.ok ? t("tunnel.check.ok", lang) : t("tunnel.check.fail", lang)}
+              </span>
+              {item.detail ? <span class="settings__desc">{item.detail}</span> : null}
+            </div>
+          ))}
         </div>
       ) : null}
     </section>

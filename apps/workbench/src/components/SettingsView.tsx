@@ -179,40 +179,59 @@ export function SettingsView(props: SettingsViewProps) {
       <section class="card">
         <h2 class="card__title">{t("settings.tunnel", lang)}</h2>
         <p class="muted">{t("settings.tunnelDesc", lang)}</p>
-        <div class="settings__rows">
-          <div class="settings__row">
-            <div class="settings__row-text">
-              <span class="settings__label">{t("settings.tunnelId", lang)}</span>
-              <input
-                class="form-input"
-                placeholder={t("settings.tunnelIdPlaceholder", lang)}
-                value={tunnelId}
-                onInput={(e) => setTunnelId(e.currentTarget.value)}
-              />
-            </div>
+        <div class="tunnel-form-row">
+          <div class="tunnel-form-field">
+            <span class="settings__label">{t("settings.tunnelId", lang)}</span>
+            <input
+              class="form-input"
+              placeholder={t("settings.tunnelIdPlaceholder", lang)}
+              value={tunnelId}
+              onInput={(e) => setTunnelId(e.currentTarget.value)}
+            />
           </div>
-          <div class="settings__row">
-            <div class="settings__row-text">
-              <span class="settings__label">{t("settings.tunnelNodeDomain", lang)}</span>
-              <input
-                class="form-input"
-                placeholder={t("settings.tunnelNodePlaceholder", lang)}
-                value={nodeDomain}
-                onInput={(e) => setNodeDomain(e.currentTarget.value)}
-              />
-            </div>
+          <div class="tunnel-form-field">
+            <span class="settings__label">{t("settings.tunnelNodeDomain", lang)}</span>
+            <input
+              class="form-input"
+              placeholder={t("settings.tunnelNodePlaceholder", lang)}
+              value={nodeDomain}
+              onInput={(e) => setNodeDomain(e.currentTarget.value)}
+            />
           </div>
-        </div>
-        <div class="settings__actions">
-          <button class="btn btn--primary" onClick={() => void saveTunnel()}>
+          <button class="btn btn--primary tunnel-form-save" onClick={() => void saveTunnel()}>
             {t("settings.tunnelSave", lang)}
           </button>
-          <button class="btn" onClick={openSetFrpKey}>
+        </div>
+        <div class="settings__row">
+          <div class="settings__row-text">
+            <span class="settings__label">{t("settings.setFrpKeyHint", lang)}</span>
+          </div>
+          <button class="btn btn--sm" onClick={openSetFrpKey}>
             {t("settings.setFrpKey", lang)}
           </button>
         </div>
-        <p class="muted">{t("settings.setFrpKeyHint", lang)}</p>
+        <div class="settings__row">
+          <div class="settings__row-text">
+            <span class="settings__label">
+              {t("settings.openStackDir", lang)}：
+              <button class="link-btn" onClick={() => api.openStackDir().catch((e) => onToast(String(e), "error"))}>
+                {READONLY.stackDir}
+              </button>
+            </span>
+          </div>
+        </div>
         <p class="muted">{t("settings.frpcDeploy", lang)}</p>
+      </section>
+
+      {/* 域名心跳（spec 005 AC7） */}
+      <section class="card">
+        <h2 class="card__title">{t("settings.heartbeat", lang)}</h2>
+        <SwitchRow
+          label={t("settings.heartbeat", lang)}
+          desc={t("settings.heartbeatDesc", lang)}
+          checked={settings.domainHeartbeat}
+          onChange={(v) => void savePatch({ domainHeartbeat: v })}
+        />
       </section>
 
       {/* 语言（AC25：切换立即生效） */}

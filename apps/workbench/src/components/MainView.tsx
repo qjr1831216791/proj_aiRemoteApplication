@@ -16,6 +16,7 @@ import type {
   ComponentId,
   ComponentState,
   ComponentStatus,
+  DomainHealth,
   NetCategory,
   NetStatus,
   ScriptsAvailability,
@@ -39,6 +40,8 @@ export interface MainViewProps {
   settings: Settings | null;
   /** 隧道运行状态（spec 004；null = 尚无快照） */
   tunnelStatus: TunnelStatus | null;
+  /** 域名心跳快照（spec 005；null = 尚无探测结果） */
+  domainHealth: DomainHealth | null;
   /** 设置回写（通道切换/开关成功后 App 层 setSettings） */
   onSettingsChange: (s: Settings) => void;
   /** 一键停止在途（防重复点击） */
@@ -52,7 +55,7 @@ export interface MainViewProps {
 export function MainView(props: MainViewProps) {
   const {
     lang, statuses, urls, scripts, netStatus, onNetRefresh,
-    settings, tunnelStatus, onSettingsChange,
+    settings, tunnelStatus, domainHealth, onSettingsChange,
     stopping, onStartAll, onStopAll, onRetry, onToast,
   } = props;
   // 当前态耗时（since → now）每秒刷新
@@ -237,7 +240,15 @@ export function MainView(props: MainViewProps) {
         {urls
           ? (["local", "lan", "domain"] as const).map((k) => (
               <div class="addr__row" key={k}>
-                <span class="addr__label">{t(`addr.${k}`, lang)}</span>
+                <span class="addr__label">
+                  {k === "domain" && domainHealth ? (
+                    <span
+                      class={`hb-dot ${domainHealth.healthy ? "hb-dot--ok" : "hb-dot--fail"}`}
+                      title={`${t(`heartbeat.kind.${domainHealth.kind}`, lang).replace("{code}", String(domainHealth.code ?? ""))} · ${t("heartbeat.scopeNote", lang)}`}
+                    />
+                  ) : null}
+                  {t(`addr.${k}`, lang)}
+                </span>
                 <code class="addr__url">{urls[k]}</code>
                 <span class="addr__actions">
                   <CopyButton text={urls[k]} lang={lang} onToast={onToast} />

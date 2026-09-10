@@ -132,6 +132,7 @@ export const en = {
   "settings.setFrpKeyDispatched": "Key setup window opened; please type it in the console",
   "settings.setFrpKeyHint":
     "Get the key: natfrp.com user center → View Access Key; stored as SAKURA_FRP_KEY in the stack directory .env",
+  "settings.openStackDir": "Open stack directory",
   "settings.frpcDeploy":
     "The frpc client ships with this app (version 0.51.0-sakura-14); no separate download is needed on a new machine. If the binary is missing, download frpc Windows amd64 from the panel \"Software Download\" page and place it as frpc.exe under the install directory resources\\bin or the stack directory",
 
@@ -172,6 +173,36 @@ export const en = {
   "tunnel.dnsFailed": "DNS check failed (network or resolver error); please retry later",
   "tunnel.dnsOkTunnel": "DNS resolution aligned with the tunnel channel",
   "tunnel.dnsOkDirect": "DNS resolution restored for direct access",
+
+  // Domain heartbeat (spec 005)
+  "heartbeat.dotOk": "Reachable",
+  "heartbeat.dotFail": "Unreachable",
+  "heartbeat.kind.ok": "OK",
+  "heartbeat.kind.dns": "DNS resolution failed",
+  "heartbeat.kind.connect": "Connection failed",
+  "heartbeat.kind.tls": "TLS certificate error",
+  "heartbeat.kind.timeout": "Timed out",
+  "heartbeat.kind.status": "HTTP {code}",
+  "heartbeat.scopeNote": "Local view (external reachability may differ)",
+  "settings.heartbeat": "Domain heartbeat",
+  "settings.heartbeatDesc":
+    "Probes the domain every minute; shows a red marker in the address area after 2 consecutive failures, cleared automatically on recovery",
+
+  // Channel checkup (spec 004/005 knowledge reuse)
+  "tunnel.checkup": "Channel checkup",
+  "tunnel.checkupRun": "Run checkup",
+  "tunnel.checkupRunning": "Checking…",
+  "tunnel.check.ok": "OK",
+  "tunnel.check.fail": "Problem",
+  "tunnel.check.dns": "DNS alignment",
+  "tunnel.check.netCategory": "Network category (443 allowed)",
+  "tunnel.check.netPublicWarn": "Public network present; 443 may be blocked",
+  "tunnel.check.tunnel": "Tunnel client",
+  "tunnel.check.tunnelOff": "Inactive (direct mode)",
+  "tunnel.check.caddy": "Local HTTPS service (caddy:443)",
+  "tunnel.check.upstream": "Upstream service (:3001)",
+  "tunnel.check.domain": "Domain end-to-end (local view)",
+  "tunnel.checkupDnsHint": "Not aligned; see the DNS guide above",
 
   // Toasts
   "toast.opFailed": "Operation failed",

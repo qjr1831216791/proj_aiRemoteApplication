@@ -87,6 +87,8 @@ pub struct Settings {
     pub tunnel: Option<TunnelConfig>,
     /// 穿透模式下是否启用运行（AC11 停用语义；未配置时该值无效果）
     pub tunnel_enabled: bool,
+    /// 域名心跳检测（spec 005 AC7）：关闭则不发探测，既有标记冻结
+    pub domain_heartbeat: bool,
 }
 
 impl Default for Settings {
@@ -103,6 +105,7 @@ impl Default for Settings {
             access_channel: AccessChannel::Direct,
             tunnel: None,
             tunnel_enabled: true,
+            domain_heartbeat: true,
         }
     }
 }
@@ -129,6 +132,8 @@ pub struct SettingsPatch {
     pub tunnel: Option<TunnelConfig>,
     /// 穿透启用开关（spec 004 AC11）
     pub tunnel_enabled: Option<bool>,
+    /// 域名心跳开关（spec 005 AC7）
+    pub domain_heartbeat: Option<bool>,
 }
 
 /// scriptsDirOverride 三态反序列化（仅字段出现时被调用）：
@@ -251,6 +256,9 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     if let Some(v) = patch.tunnel_enabled {
         merged.tunnel_enabled = v;
     }
+    if let Some(v) = patch.domain_heartbeat {
+        merged.domain_heartbeat = v;
+    }
     merged
 }
 
@@ -365,6 +373,7 @@ mod tests {
         assert_eq!(d.access_channel, AccessChannel::Direct, "默认通道=直连（兼容既有部署）");
         assert_eq!(d.tunnel, None, "穿透默认未配置（AC7）");
         assert!(d.tunnel_enabled);
+        assert!(d.domain_heartbeat, "心跳默认开（spec 005 AC1）");
     }
 
     #[test]

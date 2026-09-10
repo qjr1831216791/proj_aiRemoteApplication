@@ -5,13 +5,13 @@
 ## 按状态导航
 
 ### 🟡 草稿（draft）
-- [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：周期探测 + 不通红色标记 + 失效分层定责（DNS/本机组件/全链路），口径如实标注不冒充外部视角（Sprint 4，draft 待确认）
+- （暂无）
 
 ### 🔵 已确认（reviewed）
 - [004-tunnel-access](./004-tunnel-access/spec.md) — 内网穿透双通道：直连（DDNS，默认）⇄ 穿透（SakuraFrp 香港节点）用户可切换，隧道进程托管与守护、双向 DNS 切换指引（需求方委托决策，2026-09-09 置 reviewed）
 
 ### 🟠 实现中（in-progress）
-- （暂无）
+- [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）

@@ -7,6 +7,7 @@
 //! - `open_external` / `run_tool` / `open_logs_dir` / `scripts_availability`：低频操作区
 
 use crate::autostart::AutostartContext;
+use crate::heartbeat;
 use crate::lang::{self, LanguageState};
 use crate::network::{self, NetMonitor, NetStatus};
 use crate::orchestrator::{ComponentStatus, Orchestrator};
@@ -357,6 +358,24 @@ $aa=@(Resolve-DnsName -Name {dom} -Type A -Server $ns -ErrorAction SilentlyConti
         return Err("权威 DNS 查询失败：无法获取 NS 记录".into());
     }
     Ok(parsed)
+}
+
+// ── 域名可达性（spec 005）：打开目录 / 即时探测 ─────────────────────────────
+
+/// 打开栈目录（穿透设置指引的「栈目录」超链接目标）
+#[tauri::command]
+pub fn open_stack_dir() -> Result<(), String> {
+    scripts::open_dir(std::path::Path::new(crate::consts::STACK_DIR))
+        .map_err(|code| format!("打开目录失败（退出码 {code}）"))
+}
+
+/// 即时域名探测（「通道体检」消费；独立于 60s 心跳，单次 8s 超时）
+#[tauri::command]
+pub async fn check_domain_health_now() -> Result<heartbeat::ProbeOutcome, String> {
+    use crate::consts::WORKBENCH_URL;
+    tauri::async_runtime::spawn_blocking(|| heartbeat::probe_once(WORKBENCH_URL))
+        .await
+        .map_err(|e| format!("探测线程失败：{e}"))
 }
 
 // ── 单元测试（纯逻辑：停止汇总）────────────────────────────────────────────

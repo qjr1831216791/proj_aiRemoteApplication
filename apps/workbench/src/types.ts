@@ -40,6 +40,7 @@ export interface Settings {
   accessChannel: AccessChannel;
   tunnel: TunnelConfig | null;
   tunnelEnabled: boolean;
+  domainHeartbeat: boolean;
 }
 
 /** 补丁（save_settings 入参；只提交要改的字段） */
@@ -53,6 +54,7 @@ export interface SettingsPatch {
   accessChannel?: AccessChannel;
   tunnel?: TunnelConfig;
   tunnelEnabled?: boolean;
+  domainHeartbeat?: boolean;
 }
 
 /** 隧道运行状态（tunnel://status 载荷；tag="state" camelCase） */
@@ -77,6 +79,25 @@ export type DnsAlignment =
   | { kind: "mismatchedCname"; actual: string }
   | { kind: "noRecord" }
   | { kind: "queryFailed" };
+
+/** 域名心跳快照（domain://health 载荷；healthy 已含 2 次防抖，spec 005 AC6） */
+export type HealthKind = "ok" | "dns" | "connect" | "tls" | "timeout" | "status";
+
+export interface DomainHealth {
+  healthy: boolean;
+  kind: HealthKind;
+  code?: number;
+  latencyMs: number;
+  failures: number;
+  since: number;
+}
+
+/** 单次即时探测（通道体检用） */
+export interface ProbeOutcome {
+  kind: HealthKind;
+  code?: number;
+  latencyMs: number;
+}
 
 /** 三端访问地址（get_urls 载荷） */
 export interface AccessUrls {
