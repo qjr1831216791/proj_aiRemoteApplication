@@ -514,38 +514,50 @@ impl TunnelManager {
     pub fn guard_tick(&self) {
         let (channel, enabled, tunnel_id) = self.channel.channel_state();
         let now = now_ms();
-        let mut g = self.inner.lock().expect("隧道状态锁中毒");
 
-        // 未配置（AC4/AC7）/直连模式（AC8 互斥）/已停用（AC11）：frpc 均不应
-        // 运行——守护不只管拉起，也把实际状态收敛到期望（存活则停止）
-        if tunnel_id.is_none() {
-            self.converge_stop();
+        // 阶段 1：锁外采集（sysinfo 全量刷新/日志文件读取都是重活，禁止持锁执行；
+        // 2026-09-10 死锁复盘：持锁调 restart → start 二次加锁 → 守护线程卡死，
+        // 全部状态查询跟着阻塞——IO 一律在锁外，锁内只做状态读写）
+        let should_run = channel == AccessChannel::Tunnel && enabled && tunnel_id.is_some();
+        let alive = should_run && self.ops.is_running();
+        let health_failures = if alive {
+            self.health_view.as_ref().and_then(|v| v())
+        } else {
+            None
+        };
+        let log_tail = if alive { self.ops.log_tail(8).unwrap_or_default() } else { String::new() };
+
+        // 阶段 2：不应运行的收敛（AC4/AC7/AC8/AC11）——锁外 kill，锁内改状态
+        if !should_run {
+            if alive {
+                log::info!("frpc 不应运行（未配置/非穿透通道/已停用），守护收敛停止");
+                let _ = self.ops.kill();
+            }
+            let mut g = self.inner.lock().expect("隧道状态锁中毒");
             g.last_spawn_ms = None;
-            self.set_state(&mut g, TunnelState::NotConfigured, None, now);
-            return;
-        }
-        if channel != AccessChannel::Tunnel {
-            self.converge_stop();
-            g.last_spawn_ms = None;
-            self.set_state(&mut g, TunnelState::Inactive, None, now);
-            return;
-        }
-        if !enabled {
-            self.converge_stop();
-            g.last_spawn_ms = None;
-            self.set_state(&mut g, TunnelState::Disabled, None, now);
+            let state = if tunnel_id.is_none() {
+                TunnelState::NotConfigured
+            } else if channel != AccessChannel::Tunnel {
+                TunnelState::Inactive
+            } else {
+                TunnelState::Disabled
+            };
+            self.set_state(&mut g, state, None, now);
             return;
         }
 
-        let alive = self.ops.is_running();
-        let should_run = true;
-        let ms_since = g.last_restart_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
+        // 阶段 3：应运行——读取决策输入（锁内快照，毫秒级）
+        let (streak, last_restart_ms, last_spawn_ms) = {
+            let g = self.inner.lock().expect("隧道状态锁中毒");
+            (g.streak, g.last_restart_ms, g.last_spawn_ms)
+        };
 
         if !alive {
-            // AC3：应运行而死亡 → 退避重启（决策为纯函数，此处只做 IO 编排）
+            // AC3：应运行而死亡 → 退避重启（IO 在锁外，写状态在锁内）
+            let ms_since = last_restart_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
             if guard_should_restart(
-                GuardInput { should_run, alive, ms_since_restart: ms_since },
-                g.streak,
+                GuardInput { should_run: true, alive: false, ms_since_restart: ms_since },
+                streak,
                 &self.policy,
             ) {
                 match (self.ops.access_key(), tunnel_id.clone()) {
@@ -556,62 +568,67 @@ impl TunnelManager {
                     }
                     _ => {
                         // 密钥/二进制缺失不再盲目重启：转 Offline + 摘要（AC4）
-                        let detail = self.ops.log_tail(1).unwrap_or_else(|| "access key 或 frpc.exe 缺失".into());
+                        let detail = self
+                            .ops
+                            .log_tail(1)
+                            .unwrap_or_else(|| "access key 或 frpc.exe 缺失".into());
+                        let mut g = self.inner.lock().expect("隧道状态锁中毒");
                         self.set_state(&mut g, TunnelState::Offline, summarize(&detail), now);
                         return;
                     }
                 }
+                let mut g = self.inner.lock().expect("隧道状态锁中毒");
                 g.last_restart_ms = Some(now);
-                g.streak = next_restart_streak(0, g.streak, &self.policy);
+                g.streak = next_restart_streak(0, streak, &self.policy);
                 g.last_spawn_ms = Some(now);
                 self.set_state(&mut g, TunnelState::Starting, None, now);
             } else {
+                let mut g = self.inner.lock().expect("隧道状态锁中毒");
                 self.set_state(&mut g, TunnelState::Offline, None, now);
             }
             return;
         }
 
-        // 存活：宽限期内 Starting，超时 Online（AC2 口径）；稳定期重置退避档。
-        // 会话卡死自愈（spec 005 扩展）：frpc 存活但心跳连续 ≥3 次不可达 →
-        // 进程活着而隧道会话已死（EOF 卡死形态，2026-09-10 实测）→ 自动重启
-        if let Some(view) = &self.health_view {
-            if let Some(failures) = view() {
-                if failures >= SELF_HEAL_FAILURES {
-                    log::warn!(
-                        "心跳连续 {failures} 次不可达且 frpc 存活：判定会话卡死，自动重启"
-                    );
-                    if let Err(e) = self.restart("会话无响应，已自动重启（心跳持续不可达）") {
-                        log::error!("自愈重启失败：{e}");
-                    }
-                    return;
-                }
+        // 存活 + 会话卡死自愈（spec 005 扩展）：frpc 存活但心跳连续 ≥3 次不可达
+        // → 进程活着而隧道会话已死（EOF 卡死形态）→ **锁外**执行 restart
+        //（restart 内部要拿状态锁——持锁调用即死锁，2026-09-10 真机复现）
+        if let Some(f) = health_failures.filter(|f| *f >= SELF_HEAL_FAILURES) {
+            log::warn!("心跳连续 {f} 次不可达且 frpc 存活：判定会话卡死，自动重启");
+            if let Err(e) = self.restart("会话无响应，已自动重启（心跳持续不可达）") {
+                log::error!("自愈重启失败：{e}");
             }
+            return;
         }
-        let since_spawn = g.last_spawn_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
-        let since_spawn = g.last_spawn_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
-        let state = if since_spawn <= FRPC_STARTING_GRACE.as_millis() as u64 {
-            TunnelState::Starting
-        } else {
-            TunnelState::Online
+
+        // 登录实况（frpc 日志判定，修「进程在=在线」的误导：登录需数秒~数十秒，
+        // EOF 重试期间进程活着但隧道未通——需求方 2026-09-10 启动实测）
+        let verdict = classify_log(&log_tail);
+        let since_spawn = last_spawn_ms.map(|t| now.saturating_sub(t)).unwrap_or(u64::MAX);
+        let (state, detail) = match verdict {
+            LogVerdict::Failure => (
+                TunnelState::Starting,
+                Some("节点登录失败，自动重试中".to_string()),
+            ),
+            _ => {
+                let s = if since_spawn <= FRPC_STARTING_GRACE.as_millis() as u64 {
+                    TunnelState::Starting
+                } else {
+                    TunnelState::Online
+                };
+                (s, None)
+            }
         };
-        if let Some(t) = g.last_spawn_ms {
-            let stable = now.saturating_sub(t);
-            if stable > self.policy.stable_reset_ms && g.streak != 0 {
+        let mut g = self.inner.lock().expect("隧道状态锁中毒");
+        if let Some(t) = last_spawn_ms {
+            if now.saturating_sub(t) > self.policy.stable_reset_ms && g.streak != 0 {
                 g.streak = 0;
             }
         }
-        self.set_state(&mut g, state, None, now);
+        self.set_state(&mut g, state, detail, now);
     }
 
-    /// 收敛停止：frpc 不应运行（未配置/非穿透/停用）时存活即杀（幂等）
-    fn converge_stop(&self) {
-        if self.ops.is_running() {
-            log::info!("frpc 不应运行（未配置/非穿透通道/已停用），守护收敛停止");
-            let _ = self.ops.kill();
-        }
-    }
-
-    fn set_state(&self, g: &mut GuardState, state: TunnelState, detail: Option<String>, now: u64) {        let changed = g.status.state != state || g.status.detail != detail;
+    fn set_state(&self, g: &mut GuardState, state: TunnelState, detail: Option<String>, now: u64) {
+        let changed = g.status.state != state || g.status.detail != detail;
         if changed {
             g.status = TunnelStatus { state, detail, since: now };
             self.events.emit_tunnel_status(&g.status);
@@ -621,9 +638,35 @@ impl TunnelManager {
     }
 }
 
+/// frpc 日志尾部判定（进程存活时的登录实况；「进程在 ≠ 隧道通」，
+/// 2026-09-10 启动实测：frpc 启动到登录成功间隔 67 秒，EOF 重试期间更久）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogVerdict {
+    /// 最后一条关键日志是「隧道启动成功」→ 隧道在线
+    Success,
+    /// 最后一条关键日志是「登录节点失败」→ 登录重试中（显示重连中）
+    Failure,
+    /// 无关键日志（刚拉起/日志不可读）→ 按宽限期逻辑
+    Unknown,
+}
+
+/// 从日志尾部逐行取**最后一条**关键记录判定登录实况（纯函数；中英文关键词
+/// 都覆盖——frpc 输出语言随环境）
+pub fn classify_log(tail: &str) -> LogVerdict {
+    let mut verdict = LogVerdict::Unknown;
+    for line in tail.lines() {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("登录节点失败") || lower.contains("login to server failed") {
+            verdict = LogVerdict::Failure;
+        } else if line.contains("隧道启动成功") {
+            verdict = LogVerdict::Success;
+        }
+    }
+    verdict
+}
+
 /// 日志行摘要：截断 + 防密钥意外泄漏（contains key 才整行丢弃，宁缺毋泄）
-fn summarize(line: &str) -> Option<String> {
-    let line = line.trim();
+fn summarize(line: &str) -> Option<String> {    let line = line.trim();
     if line.is_empty() || line.contains(SAKURA_KEY_VAR) {
         return None;
     }
@@ -792,6 +835,21 @@ mod tests {
             9,
             &policy
         ));
+    }
+
+    #[test]
+    fn log_verdict_takes_last_matching_line() {
+        // 真实日志形态（含时间戳与中文）：以最后一条关键记录为准
+        let success_tail = "2026/09/10 09:42:42 [I] 正在连接节点 [frp-can.com, tcp]\n\
+                            2026/09/10 09:42:42 [W] 登录节点失败, 请检查网络连接\n\
+                            HTTPS 隧道启动成功, 绑定到域名 [ai.jackqi.cn]";
+        assert_eq!(classify_log(success_tail), LogVerdict::Success);
+        // EOF 循环：启动成功在前、失败在后 → 以失败为准（重连中）
+        let failure_tail = "HTTPS 隧道启动成功, 绑定到域名 [ai.jackqi.cn]\n\
+                            2026/09/10 09:40:51 [W] 登录节点失败, 请检查网络连接. 错误信息: EOF";
+        assert_eq!(classify_log(failure_tail), LogVerdict::Failure);
+        assert_eq!(classify_log(""), LogVerdict::Unknown);
+        assert_eq!(classify_log("2026/09/10 [I] 检查更新中..."), LogVerdict::Unknown);
     }
 
     #[test]
