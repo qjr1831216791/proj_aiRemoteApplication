@@ -82,9 +82,11 @@
 
 ## 4. 候选方案取证
 
-### 4.1 EasyTier（Rust，Apache-2.0）——主推荐
+### 4.1 EasyTier（Rust，LGPL-3.0）——主推荐
 
-**架构**：去中心化组网，无中心账号体系；无公网 IP 时靠「共享节点」做握手与中继兜底。官方公共节点 `tcp://public.easytier.cn:11010`（**国内域名**），另有活跃的社区自建中转节点（[官方 Discussion #2429](https://github.com/orgs/EasyTier/discussions/2429)）。官方口径 UDP+TCP 双通道对称 NAT 打洞率约 98%（厂商数据，存疑）。
+> **两处事实修正（2026-09-10，spec 007 plan 取证）**：①许可证为 **LGPL-3.0**（2025-06 PR #951 起，非本报告初稿所写 Apache-2.0——官网页脚信息滞后；本项目以独立进程调用不链接，无传染义务）；②**官方不提供维护的公共服务器**（[隐私政策](https://easytier.cn/guide/privacy.html)明示仅发布软件；官方 Web 托管亦因合规收缩），原默认公共节点 `public.easytier.cn` 已 NXDOMAIN（本机 + 223.5.5.5 双源实测）——实际依赖的是社区公益节点（无 SLA）。
+
+**架构**：去中心化组网，无中心账号体系；无公网 IP 时靠「共享节点」做握手与中继兜底。社区自建中转节点活跃（[官方 Discussion #2429](https://github.com/orgs/EasyTier/discussions/2429)，2026-08 仍有新增公益节点）。官方口径 UDP+TCP 双通道对称 NAT 打洞率约 98%（厂商数据，存疑）。
 
 **安全模型**（[secure-mode 官方文档](https://easytier.cn/en/guide/network/secure-mode.html)，2026-09 更新）：
 
@@ -97,7 +99,7 @@
 - **Android 官方 App**：APK 随 GitHub Releases 同发（v2.6.4，Android 7.0+），另有鸿蒙版（[下载页](https://easytier.cn/en/guide/download.html)）——F1 满足；
 - **Windows 无头**：单 exe `easytier-core.exe`，官方支持「安装为 Windows 服务」与 `--no-tun` 模式（[服务文档](https://easytier.cn/guide/network/install-as-a-windows-service.html)）；可被工作台直接 spawn 托管（F4），亦可系统服务；
 - 配置走 TOML 配置文件，`network_secret` 可落配置文件而非命令行（吸取 frp 命令行教训；具体字段 plan 阶段核验），栈目录 ACL 已由 `Protect-StackDir` 收紧；
-- **零成本、零账号**：起步只用官方公共节点即可（F2：出站连接，CGNAT 无碍）。
+- **零成本、零账号**：起步只用社区公益节点即可（F2：出站连接，CGNAT 无碍；多对端可配 + 自建 VPS 升级路径对冲无 SLA 风险）。
 
 **风险**：社区公共节点中继的稳定性无 SLA；项目无外部安全审计、未检索到 CVE（存疑：可能只是没人查）；移动 UDP QoS（§4.2 同样适用）；自组网虚拟 IP 需规划私网段（默认 10.126.126.0/24）避免与局域网冲突。
 

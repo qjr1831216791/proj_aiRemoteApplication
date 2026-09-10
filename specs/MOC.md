@@ -8,10 +8,11 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（secure-mode）替代 frp 零公网暴露 + 停用直连/穿透旧通道（2026-09-10 确认，调研依据 [docs/research/secure-access-alternatives.md](../docs/research/secure-access-alternatives.md)）
+- （暂无）
 
 ### 🟠 实现中（in-progress）
 - [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）
+- [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（secure-mode，社区公共节点）替代 frp 零公网暴露 + 停用直连/穿透旧通道（plan 定稿：easytier-core 以 Windows 服务承载，2026-09-10 起实施）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
@@ -33,7 +34,7 @@
 | Sprint 3 | [004-tunnel-access](./004-tunnel-access/spec.md) | 内网穿透双通道（直连⇄穿透一键切换、DNS 自动暂停/激活、frpc 随包+守护自愈、通道体检）（2026-09-10 验收 done） |
 | Sprint 3 | [005-domain-heartbeat](./005-domain-heartbeat/spec.md) | 域名心跳检测（红绿标记 + 失败分类 + 自愈联动；核心已实现，AC 收口随 Sprint 4） |
 | Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书；2026-09-10 验收 done） |
-| Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道，draft） |
+| Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道，in-progress） |
 
 ## 按主题导航
 
