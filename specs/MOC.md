@@ -5,7 +5,7 @@
 ## 按状态导航
 
 ### 🟡 草稿（draft）
-- （暂无）
+- [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（secure-mode）替代 frp 零公网暴露 + 停用直连/穿透旧通道（2026-09-10 立项，调研依据 [docs/research/secure-access-alternatives.md](../docs/research/secure-access-alternatives.md)）
 
 ### 🔵 已确认（reviewed）
 - （暂无）
@@ -34,11 +34,12 @@
 | Sprint 3 | [004-tunnel-access](./004-tunnel-access/spec.md) | 内网穿透双通道（直连⇄穿透一键切换、DNS 自动暂停/激活、frpc 随包+守护自愈、通道体检）（2026-09-10 验收 done） |
 | Sprint 3 | [005-domain-heartbeat](./005-domain-heartbeat/spec.md) | 域名心跳检测（红绿标记 + 失败分类 + 自愈联动；核心已实现，AC 收口随 Sprint 4） |
 | Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书，in-progress） |
+| Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道，draft） |
 
 ## 按主题导航
 
 - 桌面工作台：[001-desktop-console](./001-desktop-console/spec.md)
-- 网络环境：[002-network-profile](./002-network-profile/spec.md)
+- 网络环境：[002-network-profile](./002-network-profile/spec.md) · [007-mesh-access](./007-mesh-access/spec.md)
 - 凭证维护：[003-ddnsgo-password-reset](./003-ddnsgo-password-reset/spec.md)
 - 装机体验：[006-foolproof-install](./006-foolproof-install/spec.md)
 
