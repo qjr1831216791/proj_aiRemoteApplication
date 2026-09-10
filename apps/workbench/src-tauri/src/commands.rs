@@ -274,6 +274,9 @@ pub async fn switch_channel(
                         None => Err("穿透配置缺失，无法同步 CNAME".into()),
                     },
                     Ac::Direct => dns_api::sync_to_direct(&cred, DOMAIN_ROOT, &sub),
+                    // spec 007 T6 接入组网 DNS 调和（A 记录 upsert 虚拟 IP）；
+                    // 当前 switch_actions 不产出该动作，仅为枚举穷尽
+                    Ac::Mesh => Err("组网通道 DNS 同步待 T6 实现".into()),
                 })
                 .await;
                 match result {

@@ -370,6 +370,8 @@ fn probe_channel_stage(state: &WizardState, settings: &crate::settings::Settings
                 .unwrap_or(false);
             derive_tunnel(sakura, settings.tunnel.is_some())
         }
+        // spec 007 T13 实现组网分支检测（服务/密钥/在线校验）；此前呈待办态
+        Some(AccessChannel::Mesh) => (StageState::Pending, Some("mesh_stage_todo".into())),
     }
 }
 

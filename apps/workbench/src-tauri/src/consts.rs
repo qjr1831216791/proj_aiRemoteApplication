@@ -61,6 +61,18 @@ pub const WINTUN_DLL_NAME: &str = "wintun.dll";
 pub const PACKET_DLL_NAME: &str = "packet.dll";
 /// WinDivert 内核驱动（easytier 包过滤/子网代理用；与 Packet.dll 成对落位）
 pub const WINDIVERT_SYS_NAME: &str = "WinDivert64.sys";
+
+// ── 组网默认参数（spec 007 plan §4.1 MeshConfig 默认值）────────────────────
+
+/// 默认网络名（EasyTier network_name；成员以此 + network_secret 相认）
+pub const DEFAULT_MESH_NETWORK_NAME: &str = "ai-remote";
+/// 默认宿主机虚拟 IP（config.toml 顶层 ipv4，dhcp=false 静态持有）
+pub const DEFAULT_MESH_VIRTUAL_IP: &str = "10.126.126.1";
+/// 默认虚拟网段（网段冲突检测输入；EasyTier 出厂冷门段，plan §7-R7）
+pub const DEFAULT_MESH_VIRTUAL_CIDR: &str = "10.126.126.0/24";
+/// 默认对端节点（社区公益节点，腾讯云上海；无 SLA，多对端可编辑——plan §7-R1。
+/// T2 实测 2026-09-10 连通 46ms/0% 丢包，legacy 形态）
+pub const DEFAULT_MESH_PEERS: &[&str] = &["tcp://sh.vomiku.com:7910"];
 /// 期望 SHA256：官方 Release easytier-windows-x86_64-v2.6.4.zip 内件
 /// （2026-09-10 经 gh 官方通道下载，zip 完整性 unzip -t 通过；镜像通道文件
 /// 与官方不符已弃用——plan §7-R6 教训）

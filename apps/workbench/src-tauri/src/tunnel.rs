@@ -89,6 +89,11 @@ pub fn switch_actions(
             SwitchAction::SyncDns(AccessChannel::Direct),
             SwitchAction::Persist(AccessChannel::Direct),
         ],
+        // spec 007：三通道矩阵（渲染→服务重启→DNS upsert）由 T6 落地；
+        // 此前以「未就绪」拒绝，防前端提前触达产生半途状态
+        AccessChannel::Mesh => {
+            return Err(SwitchReject::NotConfigured { missing: "mesh" });
+        }
     })
 }
 

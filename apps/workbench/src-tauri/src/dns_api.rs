@@ -7,7 +7,7 @@
 //!   TC3 正确性由真机调用验证（签名错则 API 报 AuthFailure）
 //! - 同步失败由调用方降级：不阻断通道切换，检测循环继续显示手动指引
 
-use crate::consts::{DOMAIN, DOMAIN_ROOT, FRPC_ENV_FILE, DEFAULT_STACK_DIR};
+use crate::consts::FRPC_ENV_FILE;
 use crate::tunnel::parse_env_value;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};

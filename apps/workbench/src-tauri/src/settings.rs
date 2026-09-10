@@ -40,13 +40,15 @@ pub enum ExitAction {
     Stop,
 }
 
-/// 访问通道（spec 004 §4.1）：direct = DDNS 直连（默认），tunnel = SakuraFrp 穿透。
-/// 两条通道互斥运行：tunnel 生效时 ddns-go 停止托管，反之亦然（AC5/6/8）。
+/// 访问通道（spec 004 §4.1 + spec 007）：direct = DDNS 直连，tunnel = SakuraFrp
+/// 穿透，mesh = EasyTier 私有组网（007 新增，新装机默认推荐）。
+/// 通道互斥运行：一条生效时其余通道的组件停止托管（004 AC5/6/8）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AccessChannel {
     Direct,
     Tunnel,
+    Mesh,
 }
 
 /// 穿透配置的非敏感部分（spec 004 §4.2：access key 属敏感凭证，
@@ -58,6 +60,33 @@ pub struct TunnelConfig {
     pub tunnel_id: String,
     /// 节点域名（DNS CNAME 对齐目标，如 `frp-can.com`；spec 004 AC12）
     pub node_domain: String,
+}
+
+/// 组网配置的非敏感部分（spec 007 plan §4.1）。network_secret 属敏感凭证，
+/// 经脚本写栈目录 `<stack>/easytier/network-secret`，永不进入本结构/设置
+/// 文件/命令行/日志（AC8）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MeshConfig {
+    /// 网络名（EasyTier network_name；成员以此 + network_secret 相认）
+    pub network_name: String,
+    /// 宿主机虚拟 IP（config.toml 顶层 ipv4，dhcp=false 静态持有）
+    pub virtual_ip: String,
+    /// 虚拟网段 CIDR（保存/切换时与物理网卡网段冲突检测的输入）
+    pub virtual_cidr: String,
+    /// 对端节点列表（默认社区节点，可编辑多条——公共节点无 SLA，冗余对冲）
+    pub peers: Vec<String>,
+}
+
+impl Default for MeshConfig {
+    fn default() -> Self {
+        Self {
+            network_name: crate::consts::DEFAULT_MESH_NETWORK_NAME.to_string(),
+            virtual_ip: crate::consts::DEFAULT_MESH_VIRTUAL_IP.to_string(),
+            virtual_cidr: crate::consts::DEFAULT_MESH_VIRTUAL_CIDR.to_string(),
+            peers: crate::consts::DEFAULT_MESH_PEERS.iter().map(|s| s.to_string()).collect(),
+        }
+    }
 }
 
 /// 全量设置（plan §4 schema；camelCase 序列化，未知字段忽略、缺失字段回默认，
@@ -81,12 +110,22 @@ pub struct Settings {
     pub open_page_on_start: bool,
     /// 脚本目录覆盖：None = 未设置（用内置/开发态路径）
     pub scripts_dir_override: Option<String>,
-    /// 访问通道（spec 004）：默认 direct，兼容既有部署零感知
+    /// 访问通道：新装机默认 mesh（plan §4.1，向导推荐组网分支）；**旧文件缺该
+    /// 字段时 serde 走 `default_access_channel` = direct**——004 前部署升级
+    /// 零感知（两处默认刻意不同，spec 007 §4 兼容约束）
+    #[serde(default = "default_access_channel")]
     pub access_channel: AccessChannel,
     /// 穿透配置：None = 未配置（AC7 切换入口呈引导态，直连行为不受影响）
     pub tunnel: Option<TunnelConfig>,
     /// 穿透模式下是否启用运行（AC11 停用语义；未配置时该值无效果）
     pub tunnel_enabled: bool,
+    /// 组网配置（spec 007：非敏感部分，AC11 设置区编辑；secret 不在此——AC8）
+    pub mesh: MeshConfig,
+    /// 穿透通道已停用（spec 007 AC5：停用后 frpc 不被守护/自启/启动链拉起，
+    /// 重新启用须安全警示确认——公网暴露面回归）
+    pub tunnel_disabled: bool,
+    /// 直连通道已停用（spec 007 AC6：ddns-go 停托管，A 记录按通道态处理）
+    pub direct_disabled: bool,
     /// 域名心跳检测（spec 005 AC7）：关闭则不发探测，既有标记冻结
     pub domain_heartbeat: bool,
     /// HTTPS 栈部署目录（spec 004：用户可配置；输入安装根自动追加
@@ -105,9 +144,12 @@ impl Default for Settings {
             exit_action: ExitAction::Keep,
             open_page_on_start: false,
             scripts_dir_override: None,
-            access_channel: AccessChannel::Direct,
+            access_channel: AccessChannel::Mesh,
             tunnel: None,
             tunnel_enabled: true,
+            mesh: MeshConfig::default(),
+            tunnel_disabled: false,
+            direct_disabled: false,
             domain_heartbeat: true,
             stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
         }
@@ -136,6 +178,12 @@ pub struct SettingsPatch {
     pub tunnel: Option<TunnelConfig>,
     /// 穿透启用开关（spec 004 AC11）
     pub tunnel_enabled: Option<bool>,
+    /// 组网配置写入（spec 007 AC11 设置区编辑保存）
+    pub mesh: Option<MeshConfig>,
+    /// 穿透停用标记（spec 007 AC5 停用编排持久化）
+    pub tunnel_disabled: Option<bool>,
+    /// 直连停用标记（spec 007 AC6）
+    pub direct_disabled: Option<bool>,
     /// 域名心跳开关（spec 005 AC7）
     pub domain_heartbeat: Option<bool>,
     /// 栈目录（spec 004：用户输入安装根，保存时自动规整）
@@ -149,6 +197,12 @@ where
     D: serde::Deserializer<'de>,
 {
     <Option<String>>::deserialize(de).map(Some)
+}
+
+/// accessChannel 字段级 serde 默认（旧文件缺字段 → direct，区别于新装机
+/// Default 的 mesh，见 Settings.access_channel 注释）
+fn default_access_channel() -> AccessChannel {
+    AccessChannel::Direct
 }
 
 /// 加载结果（核心层返回枚举供单测；修复事件由命令/装配层按 backup_path 发出）
@@ -261,6 +315,15 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     }
     if let Some(v) = patch.tunnel_enabled {
         merged.tunnel_enabled = v;
+    }
+    if let Some(v) = patch.mesh.clone() {
+        merged.mesh = v;
+    }
+    if let Some(v) = patch.tunnel_disabled {
+        merged.tunnel_disabled = v;
+    }
+    if let Some(v) = patch.direct_disabled {
+        merged.direct_disabled = v;
     }
     if let Some(v) = patch.domain_heartbeat {
         merged.domain_heartbeat = v;
@@ -385,7 +448,8 @@ mod tests {
         // plan §4：version=1 / language=auto / autostartServices=true /
         // autostartApp=false / linkStartServices=true / exitAction=keep /
         // openPageOnStart=false / scriptsDirOverride=null
-        // spec 004 §4.1：accessChannel=direct / tunnel=null / tunnelEnabled=true
+        // spec 004 §4.1：tunnel=null / tunnelEnabled=true
+        // spec 007 §4.1：新装机默认 mesh + MeshConfig 全默认 + 停用标记 false
         let d = Settings::default();
         assert_eq!(d.version, 1);
         assert_eq!(d.language, LanguageSetting::Auto);
@@ -395,9 +459,19 @@ mod tests {
         assert_eq!(d.exit_action, ExitAction::Keep);
         assert!(!d.open_page_on_start);
         assert_eq!(d.scripts_dir_override, None);
-        assert_eq!(d.access_channel, AccessChannel::Direct, "默认通道=直连（兼容既有部署）");
+        assert_eq!(d.access_channel, AccessChannel::Mesh, "新装机默认组网（plan §4.1）");
         assert_eq!(d.tunnel, None, "穿透默认未配置（AC7）");
         assert!(d.tunnel_enabled);
+        assert_eq!(d.mesh, MeshConfig::default());
+        assert_eq!(d.mesh.network_name, crate::consts::DEFAULT_MESH_NETWORK_NAME);
+        assert_eq!(d.mesh.virtual_ip, crate::consts::DEFAULT_MESH_VIRTUAL_IP);
+        assert_eq!(
+            d.mesh.peers,
+            vec!["tcp://sh.vomiku.com:7910".to_string()],
+            "默认对端=社区节点（T2 实测选定）"
+        );
+        assert!(!d.tunnel_disabled, "穿透默认未停用（AC5 是显式动作）");
+        assert!(!d.direct_disabled);
         assert!(d.domain_heartbeat, "心跳默认开（spec 005 AC1）");
         assert_eq!(d.stack_dir, crate::consts::DEFAULT_STACK_DIR);
     }
@@ -431,9 +505,16 @@ mod tests {
             "\"exitAction\":\"keep\"",
             "\"openPageOnStart\":false",
             "\"scriptsDirOverride\":null",
-            "\"accessChannel\":\"direct\"",
+            "\"accessChannel\":\"mesh\"",
             "\"tunnel\":null",
             "\"tunnelEnabled\":true",
+            "\"mesh\":{",
+            "\"networkName\":\"ai-remote\"",
+            "\"virtualIp\":\"10.126.126.1\"",
+            "\"virtualCidr\":\"10.126.126.0/24\"",
+            "\"peers\":[\"tcp://sh.vomiku.com:7910\"]",
+            "\"tunnelDisabled\":false",
+            "\"directDisabled\":false",
         ] {
             assert!(json.contains(key), "序列化结果缺 {key}：{json}");
         }
@@ -536,9 +617,10 @@ mod tests {
         base.autostart_app = true;
         base.scripts_dir_override = Some("D:\\old".into());
 
-        // 空补丁：原样返回（仅 version 规整）
+        // 空补丁：原样返回（仅 version 规整）；base 默认通道随 007 改为 mesh
         let untouched = apply_patch(&base, &SettingsPatch::default());
         assert_eq!(untouched, base);
+        assert_eq!(untouched.access_channel, AccessChannel::Mesh);
 
         // 部分补丁：只改提交字段
         let patch = SettingsPatch {
@@ -587,7 +669,7 @@ mod tests {
 
         // 空补丁不动
         let untouched = apply_patch(&base, &SettingsPatch::default());
-        assert_eq!(untouched.access_channel, AccessChannel::Direct);
+        assert_eq!(untouched.access_channel, AccessChannel::Mesh, "默认通道（007 起 mesh）");
         assert_eq!(untouched.tunnel, base.tunnel);
         assert!(untouched.tunnel_enabled);
 
@@ -616,7 +698,8 @@ mod tests {
     #[test]
     fn old_settings_file_without_channel_fields_loads_as_direct() {
         // 向后兼容：004 之前的 settings.json（无 accessChannel/tunnel 字段）→ 默认直连，
-        // 既有部署升级零感知（spec 004 §5「兼容性假设」）
+        // 既有部署升级零感知（spec 004 §5「兼容性假设」；007 起新装机 Default=mesh，
+        // 但旧文件缺字段走 serde 字段级默认 direct——两处默认刻意不同）
         let path = temp_settings_path("legacy");
         fs::write(
             &path,
@@ -627,10 +710,69 @@ mod tests {
             LoadOutcome::Loaded(s) => {
                 assert_eq!(s.access_channel, AccessChannel::Direct);
                 assert_eq!(s.tunnel, None);
+                assert_eq!(s.mesh, MeshConfig::default(), "无 mesh 字段回默认");
             }
             other => panic!("应为 Loaded，实际 {other:?}"),
         }
         cleanup(&path);
+    }
+
+    #[test]
+    fn old_004_settings_file_without_mesh_fields_keeps_channel() {
+        // 向后兼容（spec 007 T3）：004 时代的 settings.json（有 accessChannel/tunnel、
+        // 无 mesh/tunnelDisabled/directDisabled）→ 通道与穿透配置原样、新字段回默认
+        let path = temp_settings_path("legacy004");
+        fs::write(
+            &path,
+            r#"{"version":1,"accessChannel":"tunnel","tunnel":{"tunnelId":"29080263","nodeDomain":"frp-can.com"},"tunnelEnabled":true,"domainHeartbeat":true,"stackDir":"D:\\Software\\cloudcli-https"}"#,
+        )
+        .expect("写入失败");
+        match load_from(&path) {
+            LoadOutcome::Loaded(s) => {
+                assert_eq!(s.access_channel, AccessChannel::Tunnel, "显式字段不因 Default 改变");
+                assert_eq!(
+                    s.tunnel.as_ref().unwrap().tunnel_id, "29080263",
+                    "穿透配置保持"
+                );
+                assert_eq!(s.mesh, MeshConfig::default());
+                assert!(!s.tunnel_disabled && !s.direct_disabled);
+            }
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        cleanup(&path);
+    }
+
+    #[test]
+    fn apply_patch_mesh_config_and_disabled_marks() {
+        // spec 007 AC5/AC6/AC11：组网配置编辑与停用标记的补丁合并
+        let base = Settings::default();
+        let custom = MeshConfig {
+            network_name: "office".into(),
+            virtual_ip: "10.200.0.1".into(),
+            virtual_cidr: "10.200.0.0/24".into(),
+            peers: vec!["tcp://a.example.com:11010".into(), "udp://b.example.com:11011".into()],
+        };
+        let patch = SettingsPatch {
+            mesh: Some(custom.clone()),
+            tunnel_disabled: Some(true),
+            direct_disabled: Some(true),
+            ..Default::default()
+        };
+        let merged = apply_patch(&base, &patch);
+        assert_eq!(merged.mesh, custom, "组网配置整块写入");
+        assert!(merged.tunnel_disabled && merged.direct_disabled);
+
+        // 空补丁不动既有值
+        let again = apply_patch(&merged, &SettingsPatch::default());
+        assert_eq!(again.mesh, custom);
+        assert!(again.tunnel_disabled);
+
+        // JSON 侧：mesh 对象 camelCase 可解析
+        let patch: SettingsPatch = serde_json::from_str(
+            r#"{"mesh":{"networkName":"n","virtualIp":"10.0.0.9","virtualCidr":"10.0.0.0/24","peers":["tcp://x:1"]}}"#,
+        )
+        .expect("解析失败");
+        assert_eq!(patch.mesh.as_ref().unwrap().virtual_ip, "10.0.0.9");
     }
 
     #[test]
