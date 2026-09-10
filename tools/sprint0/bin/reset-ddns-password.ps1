@@ -20,7 +20,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('auto', 'zh', 'en')]
-    [string]$Lang = 'auto'
+    [string]$Lang = 'auto',
+    [string]$StackDir = 'D:\Software\cloudcli-https'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,7 +46,6 @@ function ConvertTo-PlainText {
 }
 
 # ---------- 路径与参数常量（与 install-server.ps1 / APP consts.rs 对齐） ----------
-$StackDir = 'D:\Software\cloudcli-https'
 $DdnsExe  = Join-Path $StackDir 'ddns-go.exe'
 $DdnsYaml = Join-Path $StackDir 'ddns-go.yaml'
 $DdnsPort = 9876

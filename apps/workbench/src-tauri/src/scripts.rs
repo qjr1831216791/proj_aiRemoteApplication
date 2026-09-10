@@ -459,7 +459,13 @@ pub struct ToolDispatch {
 }
 
 /// 构造派发计划：可见窗参数 + 提权判定（按脚本契约表 Visibility 推导）
-pub fn tool_plan(kind: ToolKind, opts: ToolOpts, dir: &Path, lang: Lang) -> ToolDispatch {
+pub fn tool_plan(
+    kind: ToolKind,
+    opts: ToolOpts,
+    dir: &Path,
+    lang: Lang,
+    stack_dir: &str,
+) -> ToolDispatch {
     let script = Script::from(kind);
     let mut extra: Vec<&str> = Vec::new();
     if matches!(kind, ToolKind::InstallServer) {
@@ -469,6 +475,14 @@ pub fn tool_plan(kind: ToolKind, opts: ToolOpts, dir: &Path, lang: Lang) -> Tool
         if opts.mirror {
             extra.push("-UseMirror");
         }
+    }
+    // 感知栈目录的脚本跟随用户配置（spec 004：装机/密钥/密码重置写入正确位置）
+    if matches!(
+        kind,
+        ToolKind::InstallHttps | ToolKind::ResetDdnsPassword | ToolKind::SetFrpKey
+    ) {
+        extra.push("-StackDir");
+        extra.push(stack_dir);
     }
     ToolDispatch {
         script,
@@ -849,7 +863,7 @@ mod tests {
     fn tool_plan_install_server_default_and_options() {
         let dir = script_dir("tool");
         // 默认安装/重装：UAC 提权 + -Lang + -NoExit，无 -Update/-UseMirror
-        let plan = tool_plan(ToolKind::InstallServer, ToolOpts::default(), &dir, Lang::Zh);
+        let plan = tool_plan(ToolKind::InstallServer, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
         assert_eq!(plan.script, Script::InstallServer);
         assert!(plan.elevated, "install-server 需 UAC");
         assert!(plan.params.contains("install-server.ps1"), "{}", plan.params);
@@ -858,7 +872,7 @@ mod tests {
 
         // 升级 + 镜像源：两个开关透传
         let opts = ToolOpts { update: true, mirror: true };
-        let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::En);
+        let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::En, DEFAULT_STACK_DIR);
         assert!(plan.params.contains("-Update"), "{}", plan.params);
         assert!(plan.params.contains("-UseMirror"), "{}", plan.params);
         assert!(plan.params.contains("-Lang en"), "{}", plan.params);
@@ -868,16 +882,16 @@ mod tests {
     fn tool_plan_https_and_client_visibility() {
         let dir = script_dir("tool2");
         // 提权类：install-https / enable-https → runas 可见窗（AC19：结尾手工步骤可读）
-        let https = tool_plan(ToolKind::InstallHttps, ToolOpts::default(), &dir, Lang::Zh);
+        let https = tool_plan(ToolKind::InstallHttps, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
         assert!(https.elevated);
         assert!(https.params.contains("install-https.ps1") && https.params.contains("-NoExit"));
 
-        let enable = tool_plan(ToolKind::EnableHttps, ToolOpts::default(), &dir, Lang::Zh);
+        let enable = tool_plan(ToolKind::EnableHttps, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
         assert!(enable.elevated);
         assert!(enable.params.contains("enable-https.ps1"));
 
         // install-client：非 UAC 可见交互窗（spec §4.3 交互式脚本）
-        let client = tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh);
+        let client = tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
         assert!(!client.elevated);
         assert!(client.params.contains("install-client.ps1"));
         assert!(client.params.contains("-NoExit"), "交互脚本窗口结束后保留：{}", client.params);
@@ -888,7 +902,7 @@ mod tests {
     fn tool_plan_reset_ddns_password_is_interactive_visible() {
         // spec 003：密码重置为用户级操作（无 UAC），经可见交互窗执行
         let dir = script_dir("tool3");
-        let plan = tool_plan(ToolKind::ResetDdnsPassword, ToolOpts::default(), &dir, Lang::Zh);
+        let plan = tool_plan(ToolKind::ResetDdnsPassword, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
         assert_eq!(plan.script, Script::ResetDdnsPassword);
         assert!(!plan.elevated, "ddns-go 为用户进程，重置无需 UAC");
         assert_eq!(Script::ResetDdnsPassword.visibility(), Visibility::VisibleInteractive);

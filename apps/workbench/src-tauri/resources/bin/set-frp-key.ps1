@@ -21,7 +21,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('auto', 'zh', 'en')]
-    [string]$Lang = 'auto'
+    [string]$Lang = 'auto',
+    [string]$StackDir = 'D:\Software\cloudcli-https'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,7 +47,6 @@ function ConvertTo-PlainText {
 }
 
 # ---------- 路径常量（与 APP consts.rs 对齐） ----------
-$StackDir = 'D:\Software\cloudcli-https'
 $EnvFile  = Join-Path $StackDir '.env'
 $KeyVar   = 'SAKURA_FRP_KEY'
 

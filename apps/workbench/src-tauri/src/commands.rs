@@ -116,8 +116,12 @@ pub async fn run_tool(
             .unwrap_or_else(|| lang::detail_texts(lang).scripts_dir_unavailable());
         return Err(reason);
     };
+    let stack_dir = ctx
+        .stack_dir
+        .clone()
+        .unwrap_or_else(|| crate::consts::DEFAULT_STACK_DIR.to_string());
     tauri::async_runtime::spawn_blocking(move || {
-        let plan = scripts::tool_plan(kind, opts, &dir, lang);
+        let plan = scripts::tool_plan(kind, opts, &dir, lang, &stack_dir);
         if plan.elevated {
             scripts::shell_execute(Some("runas"), "powershell.exe", &plan.params)
         } else {
