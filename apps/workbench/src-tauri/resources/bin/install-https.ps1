@@ -1,20 +1,26 @@
 ﻿<#
 .SYNOPSIS
-  HTTPS 栈一键安装（半自动）：下载 Caddy + ddns-go，生成 Caddyfile，配好环境并拉起 ddns-go。
+  HTTPS 栈一键安装（半自动）：下载带腾讯云 DNS 插件的 Caddy + ddns-go，生成插件式 Caddyfile，配好环境并拉起 ddns-go。
   Bilingual prompts follow the Windows display language; force with -Lang zh|en.
 
 .DESCRIPTION
   自动覆盖 docs/research/sprint0-cloudcli-lan-deploy.md §9.3 中可脚本化的部分：
     1. 创建 StackDir（默认 D:\Software\cloudcli-https）与 certs\ 子目录
-    2. 从 GitHub Release 下载 caddy.exe 与 ddns-go.exe（已存在则跳过，-Update 升级；
-       GitHub 直连失败可用 -CaddyZip / -DdnsZip 指向手动下载的 zip）
-    3. 生成 Caddyfile（已存在则保持不动）：域名:443 TLS 终结 -> 127.0.0.1:3001
+    2. 下载 caddy.exe（caddyserver.com 按需构建，内置 tencentcloud DNS 插件，ADR-0003）
+       与 ddns-go.exe（GitHub Release；已存在则跳过，-Update 升级；
+       失败可 -CaddyZip / -DdnsZip 指向手动下载的文件——Caddy 侧接受构建站下载的
+       裸 .exe 或自行压缩的 zip）
+    3. 生成插件式 Caddyfile（已存在则保持不动）：域名:443 TLS 终结 -> 127.0.0.1:3001，
+       证书经 DNS-01 自动签发/续期（凭证以 {env.*} 引用不落明文，ADR-0003）
     4. 调用同目录 enable-https.ps1：防火墙放行 443 + 网络改专用 + hosts 钉定
     5. 拉起 ddns-go 并打开管理页 http://127.0.0.1:9876
 
-  剩两步手工活（涉及密钥，刻意不自动化，命令见结尾打印）：
-    a. ddns-go 管理页填腾讯云密钥 + 域名（勿设 httpinterface，§9.5-⑧）
-    b. acme.sh 签发证书（必须 --dns dns_tencent 全名，§9.5-①）
+  剩两步配置活（涉及密钥，走独立脚本 / 装机向导，命令见结尾打印）：
+    a. set-tencent-key.ps1：腾讯云 SecretId/Key 写入栈目录 .env
+    b. config-ddnsgo.ps1：生成 ddns-go.yaml 并拉起（A 记录自动维护）
+  之后启动 Caddy 即自动签发证书（DNS-01 免 80/443 入站，首次约 1~2 分钟）。
+  注意：{env.*} 从 caddy 进程环境读取——工作台托管 / 自启链 / 总控菜单会自动注入；
+  裸跑 caddy.exe 前需自行 set TENCENT_SECRET_ID / TENCENT_SECRET_KEY。
 
   幂等：重复运行跳过已就位的组件，只补缺。需要管理员权限（防火墙 / hosts）。
 
@@ -25,7 +31,7 @@
   powershell -ExecutionPolicy Bypass -File .\install-https.ps1
   powershell -ExecutionPolicy Bypass -File .\install-https.ps1 -Update       # 升级两个 exe
   powershell -ExecutionPolicy Bypass -File .\install-https.ps1 -Domain ai.jackqi.cn -Port 3001
-  powershell -ExecutionPolicy Bypass -File .\install-https.ps1 -CaddyZip C:\Users\me\Downloads\caddy_2.11.4_windows_amd64.zip
+  powershell -ExecutionPolicy Bypass -File .\install-https.ps1 -CaddyZip C:\Users\me\Downloads\caddy_with_tencentcloud.exe
 #>
 [CmdletBinding()]
 param(
@@ -61,6 +67,12 @@ $ProgressPreference = 'SilentlyContinue'
 
 # GitHub API 必须带 User-Agent，否则 403
 $ghHeaders = @{ 'User-Agent' = 'sprint0-install-https' }
+
+# Caddy 插件构建（ADR-0003）：caddyserver.com 按需编译，插件版本锁定；
+# 升级 = 显式改这里（构建参数随 manifest 登记，见 specs/006）
+$CaddyPluginModule = 'github.com/caddy-dns/tencentcloud@v0.4.3'
+$CaddyBuildUrl = "https://caddyserver.com/api/download?os=windows&arch=amd64&p=$([uri]::EscapeDataString($CaddyPluginModule))"
+$CaddyManualPage = 'https://caddyserver.com/download'
 
 # ---------- 0. 管理员检查 ----------
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
@@ -122,6 +134,59 @@ function Install-StackComponent {
     }
 }
 
+# ---------- Caddy 插件构建下载（caddyserver.com 按需编译，ADR-0003）----------
+function Install-CaddyPluginBuild {
+    param(
+        [string]$ExeName,          # 落位文件名（caddy.exe）
+        [string]$LocalPkg,         # 手动兜底：本地 zip 或构建站下载的裸 exe
+        [switch]$UpdateSwitch
+    )
+    $dest = Join-Path $StackDir $ExeName
+    if ((Test-Path $dest) -and -not $UpdateSwitch) {
+        Write-Ok (T "Caddy 已存在，跳过（升级：加 -Update 重跑；DNS 插件随构建内置）" "Caddy already present, skipped (to upgrade: re-run with -Update; the DNS plugin ships inside this build)")
+        return $true
+    }
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('sprint0-' + [GUID]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $tmp | Out-Null
+    try {
+        $downloaded = ''
+        if ($LocalPkg) {
+            if (-not (Test-Path $LocalPkg)) { throw (T "找不到 $LocalPkg" "Not found: $LocalPkg") }
+            if ([IO.Path]::GetExtension($LocalPkg) -ieq '.exe') {
+                $downloaded = $LocalPkg            # 构建站下载的裸 exe 直接落位
+            } else {
+                $extract = Join-Path $tmp 'x'
+                Expand-Archive -Path $LocalPkg -DestinationPath $extract -Force
+                $found = Get-ChildItem -Path $extract -Recurse -Filter $ExeName | Select-Object -First 1
+                if (-not $found) { throw "no $ExeName inside the archive" }
+                $downloaded = $found.FullName
+            }
+        } else {
+            Write-Info (T "请求按需构建（$CaddyPluginModule，云端编译需数分钟、下载较慢，请耐心等待）..." "Requesting on-demand build ($CaddyPluginModule; cloud compilation takes minutes and the download is slow, please wait)...")
+            $downloaded = Join-Path $tmp 'caddy-build.exe'
+            Invoke-WebRequest -Uri $CaddyBuildUrl -OutFile $downloaded -TimeoutSec 1800 -UseBasicParsing
+        }
+        # 完整性粗检：必须是 Windows PE（MZ 头）且体积合理，防止把错误页当 exe 落位
+        if ((Get-Item $downloaded).Length -lt 10MB) { throw 'downloaded file is too small to be caddy.exe' }
+        $fs = [IO.File]::OpenRead($downloaded)
+        try {
+            $head = New-Object byte[] 2
+            $null = $fs.Read($head, 0, 2)
+            if ([Text.Encoding]::ASCII.GetString($head) -ne 'MZ') { throw 'downloaded file is not a Windows executable' }
+        } finally { $fs.Close() }
+        Copy-Item -Path $downloaded -Destination $dest -Force
+        Write-Ok (T "Caddy（tencentcloud 插件版）-> $dest（$([math]::Round((Get-Item $dest).Length / 1MB, 1)) MB）" "Caddy (tencentcloud plugin build) -> $dest ($([math]::Round((Get-Item $dest).Length / 1MB, 1)) MB)")
+        return $true
+    } catch {
+        Write-Bad (T "Caddy 安装失败：$($_.Exception.Message)" "Caddy install failed: $($_.Exception.Message)")
+        Write-Info (T "构建站不可达时：浏览器打开下载页（Windows amd64 + 插件 $CaddyPluginModule），把得到的 exe 按下一步提示重跑本脚本加 -CaddyZip <文件路径>" "If the build service is unreachable: open the download page in a browser (Windows amd64 + plugin $CaddyPluginModule), then re-run with -CaddyZip <path-to-exe>")
+        Write-Info (T "    手动下载页：$CaddyManualPage" "    Manual download page: $CaddyManualPage")
+        return $false
+    } finally {
+        Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ---------- 1. 目录 ----------
 Write-Step (T '步骤 1/5：创建栈目录' 'Step 1/5: Creating stack directories')
 New-Item -ItemType Directory -Path $StackDir -Force | Out-Null
@@ -129,11 +194,9 @@ New-Item -ItemType Directory -Path (Join-Path $StackDir 'certs') -Force | Out-Nu
 Write-Ok (T "栈目录就绪：$StackDir（含 certs\，证书将放这里）" "Stack directory ready: $StackDir (certs\ included; certificates go there)")
 Write-Info (T '此目录今后含密钥与证书私钥，勿分发（§9.1）' 'It will hold secrets and private keys from now on - do not distribute (see deploy doc section 9.1)')
 
-# ---------- 2. 下载 caddy.exe / ddns-go.exe ----------
-Write-Step (T '步骤 2/5：安装 Caddy 与 ddns-go（GitHub Release，幂等）' 'Step 2/5: Installing Caddy and ddns-go (GitHub releases, idempotent)')
-$caddyOk = Install-StackComponent -Label 'Caddy'   -Repo 'caddyserver/caddy' -AssetPattern 'windows_amd64\.zip$' `
-    -ExeName 'caddy.exe'   -ZipArg '-CaddyZip' -LocalZip $CaddyZip `
-    -ReleasesPage 'https://github.com/caddyserver/caddy/releases/latest'
+# ---------- 2. 下载 caddy.exe（插件构建）/ ddns-go.exe ----------
+Write-Step (T '步骤 2/5：安装 Caddy（tencentcloud 插件构建）与 ddns-go（幂等）' 'Step 2/5: Installing Caddy (tencentcloud build) and ddns-go (idempotent)')
+$caddyOk = Install-CaddyPluginBuild -ExeName 'caddy.exe' -LocalPkg $CaddyZip -UpdateSwitch:$Update
 $ddnsOk  = Install-StackComponent -Label 'ddns-go' -Repo 'jeessy2/ddns-go'   -AssetPattern 'windows_(x86_64|x64)\.zip$' `
     -ExeName 'ddns-go.exe' -ZipArg '-DdnsZip'  -LocalZip $DdnsZip `
     -ReleasesPage 'https://github.com/jeessy2/ddns-go/releases/latest'
@@ -147,18 +210,22 @@ if (Test-Path $caddyfile) {
     Write-Ok (T "Caddyfile 已存在：$caddyfile（如需改域名/端口请手动编辑）" "Caddyfile already exists: $caddyfile (edit it manually to change domain/port)")
 } else {
     # 变量后紧跟冒号必须写 ${Domain}（§9.5-④ 作用域语法坑）
+    # 插件式 TLS（ADR-0003）：DNS-01 自动签发/续期；凭证经 {env.*} 引用不落明文，
+    # 由工作台托管 / 自启链 / 总控菜单在 spawn 时从栈 .env 注入
     $lines = @(
         '{',
         '    auto_https disable_redirects',
         '}',
         '',
         "${Domain}:443 {",
-        "    tls `"$certCer`" `"$certKey`"",
+        '    tls {',
+        '        dns tencentcloud {env.TENCENT_SECRET_ID} {env.TENCENT_SECRET_KEY}',
+        '    }',
         '    reverse_proxy 127.0.0.1:' + $Port,
         '}'
     )
     Set-Content -Path $caddyfile -Value $lines -Encoding ascii
-    Write-Ok (T "已生成：$caddyfile（${Domain}:443 -> 127.0.0.1:${Port}）" "Generated: $caddyfile (${Domain}:443 -> 127.0.0.1:${Port})")
+    Write-Ok (T "已生成插件式 Caddyfile：$caddyfile（${Domain}:443 -> 127.0.0.1:${Port}，证书自动签发）" "Generated plugin-style Caddyfile: $caddyfile (${Domain}:443 -> 127.0.0.1:${Port}, certificate auto-issued)")
 }
 
 # ---------- 4. HTTPS 环境（防火墙 / 专用网络 / hosts）----------
@@ -185,31 +252,31 @@ if (Get-NetTCPConnection -LocalPort 9876 -State Listen -ErrorAction SilentlyCont
 }
 
 # ---------- 汇总 ----------
-$certReady = (Test-Path $certCer) -and (Test-Path $certKey)
+$legacyCerts = (Test-Path $certCer) -and (Test-Path $certKey)
+$isPluginCaddyfile = $false
+if (Test-Path $caddyfile) {
+    $isPluginCaddyfile = Select-String -Path $caddyfile -Pattern 'dns\s+tencentcloud' -Quiet
+}
 Write-Host ''
 Write-Host (T '==================== HTTPS 栈安装完成 ====================' '==================== HTTPS stack installed ====================') -ForegroundColor Magenta
 if ($caddyOk -and $ddnsOk) {
-    Write-Host (T '  已就位：caddy.exe / ddns-go.exe / Caddyfile / 防火墙 443 / hosts 钉定' '  In place: caddy.exe / ddns-go.exe / Caddyfile / firewall 443 / hosts pinning')
+    Write-Host (T '  已就位：caddy.exe（tencentcloud 插件版）/ ddns-go.exe / Caddyfile / 防火墙 443 / hosts 钉定' '  In place: caddy.exe (tencentcloud build) / ddns-go.exe / Caddyfile / firewall 443 / hosts pinning')
 } else {
     Write-Host (T '  有组件未就位（见上方 [X ] 行），按提示补齐后重跑本脚本' '  Some components missing (see the [X ] lines above); fix and re-run this script')
 }
 Write-Host ''
-if ($certReady) {
-    Write-Host (T '  证书已存在，无需重签；直接启动整栈：总控菜单选项 1，或双击 autostart-on.bat' '  Certificates already present, no need to re-issue; start the stack via menu option 1 or autostart-on.bat')
+if ($legacyCerts -and -not $isPluginCaddyfile) {
+    Write-Host (T '  检测到旧版证书链（acme.sh 签发）且既有 Caddyfile 原样保留——现有部署不受影响，无需任何动作（ADR-0003 迁移为可选）' '  Legacy certificate chain (acme.sh) detected and the existing Caddyfile is untouched - your deployment is unaffected, nothing to do (ADR-0003 migration is optional)')
 } else {
-    Write-Host (T '  剩两步手工活（涉及密钥，刻意不自动化）：' 'Two manual steps remain (they involve secrets, deliberately not automated):')
-    Write-Host (T '  1) ddns-go 管理页（浏览器已打开）：服务商=腾讯云、填 SecretId/SecretKey' '  1) ddns-go admin page (opened in browser): provider = Tencent Cloud, enter SecretId/SecretKey')
-    Write-Host (T "     （来自项目根 .env）、IPv4 来源选网卡 WLAN、域名 $Domain，保存即建/更新 A 记录" "     (from the project .env), IPv4 from NIC WLAN, domain $Domain; saving creates/updates the A record")
-    Write-Host (T '     [!] 不要设置"HTTP 绑定网卡"（httpinterface）相关选项 —— 部署文档 §9.5-⑧' '     [!] Do NOT set the "HTTP bind NIC" (httpinterface) option - deploy doc section 9.5-8')
+    Write-Host (T '  新栈剩两步配置（涉及密钥，走独立脚本；工作台装机向导会自动代劳）：' '  Two configuration steps remain for the new stack (they involve secrets; the workbench install wizard automates them):')
+    Write-Host (T '  1) 写入腾讯云密钥（SecretId/SecretKey，不回显输入）：' '  1) Store the Tencent Cloud key (SecretId/SecretKey, hidden input):')
+    Write-Host     '     powershell -ExecutionPolicy Bypass -File .\set-tencent-key.ps1' -ForegroundColor Yellow
+    Write-Host (T '  2) 生成 ddns-go 配置并拉起（A 记录自动跟随公网 IP，免管理页手工配置）：' '  2) Generate the ddns-go config and start it (the A record follows the public IP automatically, no manual admin-page setup):')
+    Write-Host     ('     powershell -ExecutionPolicy Bypass -File .\config-ddnsgo.ps1 -Domain ' + $Domain) -ForegroundColor Yellow
     Write-Host ''
-    Write-Host (T '  2) Git Bash 里签发证书（先 export Tencent_SecretId / Tencent_SecretKey）：' '  2) Issue the certificate in Git Bash (export Tencent_SecretId / Tencent_SecretKey first):')
-    Write-Host     "     acme.sh --issue --dns dns_tencent -d $Domain --server letsencrypt" -ForegroundColor Yellow
-    Write-Host     ('     acme.sh --install-cert -d ' + $Domain + ' --ecc --fullchain-file ' + $certCer + `
-                    ' --key-file ' + $certKey + ' --reloadcmd "' + (Join-Path $StackDir 'caddy.exe') + ' reload --config ' + $caddyfile + '"') -ForegroundColor Yellow
-    Write-Host (T '     [!] 必须传全名 --dns dns_tencent（不是 tencent / dnspod）—— 部署文档 §9.5-①' '     [!] The full name --dns dns_tencent is required (not tencent / dnspod) - deploy doc section 9.5-1')
-    Write-Host (T '     [!] 此时 Caddy 尚未运行，install-cert 的 reloadcmd 报错可忽略（证书已落位）' '     [!] Caddy is not running yet; an error from install-cert reloadcmd can be ignored (the cert is in place)')
-    Write-Host ''
-    Write-Host (T '  然后启动：总控菜单选项 1（start-here.bat），或双击 bin\autostart-on.bat 注册开机自启' '  Then start the stack: menu option 1 (start-here.bat), or double-click bin\autostart-on.bat for autostart')
+    Write-Host (T '  然后启动：总控菜单选项 1（start-here.bat）/ 工作台装机向导 / 双击 bin\autostart-on.bat。' '  Then start: menu option 1 (start-here.bat) / the workbench install wizard / double-click bin\autostart-on.bat.')
+    Write-Host (T '  Caddy 首次启动自动签发证书（DNS-01，免 80/443 入站，约 1~2 分钟），此后自动续期' '  On first start Caddy issues the certificate automatically (DNS-01, no inbound 80/443 needed, about 1-2 minutes), then renews itself')
+    Write-Host (T '  [!] 密钥经 {env.*} 引用不落明文：工作台/菜单/自启链启动时会自动注入环境；如需裸跑 caddy.exe，请先自行 set TENCENT_SECRET_ID / TENCENT_SECRET_KEY' '  [!] Keys are referenced via {env.*} (never plaintext): the workbench/menu/autostart chain injects them on start; for a bare caddy.exe run, set TENCENT_SECRET_ID / TENCENT_SECRET_KEY yourself first')
 }
 Write-Host ''
 Write-Host (T "  验证：curl https://$Domain 返回 200；手机同 WiFi 打开应见可信锁标" "  Verify: curl https://$Domain returns 200; the phone on the same Wi-Fi should show a trusted padlock")
