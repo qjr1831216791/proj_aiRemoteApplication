@@ -137,6 +137,34 @@ export const zh = {
   "settings.stackDirSaved": "部署目录已保存，重启工作台后生效",
   "settings.stackDirEmpty": "部署目录不能为空",
 
+  // 组网设置（spec 007 AC11）
+  "settings.mesh": "组网设置（EasyTier）",
+  "settings.meshDesc":
+    "组网通道参数。网络名 + 密钥决定虚拟网络成员；对端节点填 EasyTier 公共服务器地址（每行一条）。修改保存后需「应用配置并重启服务」生效。",
+  "settings.meshName": "网络名",
+  "settings.meshIp": "本机虚拟 IP",
+  "settings.meshIpPlaceholder": "如 10.126.10.1",
+  "settings.meshCidr": "虚拟网段",
+  "settings.meshPeers": "对端节点（每行一条）",
+  "settings.meshPeersPlaceholder": "如 tcp://public.kkrainbow.top:11010",
+  "settings.meshNameRequired": "网络名不能为空",
+  "settings.meshIpInvalid": "虚拟 IP 格式无效（应为 IPv4）",
+  "settings.meshCidrInvalid": "虚拟网段格式无效（应为 CIDR，如 10.126.10.0/24）",
+  "settings.meshIpNotInCidr": "虚拟 IP 不在虚拟网段内",
+  "settings.meshPeersInvalid": "对端节点不能为空，且每条须为「协议://地址」形态（如 tcp://host:port）",
+  "settings.meshSaved": "组网配置已保存（应用配置并重启服务后生效）",
+  "settings.meshSecretHint":
+    "组网密钥不经程序输入框：点右侧按钮在弹出的控制台输入，脚本直写栈目录 network-secret 文件（不回显、不落日志、不进设置文件）",
+  "settings.meshSecretBtn": "写入组网密钥…",
+  "settings.meshSecretDispatched": "密钥设置窗口已打开，请在弹出的控制台中输入",
+  "settings.meshServiceHint": "服务管理（以下操作均需管理员授权）：",
+  "settings.meshInstallBtn": "安装/刷新服务",
+  "settings.meshInstallDone": "组网服务安装已派发（UAC 通过后数秒内状态自动刷新）",
+  "settings.meshApplyBtn": "应用配置并重启服务",
+  "settings.meshApplyDone": "组网配置应用已派发（UAC 通过后数秒内状态自动刷新）",
+  "settings.meshUninstallBtn": "卸载服务",
+  "settings.meshUninstallDone": "组网服务卸载已派发",
+
   // 穿透通道（spec 004）
   "tunnel.title": "访问通道",
   "tunnel.channelLabel": "当前通道",
@@ -208,8 +236,73 @@ export const zh = {
   "tunnel.check.domain": "域名全链路（本机视角）",
   "tunnel.checkupDnsHint": "未对齐，见上方 DNS 指引",
   "tunnel.ddnsOffInTunnel": "穿透模式下已停用（通道互斥，DNS 由隧道自动管理）",
+  "tunnel.ddnsOffInMesh": "组网模式下已停用（通道互斥，DNS 由组网通道持有）",
   "tunnel.restart": "重启隧道",
   "tunnel.restarted": "隧道已重启（本机 DNS 缓存已刷新），正在重新登录",
+
+  // 组网通道（spec 007）
+  "tunnel.channelMesh": "组网（EasyTier）",
+  "tunnel.switchToMesh": "切换到组网",
+  "tunnel.confirmTitleMesh": "确认切换到组网通道？",
+  "tunnel.confirmStepsMesh":
+    "本机将：停止 frpc 与 ddns-go 托管（三通道互斥），并确保 EasyTier 组网服务运行。DNS 的 A 记录将指向虚拟 IP {ip}（切换后本页会显示指引）。访客设备需加入同一组网才可访问。",
+  "tunnel.dnsGuideMesh":
+    "DNS 待建立：在腾讯云 DNS 控制台为 ai.jackqi.cn 添加 A 记录指向虚拟 IP：{target}（公共解析生效最长需等一个 TTL，约 10 分钟）",
+  "tunnel.dnsGuideFromMesh":
+    "DNS 待恢复：域名仍指向组网虚拟 IP {ip}。当前通道不需要该记录，请到腾讯云 DNS 控制台删除或改值（直连下 ddns-go 会自动维护正确值）",
+  "tunnel.dnsMismatchA":
+    "A 记录不符：当前 {actual}，组网通道应为 {target}（虚拟 IP），请在腾讯云 DNS 控制台修正",
+  "tunnel.dnsCnameLeftMesh":
+    "检测到 CNAME 记录（指向 {actual}）：组网通道不应保留 CNAME（属旁路暴露面），请删除该记录，A 记录指向虚拟 IP",
+  "tunnel.check.mesh": "组网服务/对端",
+  "tunnel.check.netNaMesh": "组网访客经虚拟网络到达，不经物理网络入站，此项不影响",
+
+  // 组网状态区（spec 007；detail 为 Rust 侧稳定码）
+  "mesh.statusLabel": "组网状态",
+  "mesh.state.online": "在线",
+  "mesh.state.connecting": "连接中",
+  "mesh.state.offline": "离线",
+  "mesh.state.notConfigured": "未配置",
+  "mesh.state.inactive": "未启用",
+  "mesh.code.secret_missing":
+    "组网密钥未写入：请到「设置 → 组网」运行写入密钥脚本（写入后无需重启）",
+  "mesh.code.service_missing": "组网服务未安装：请到「设置 → 组网」安装服务（需管理员）",
+  "mesh.code.service_stopped": "组网服务已停止：点右侧按钮应用配置并重启（需管理员）",
+  "mesh.code.service_disabled": "组网服务启动类型已被禁用：请重新安装服务恢复",
+  "mesh.code.rpc_unreachable": "组网进程在运行但状态接口未就绪（刚启动或异常），稍候自动刷新",
+  "mesh.peersLabel": "成员设备",
+  "mesh.peerLocal": "本机",
+  "mesh.noPeers": "暂无其他成员设备在线：请在成员设备安装 EasyTier 客户端并加入同一网络",
+  "mesh.apply": "应用配置并重启服务（管理员）",
+  "mesh.applying": "派发中…",
+  "mesh.applied": "组网配置已应用，服务重启中（UAC 通过后数秒内状态自动刷新）",
+
+  // 旧通道停用（spec 007 AC5/AC6）
+  "channel.disabled.title": "旧通道停用（直连/穿透）",
+  "channel.disabled.desc":
+    "停用后对应客户端不再被拉起/自启，通道不可切换（重新启用 = 主界面切换回该通道，附安全警示确认）。建议组网稳定运行后再停用。",
+  "channel.disabled.tunnelName": "穿透（SakuraFrp）",
+  "channel.disabled.directName": "直连（DDNS）",
+  "channel.disabled.activeNow": "现役",
+  "channel.disabled.idleBadge": "可用",
+  "channel.disabled.disabledBadge": "已停用",
+  "channel.disabled.activeHint": "现役通道不可停用：请先在主界面切换到其他通道",
+  "channel.disabled.reenableHint": "已停用：到主界面「访问通道」切换回该通道即可重新启用",
+  "channel.disabled.reenableRisk":
+    "注意：该通道此前已被停用——重新启用会恢复公网暴露面。若停用出于安全考虑，请确认了解风险后再继续。",
+  "channel.disabled.disableTunnel": "停用穿透",
+  "channel.disabled.disableDirect": "停用直连",
+  "channel.disabled.confirmTunnel":
+    "停用穿透：frpc 不再被拉起/自启；穿透配置保留，但重新启用须再次确认。SAKURA_FRP_KEY 仍留在栈目录 .env，建议停用后清除（见下方按钮）。",
+  "channel.disabled.confirmDirect":
+    "停用直连：ddns-go 不再被拉起/自启，A 记录将不再被自动维护。",
+  "channel.disabled.deleteA": "同时删除 DNS A 记录（ai.jackqi.cn）",
+  "channel.disabled.doneTunnel": "穿透通道已停用",
+  "channel.disabled.doneDirect": "直连通道已停用",
+  "channel.disabled.clearKeyHint":
+    "穿透已停用：建议清除栈目录 .env 中的 SAKURA_FRP_KEY（在弹出的窗口中确认执行）",
+  "channel.disabled.clearKeyBtn": "清除 SakuraFrp 密钥…",
+  "channel.disabled.clearKeyDone": "清除命令已执行，请在弹出的窗口中确认结果",
 
   // 装机向导（spec 006）
   "wizard.notice": "检测到本机尚未完成装机：按向导走完即可解锁局域网/域名访问。",

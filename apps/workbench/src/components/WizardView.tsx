@@ -11,6 +11,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api, onWizardChanged } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
 import type {
+  MeshStatus,
   Settings,
   StageState,
   StageStatus,
@@ -24,6 +25,8 @@ export interface WizardViewProps {
   lang: Lang;
   settings: Settings | null;
   tunnelStatus: TunnelStatus | null;
+  /** 组网运行状态（spec 007 T13：channel 阶段组网分支检测源） */
+  meshStatus: MeshStatus | null;
   /** AC14：组件卡「去安装」跳转时定位的阶段 */
   focusStage: WizardStageId | null;
   onToast: (text: string, kind?: "info" | "success" | "error") => void;

@@ -11,6 +11,7 @@ import type {
   DomainHealth,
   ExternalKind,
   LanguageSetting,
+  MeshStatus,
   NetStatus,
   NetCategory,
   ProbeOutcome,
@@ -58,9 +59,22 @@ export const api = {
 
   /** 隧道状态快照（spec 004；此后以 tunnel://status 事件为准） */
   getTunnelStatus: () => invoke<TunnelStatus>("get_tunnel_status"),
-  /** 通道切换（AC5/6）：前置校验失败 → Err（未配置/已处于目标通道） */
+  /** 组网状态快照（spec 007；此后以 mesh://status 事件为准） */
+  getMeshStatus: () => invoke<MeshStatus>("mesh_status"),
+  /** 通道切换（AC5/6 + 007 mesh）：前置校验失败 → Err（未配置/已处于目标通道/组网未就绪） */
   switchChannel: (target: AccessChannel) =>
     invoke<Settings>("switch_channel", { target }),
+  /** 组网配置生效（AC1/AC9）：渲染 → 校验 → 落位 → UAC install/restart */
+  meshApplyConfig: () => invoke<void>("mesh_apply_config"),
+  /** 安装/刷新组网服务（AC3 前置；幂等建档，强制 install 动作） */
+  meshInstallService: () => invoke<void>("mesh_install_service"),
+  /** 卸载组网服务（停用 mesh 清理路径） */
+  meshUninstallService: () => invoke<void>("mesh_uninstall_service"),
+  /** 停用旧通道（007 AC5/AC6）：前置非现役校验在 Rust 侧；返回更新后设置 */
+  disableLegacyChannel: (target: "tunnel" | "direct", deleteA: boolean) =>
+    invoke<Settings>("disable_legacy_channel", { target, deleteA }),
+  /** 清除 SakuraFrp 访问密钥（停用穿透收尾，AC5）：拉起 clear-frp-key.ps1 */
+  clearFrpKey: () => invoke<void>("clear_frp_key"),
   /** 穿透启用开关（AC11） */
   setTunnelEnabled: (enabled: boolean) =>
     invoke<Settings>("set_tunnel_enabled", { enabled }),
@@ -102,6 +116,11 @@ export function onStatusChanged(
 /** 隧道状态事件（spec 004：守护线程 5s 收敛驱动，变化才发） */
 export function onTunnelStatus(cb: (status: TunnelStatus) => void): Promise<() => void> {
   return listen<TunnelStatus>("tunnel://status", (e) => cb(e.payload));
+}
+
+/** 组网状态事件（spec 007：观察者 5s 探询，变化才发；载荷同 mesh_status） */
+export function onMeshStatus(cb: (status: MeshStatus) => void): Promise<() => void> {
+  return listen<MeshStatus>("mesh://status", (e) => cb(e.payload));
 }
 
 /** 域名心跳事件（spec 005：60s 周期探测，载荷 healthy 已含 2 次防抖） */

@@ -138,6 +138,34 @@ export const en = {
   "settings.stackDirSaved": "Deploy directory saved; restart the app to apply",
   "settings.stackDirEmpty": "Deploy directory must not be empty",
 
+  // Mesh settings (spec 007 AC11)
+  "settings.mesh": "Mesh settings (EasyTier)",
+  "settings.meshDesc":
+    "Mesh channel parameters. Network name + secret define the virtual network members; peers are EasyTier public server addresses (one per line). After saving, use \"Apply config & restart service\" to take effect.",
+  "settings.meshName": "Network name",
+  "settings.meshIp": "Local virtual IP",
+  "settings.meshIpPlaceholder": "e.g. 10.126.10.1",
+  "settings.meshCidr": "Virtual subnet",
+  "settings.meshPeers": "Peers (one per line)",
+  "settings.meshPeersPlaceholder": "e.g. tcp://public.kkrainbow.top:11010",
+  "settings.meshNameRequired": "Network name must not be empty",
+  "settings.meshIpInvalid": "Invalid virtual IP (must be IPv4)",
+  "settings.meshCidrInvalid": "Invalid virtual subnet (must be CIDR, e.g. 10.126.10.0/24)",
+  "settings.meshIpNotInCidr": "Virtual IP is not inside the virtual subnet",
+  "settings.meshPeersInvalid": "Peers must not be empty; each entry must look like scheme://host (e.g. tcp://host:port)",
+  "settings.meshSaved": "Mesh configuration saved (applies after \"Apply config & restart service\")",
+  "settings.meshSecretHint":
+    "The mesh secret never goes through an app input: click the button on the right and type it in the popped-up console; the script writes it straight into the network-secret file in the stack directory (hidden input, never logged, never in the settings file)",
+  "settings.meshSecretBtn": "Write mesh secret…",
+  "settings.meshSecretDispatched": "Secret setup window opened; please type it in the console",
+  "settings.meshServiceHint": "Service management (all actions below need admin approval):",
+  "settings.meshInstallBtn": "Install / refresh service",
+  "settings.meshInstallDone": "Mesh service install dispatched (status refreshes within seconds after UAC approval)",
+  "settings.meshApplyBtn": "Apply config & restart service",
+  "settings.meshApplyDone": "Mesh config apply dispatched (status refreshes within seconds after UAC approval)",
+  "settings.meshUninstallBtn": "Uninstall service",
+  "settings.meshUninstallDone": "Mesh service uninstall dispatched",
+
   // Tunnel channel (spec 004)
   "tunnel.title": "Access Channel",
   "tunnel.channelLabel": "Current channel",
@@ -209,8 +237,73 @@ export const en = {
   "tunnel.check.domain": "Domain end-to-end (local view)",
   "tunnel.checkupDnsHint": "Not aligned; see the DNS guide above",
   "tunnel.ddnsOffInTunnel": "Stopped in tunnel mode (channels are mutually exclusive; DNS is managed by the tunnel)",
+  "tunnel.ddnsOffInMesh": "Stopped in mesh mode (channels are mutually exclusive; DNS belongs to the mesh channel)",
   "tunnel.restart": "Restart tunnel",
   "tunnel.restarted": "Tunnel restarted (local DNS cache flushed); re-logging in",
+
+  // Mesh channel (spec 007)
+  "tunnel.channelMesh": "Mesh (EasyTier)",
+  "tunnel.switchToMesh": "Switch to mesh",
+  "tunnel.confirmTitleMesh": "Switch to the mesh channel?",
+  "tunnel.confirmStepsMesh":
+    "This app will: stop frpc and ddns-go hosting (the three channels are mutually exclusive) and make sure the EasyTier mesh service is running. The DNS A record will point to the virtual IP {ip} (the guide appears here after switching). Visitor devices must join the same mesh network.",
+  "tunnel.dnsGuideMesh":
+    "DNS pending: at Tencent Cloud DNS, add an A record for ai.jackqi.cn pointing to the virtual IP: {target} (public resolvers may take up to one TTL, ~10 minutes)",
+  "tunnel.dnsGuideFromMesh":
+    "DNS pending: the domain still points to the mesh virtual IP {ip}. The current channel does not need that record — delete or fix it at Tencent Cloud DNS (under direct, ddns-go maintains the correct value automatically)",
+  "tunnel.dnsMismatchA":
+    "A record mismatch: currently {actual}; the mesh channel expects {target} (the virtual IP). Please fix it at Tencent Cloud DNS",
+  "tunnel.dnsCnameLeftMesh":
+    "CNAME record found (pointing to {actual}): the mesh channel must not keep a CNAME (bypass exposure surface). Delete it and point the A record at the virtual IP",
+  "tunnel.check.mesh": "Mesh service / peers",
+  "tunnel.check.netNaMesh": "N/A in mesh mode: visitors arrive via the virtual network, no physical inbound",
+
+  // Mesh status area (spec 007; detail carries Rust-side stable codes)
+  "mesh.statusLabel": "Mesh status",
+  "mesh.state.online": "Online",
+  "mesh.state.connecting": "Connecting",
+  "mesh.state.offline": "Offline",
+  "mesh.state.notConfigured": "Not configured",
+  "mesh.state.inactive": "Inactive",
+  "mesh.code.secret_missing":
+    "Mesh secret not written: run the secret script under Settings → Mesh (effective immediately, no restart)",
+  "mesh.code.service_missing": "Mesh service not installed: install it under Settings → Mesh (admin)",
+  "mesh.code.service_stopped": "Mesh service stopped: click the button on the right to apply config and restart (admin)",
+  "mesh.code.service_disabled": "Mesh service start type disabled: reinstall the service to restore",
+  "mesh.code.rpc_unreachable": "Mesh process running but its status API not ready (just started or errored); refreshes shortly",
+  "mesh.peersLabel": "Member devices",
+  "mesh.peerLocal": "This PC",
+  "mesh.noPeers": "No other members online yet: install the EasyTier client on member devices and join the same network",
+  "mesh.apply": "Apply config & restart service (admin)",
+  "mesh.applying": "Dispatching…",
+  "mesh.applied": "Mesh config applied; service restarting (status refreshes within seconds after UAC approval)",
+
+  // Legacy channel disabling (spec 007 AC5/AC6)
+  "channel.disabled.title": "Disable legacy channels (direct/tunnel)",
+  "channel.disabled.desc":
+    "Once disabled, the client is never launched/autostarted and the channel cannot be switched to (re-enabling = switching back on the Main view, with a security confirm). Disable only after the mesh runs stably.",
+  "channel.disabled.tunnelName": "Tunnel (SakuraFrp)",
+  "channel.disabled.directName": "Direct (DDNS)",
+  "channel.disabled.activeNow": "Active",
+  "channel.disabled.idleBadge": "Idle",
+  "channel.disabled.disabledBadge": "Disabled",
+  "channel.disabled.activeHint": "The active channel cannot be disabled: switch to another channel on Main first",
+  "channel.disabled.reenableHint": "Disabled: switch back to it under Main → Access Channel to re-enable",
+  "channel.disabled.reenableRisk":
+    "Note: this channel was previously disabled — re-enabling restores its public exposure surface. If you disabled it for security reasons, make sure you understand the risk before continuing.",
+  "channel.disabled.disableTunnel": "Disable tunnel",
+  "channel.disabled.disableDirect": "Disable direct",
+  "channel.disabled.confirmTunnel":
+    "Disable tunnel: frpc is never launched/autostarted; the tunnel config is kept, but re-enabling needs another confirmation. SAKURA_FRP_KEY stays in the stack .env — clearing it afterwards is recommended (button below).",
+  "channel.disabled.confirmDirect":
+    "Disable direct: ddns-go is never launched/autostarted; the A record is no longer maintained automatically.",
+  "channel.disabled.deleteA": "Also delete the DNS A record (ai.jackqi.cn)",
+  "channel.disabled.doneTunnel": "Tunnel channel disabled",
+  "channel.disabled.doneDirect": "Direct channel disabled",
+  "channel.disabled.clearKeyHint":
+    "Tunnel disabled: consider clearing SAKURA_FRP_KEY from the stack .env (confirm in the popped-up window)",
+  "channel.disabled.clearKeyBtn": "Clear SakuraFrp key…",
+  "channel.disabled.clearKeyDone": "Clear command executed; confirm the result in the popped-up window",
 
   // Setup wizard (spec 006)
   "wizard.notice": "Setup is not finished on this PC: follow the wizard to unlock LAN/domain access.",

@@ -18,13 +18,23 @@ export interface ComponentStatus {
 export type LanguageSetting = "auto" | "zh" | "en";
 export type ExitAction = "keep" | "stop";
 
-/** 访问通道（spec 004）：直连为默认，穿透为 opt-in */
-export type AccessChannel = "direct" | "tunnel";
+/** 访问通道（spec 004 + 007）：direct = DDNS 直连，tunnel = SakuraFrp 穿透，
+ * mesh = EasyTier 私有组网（007 新增，新装机默认推荐） */
+export type AccessChannel = "direct" | "tunnel" | "mesh";
 
 /** 穿透配置（非敏感部分；访问密钥只存栈目录 .env，永不进入本结构） */
 export interface TunnelConfig {
   tunnelId: string;
   nodeDomain: string;
+}
+
+/** 组网配置（非敏感部分，spec 007 AC11；密钥只存栈目录 network-secret 文件，
+ * 永不进入本结构/设置文件/命令行/日志——AC8） */
+export interface MeshConfig {
+  networkName: string;
+  virtualIp: string;
+  virtualCidr: string;
+  peers: string[];
 }
 
 /** 全量设置（get_settings 载荷，camelCase 对齐 Rust serde） */
@@ -40,6 +50,11 @@ export interface Settings {
   accessChannel: AccessChannel;
   tunnel: TunnelConfig | null;
   tunnelEnabled: boolean;
+  mesh: MeshConfig;
+  /** 穿透通道已停用（spec 007 AC5：停用后 frpc 不被拉起，重新启用须安全警示确认） */
+  tunnelDisabled: boolean;
+  /** 直连通道已停用（spec 007 AC6） */
+  directDisabled: boolean;
   domainHeartbeat: boolean;
   stackDir: string;
 }
@@ -55,6 +70,9 @@ export interface SettingsPatch {
   accessChannel?: AccessChannel;
   tunnel?: TunnelConfig;
   tunnelEnabled?: boolean;
+  mesh?: MeshConfig;
+  tunnelDisabled?: boolean;
+  directDisabled?: boolean;
   domainHeartbeat?: boolean;
   stackDir?: string;
 }
@@ -74,13 +92,50 @@ export interface TunnelStatus {
   since: number;
 }
 
-/** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase） */
+/** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase；mesh 态新增
+ * alignedMesh/mismatchedA——spec 007 体检重定义：A 记录 = 虚拟 IP） */
 export type DnsAlignment =
   | { kind: "alignedTunnel" }
   | { kind: "alignedDirect" }
+  | { kind: "alignedMesh" }
   | { kind: "mismatchedCname"; actual: string }
+  | { kind: "mismatchedA"; actual: string }
   | { kind: "noRecord" }
   | { kind: "queryFailed" };
+
+// ── 组网通道（spec 007）─────────────────────────────────────────────────────
+
+/** 组网服务态（sc query 状态码 + sc qc 启动类型合成；camelCase） */
+export type MeshServiceState =
+  | "notFound"
+  | "running"
+  | "startPending"
+  | "stopped"
+  | "disabled";
+
+/** 组网状态五态（mesh://status 载荷的 state 字段；含非现役通道态） */
+export type MeshStateKind = "online" | "connecting" | "offline" | "notConfigured" | "inactive";
+
+/** 组网成员摘要（RPC 输出天然无密钥——AC8/AC4） */
+export interface MeshPeer {
+  hostname: string;
+  ipv4?: string;
+  /** 延迟毫秒（本机/未测为空） */
+  latencyMs?: number;
+  /** 丢包率 0~1（已归一） */
+  lossRate?: number;
+  /** 本机自身（peer list 首项恒为本机；在线判定排除本机项） */
+  isLocal: boolean;
+}
+
+/** 组网状态快照（mesh://status 事件与 mesh_status 命令载荷；detail 为稳定码） */
+export interface MeshStatus {
+  state: MeshStateKind;
+  detail?: string;
+  since: number;
+  service: MeshServiceState;
+  peers: MeshPeer[];
+}
 
 /** 域名心跳快照（domain://health 载荷；healthy 已含 2 次防抖，spec 005 AC6） */
 export type HealthKind = "ok" | "dns" | "connect" | "tls" | "timeout" | "status";
@@ -120,7 +175,9 @@ export type ToolKind =
   | "reset_ddns_password"
   | "set_frp_key"
   | "set_tencent_key"
-  | "config_ddnsgo";
+  | "config_ddnsgo"
+  | "set_mesh_secret"
+  | "clear_frp_key";
 
 /** run_tool 可选项（update/mirror 仅 install_server；domain 供安装/配置类透传，spec 006） */
 export interface ToolOpts {

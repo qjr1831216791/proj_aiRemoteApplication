@@ -17,6 +17,7 @@ import type {
   ComponentState,
   ComponentStatus,
   DomainHealth,
+  MeshStatus,
   NetCategory,
   NetStatus,
   ScriptsAvailability,
@@ -41,6 +42,8 @@ export interface MainViewProps {
   settings: Settings | null;
   /** 隧道运行状态（spec 004；null = 尚无快照） */
   tunnelStatus: TunnelStatus | null;
+  /** 组网运行状态（spec 007；null = 尚无快照） */
+  meshStatus: MeshStatus | null;
   /** 域名心跳快照（spec 005；null = 尚无探测结果） */
   domainHealth: DomainHealth | null;
   /** 设置回写（通道切换/开关成功后 App 层 setSettings） */
@@ -60,7 +63,7 @@ export interface MainViewProps {
 export function MainView(props: MainViewProps) {
   const {
     lang, statuses, urls, scripts, netStatus, onNetRefresh,
-    settings, tunnelStatus, domainHealth, onSettingsChange,
+    settings, tunnelStatus, meshStatus, domainHealth, onSettingsChange,
     stopping, onStartAll, onStopAll, onRetry, onToast,
     wizardDone, onOpenWizard,
   } = props;
@@ -155,8 +158,12 @@ export function MainView(props: MainViewProps) {
               ) : null}
             </p>
             {s.detail ? <p class="status__detail">{s.detail}</p> : null}
-            {s.id === "ddnsgo" && settings?.accessChannel === "tunnel" && s.state === "stopped" ? (
-              <p class="status__detail">{t("tunnel.ddnsOffInTunnel", lang)}</p>
+            {s.id === "ddnsgo" && s.state === "stopped" && settings != null ? (
+              settings.accessChannel === "tunnel" ? (
+                <p class="status__detail">{t("tunnel.ddnsOffInTunnel", lang)}</p>
+              ) : settings.accessChannel === "mesh" ? (
+                <p class="status__detail">{t("tunnel.ddnsOffInMesh", lang)}</p>
+              ) : null
             ) : null}
             {s.state === "failed" || s.state === "port-held" ? (
               <button class="btn btn--sm" disabled={busy} onClick={() => onRetry(s.id)}>
@@ -238,11 +245,12 @@ export function MainView(props: MainViewProps) {
         )}
       </section>
 
-      {/* 访问通道（spec 004）：直连 ⇄ 穿透切换 + 隧道状态 + DNS 指引 */}
+      {/* 访问通道（spec 004 + 007）：三通道切换 + 隧道/组网状态 + DNS 指引 */}
       <TunnelCard
         lang={lang}
         settings={settings}
         tunnelStatus={tunnelStatus}
+        meshStatus={meshStatus}
         onToast={onToast}
         onSettingsChange={onSettingsChange}
       />
