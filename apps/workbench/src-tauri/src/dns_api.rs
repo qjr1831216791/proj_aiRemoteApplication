@@ -128,26 +128,47 @@ pub struct DnsRecord {
 }
 
 /// 调和操作（执行器按序应用）。**暂停/激活语义**（需求方 2026-09-10 提议，
-/// 优于删除/重建：记录 ID 保留、完全可逆、不产生重建垃圾）
+/// 优于删除/重建：记录 ID 保留、完全可逆、不产生重建垃圾）——服务于通道
+/// 互切；**停用/mesh 终态**场景取删除/改值语义（spec 007 §3.4：停用是消除
+/// 暴露面而非可逆切换）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordOp {
     /// 启用/暂停一条既有记录（ModifyRecordStatus）
     SetStatus { record_id: u64, enable: bool },
     /// 新建记录（CreateRecord；仅目标记录不存在时）
     Create { rtype: String, value: String },
+    /// 改既有记录的值（ModifyRecord 全量更新，type/line 原样保留——
+    /// spec 007：A 记录公网 IP ⇄ 虚拟 IP）
+    UpdateValue { record_id: u64, rtype: String, value: String },
+    /// 彻底删除（DeleteRecord——spec 007 停用/mesh 终态的 CNAME 清理）
+    Delete { record_id: u64 },
+}
+
+/// DNS 目标状态（三通道 + 停用清理的调和输入；spec 007 §3.4）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsTarget {
+    /// 直连：A 激活（值由 ddns-go 维护），CNAME 全停
+    Direct,
+    /// 穿透：CNAME → 节点域名激活，A 全停
+    Tunnel(String),
+    /// 组网：A → 虚拟 IP（upsert），CNAME 全删（穿透残留的安全收敛）
+    Mesh(String),
 }
 
 /// 调和：把 `sub` 记录集合推向目标状态（纯函数，幂等——已满足则空操作集）。
-/// - `want_cname = Some(v)`（穿透）：全部 A 暂停；CNAME 值对 → 激活，
-///   值错 → 暂停（保记录）并新建对的；缺失 → 新建
-/// - `want_cname = None`（直连）：全部 CNAME 暂停；A → 激活
+/// - `Tunnel`（穿透）：全部 A 暂停；CNAME 值对 → 激活，值错 → 暂停（保记录）
+///   并新建对的；缺失 → 新建
+/// - `Direct`（直连）：全部 CNAME 暂停；A → 激活
 ///   （A 记录值由 ddns-go 维护；不存在时也由 ddns-go 启动时自动新建）
-pub fn reconcile(current: &[DnsRecord], want_cname: Option<&str>) -> Vec<RecordOp> {
+/// - `Mesh`（组网，spec 007 AC6/AC7）：CNAME **全删**（mesh 是安全收敛终态，
+///   残留 CNAME 保留可重启的公网旁路）；A 第一条 upsert 值=虚拟 IP（值对则
+///   仅确保启用），多余 A 暂停，缺失新建
+pub fn reconcile(current: &[DnsRecord], target: &DnsTarget) -> Vec<RecordOp> {
     let mut ops = Vec::new();
     let norm = |s: &str| s.trim_end_matches('.').to_ascii_lowercase();
     let is = |r: &DnsRecord, t: &str| r.rtype.eq_ignore_ascii_case(t);
-    match want_cname {
-        Some(target) => {
+    match target {
+        DnsTarget::Tunnel(target) => {
             for r in current.iter().filter(|r| is(r, "A")) {
                 if r.enabled {
                     ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
@@ -172,11 +193,11 @@ pub fn reconcile(current: &[DnsRecord], want_cname: Option<&str>) -> Vec<RecordO
                             ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
                         }
                     }
-                    ops.push(RecordOp::Create { rtype: "CNAME".into(), value: target.to_string() });
+                    ops.push(RecordOp::Create { rtype: "CNAME".into(), value: target.clone() });
                 }
             }
         }
-        None => {
+        DnsTarget::Direct => {
             for r in current.iter().filter(|r| is(r, "CNAME")) {
                 if r.enabled {
                     ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
@@ -186,6 +207,34 @@ pub fn reconcile(current: &[DnsRecord], want_cname: Option<&str>) -> Vec<RecordO
                 if !r.enabled {
                     ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: true });
                 }
+            }
+        }
+        DnsTarget::Mesh(vip) => {
+            // CNAME 全删（不管值与状态）
+            for r in current.iter().filter(|r| is(r, "CNAME")) {
+                ops.push(RecordOp::Delete { record_id: r.record_id });
+            }
+            // A：第一条 upsert 到虚拟 IP，多余暂停，缺失新建
+            let a_records: Vec<&DnsRecord> = current.iter().filter(|r| is(r, "A")).collect();
+            match a_records.first() {
+                Some(r) => {
+                    if !norm(&r.value).eq_ignore_ascii_case(norm(vip).as_str()) {
+                        ops.push(RecordOp::UpdateValue {
+                            record_id: r.record_id,
+                            rtype: "A".into(),
+                            value: vip.clone(),
+                        });
+                    }
+                    if !r.enabled {
+                        ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: true });
+                    }
+                    for r in a_records.iter().skip(1) {
+                        if r.enabled {
+                            ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
+                        }
+                    }
+                }
+                None => ops.push(RecordOp::Create { rtype: "A".into(), value: vip.clone() }),
             }
         }
     }
@@ -312,33 +361,69 @@ fn set_record_status(cred: &TcCredential, root: &str, record_id: u64, enable: bo
     .map(|_| ())
 }
 
+/// 改记录值（ModifyRecord 全量更新：type/line 原样传回，仅 value 变）
+fn modify_record(
+    cred: &TcCredential,
+    root: &str,
+    sub: &str,
+    record_id: u64,
+    rtype: &str,
+    value: &str,
+) -> Result<(), String> {
+    call_api(
+        cred,
+        "ModifyRecord",
+        &serde_json::json!({ "Domain": root, "SubDomain": sub, "RecordId": record_id, "RecordType": rtype, "RecordLine": "默认", "Value": value }),
+    )
+    .map(|_| ())
+}
+
+/// 删除记录（DeleteRecord——停用/mesh 终态清理）
+fn delete_record(cred: &TcCredential, root: &str, record_id: u64) -> Result<(), String> {
+    call_api(
+        cred,
+        "DeleteRecord",
+        &serde_json::json!({ "Domain": root, "RecordId": record_id }),
+    )
+    .map(|_| ())
+}
+
 // ── 高层切换（switch_channel 消费）─────────────────────────────────────────
 
-/// 切到穿透：A 暂停 + CNAME 激活/新建指向节点域名（幂等）
-pub fn sync_to_tunnel(cred: &TcCredential, root: &str, sub: &str, node_domain: &str) -> Result<usize, String> {
-    let current = list_records(cred, root, sub)?;
+/// 应用一个调和操作集（幂等；返回应用条数）
+fn apply_ops(cred: &TcCredential, root: &str, sub: &str, ops: Vec<RecordOp>) -> Result<usize, String> {
     let mut applied = 0;
-    for op in reconcile(&current, Some(node_domain)) {
+    for op in ops {
         match op {
             RecordOp::SetStatus { record_id, enable } => set_record_status(cred, root, record_id, enable)?,
             RecordOp::Create { rtype, value } => create_record(cred, root, sub, &rtype, &value)?,
+            RecordOp::UpdateValue { record_id, rtype, value } => {
+                modify_record(cred, root, sub, record_id, &rtype, &value)?
+            }
+            RecordOp::Delete { record_id } => delete_record(cred, root, record_id)?,
         }
         applied += 1;
     }
     Ok(applied)
 }
 
+/// 切到穿透：A 暂停 + CNAME 激活/新建指向节点域名（幂等）
+pub fn sync_to_tunnel(cred: &TcCredential, root: &str, sub: &str, node_domain: &str) -> Result<usize, String> {
+    let current = list_records(cred, root, sub)?;
+    apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Tunnel(node_domain.to_string())))
+}
+
 /// 切回直连：CNAME 暂停 + A 激活（A 值由 ddns-go 维护/重建）
 pub fn sync_to_direct(cred: &TcCredential, root: &str, sub: &str) -> Result<usize, String> {
     let current = list_records(cred, root, sub)?;
-    let mut applied = 0;
-    for op in reconcile(&current, None) {
-        if let RecordOp::SetStatus { record_id, enable } = op {
-            set_record_status(cred, root, record_id, enable)?;
-            applied += 1;
-        }
-    }
-    Ok(applied)
+    apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Direct))
+}
+
+/// 切到组网（spec 007 AC6/AC7）：CNAME 全删 + A upsert 值=虚拟 IP（幂等）。
+/// 虚拟 IP 是私网段——公网不可路由，达成「公网解析仅指向私网段」（AC7）
+pub fn sync_to_mesh(cred: &TcCredential, root: &str, sub: &str, virtual_ip: &str) -> Result<usize, String> {
+    let current = list_records(cred, root, sub)?;
+    apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Mesh(virtual_ip.to_string())))
 }
 
 /// 域名常量派生子域（"ai.jackqi.cn" + "jackqi.cn" → "ai"）
@@ -440,7 +525,7 @@ mod tests {
             DnsRecord { record_id: 1, rtype: "A".into(), value: "117.182.118.202".into(), enabled: true },
             DnsRecord { record_id: 2, rtype: "CNAME".into(), value: "frp-can.com.".into(), enabled: false },
         ];
-        let ops = reconcile(&current, Some("frp-can.com"));
+        let ops = reconcile(&current, &DnsTarget::Tunnel("frp-can.com".into()));
         assert_eq!(
             ops,
             vec![
@@ -452,13 +537,13 @@ mod tests {
         // 无 CNAME → 建（A 暂停）；值错 → 暂停错的 + 建对的
         let no_cname = vec![DnsRecord { record_id: 3, rtype: "A".into(), value: "1.2.3.4".into(), enabled: false }];
         assert_eq!(
-            reconcile(&no_cname, Some("frp-can.com")),
+            reconcile(&no_cname, &DnsTarget::Tunnel("frp-can.com".into())),
             vec![RecordOp::Create { rtype: "CNAME".into(), value: "frp-can.com".into() }],
             "A 已暂停、无 CNAME → 只建 CNAME"
         );
         let wrong = vec![DnsRecord { record_id: 4, rtype: "CNAME".into(), value: "other.com".into(), enabled: true }];
         assert_eq!(
-            reconcile(&wrong, Some("frp-can.com")),
+            reconcile(&wrong, &DnsTarget::Tunnel("frp-can.com".into())),
             vec![
                 RecordOp::SetStatus { record_id: 4, enable: false },
                 RecordOp::Create { rtype: "CNAME".into(), value: "frp-can.com".into() },
@@ -469,7 +554,7 @@ mod tests {
             DnsRecord { record_id: 5, rtype: "A".into(), value: "1.2.3.4".into(), enabled: false },
             DnsRecord { record_id: 6, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
         ];
-        assert!(reconcile(&aligned, Some("frp-can.com")).is_empty());
+        assert!(reconcile(&aligned, &DnsTarget::Tunnel("frp-can.com".into())).is_empty());
     }
 
     #[test]
@@ -480,7 +565,7 @@ mod tests {
             DnsRecord { record_id: 6, rtype: "A".into(), value: "1.2.3.4".into(), enabled: false },
         ];
         assert_eq!(
-            reconcile(&current, None),
+            reconcile(&current, &DnsTarget::Direct),
             vec![
                 RecordOp::SetStatus { record_id: 5, enable: false },
                 RecordOp::SetStatus { record_id: 6, enable: true },
@@ -488,7 +573,65 @@ mod tests {
         );
         // 无 A 记录：交给 ddns-go 自动新建，调和层不代建
         let no_a = vec![DnsRecord { record_id: 7, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true }];
-        assert_eq!(reconcile(&no_a, None), vec![RecordOp::SetStatus { record_id: 7, enable: false }]);
+        assert_eq!(reconcile(&no_a, &DnsTarget::Direct), vec![RecordOp::SetStatus { record_id: 7, enable: false }]);
+    }
+
+    /// spec 007 AC6/AC7：切组网 = CNAME 全删（含暂停的残留）+ A upsert 虚拟 IP。
+    /// 混挂实测形态（穿透在用：A 活跃公网 IP + CNAME 活跃）→ 删 CNAME、
+    /// A 改值（UpdateValue 保留记录 ID）
+    #[test]
+    fn reconcile_mesh_deletes_cname_and_upserts_virtual_ip() {
+        let current = vec![
+            DnsRecord { record_id: 1, rtype: "A".into(), value: "117.182.118.202".into(), enabled: true },
+            DnsRecord { record_id: 2, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
+            DnsRecord { record_id: 3, rtype: "CNAME".into(), value: "old-node.com".into(), enabled: false },
+        ];
+        let ops = reconcile(&current, &DnsTarget::Mesh("10.126.126.1".into()));
+        assert_eq!(
+            ops,
+            vec![
+                RecordOp::Delete { record_id: 2 },
+                RecordOp::Delete { record_id: 3 },
+                RecordOp::UpdateValue { record_id: 1, rtype: "A".into(), value: "10.126.126.1".into() },
+            ],
+            "CNAME 全删（活跃+暂停）→ A 改值（已启用无需 SetStatus）"
+        );
+
+        // A 已是虚拟 IP 但被暂停 → 仅激活；已对齐 → 幂等空操作
+        let paused = vec![DnsRecord { record_id: 4, rtype: "A".into(), value: "10.126.126.1".into(), enabled: false }];
+        assert_eq!(
+            reconcile(&paused, &DnsTarget::Mesh("10.126.126.1".into())),
+            vec![RecordOp::SetStatus { record_id: 4, enable: true }]
+        );
+        let aligned = vec![DnsRecord { record_id: 5, rtype: "A".into(), value: "10.126.126.1".into(), enabled: true }];
+        assert!(reconcile(&aligned, &DnsTarget::Mesh("10.126.126.1".into())).is_empty());
+
+        // 无 A → 新建（A, 虚拟 IP）；值错且暂停 → 改值 + 激活两步
+        assert_eq!(
+            reconcile(&[], &DnsTarget::Mesh("10.126.126.1".into())),
+            vec![RecordOp::Create { rtype: "A".into(), value: "10.126.126.1".into() }]
+        );
+        let wrong_paused = vec![DnsRecord { record_id: 6, rtype: "A".into(), value: "1.2.3.4".into(), enabled: false }];
+        assert_eq!(
+            reconcile(&wrong_paused, &DnsTarget::Mesh("10.126.126.1".into())),
+            vec![
+                RecordOp::UpdateValue { record_id: 6, rtype: "A".into(), value: "10.126.126.1".into() },
+                RecordOp::SetStatus { record_id: 6, enable: true },
+            ]
+        );
+
+        // 多条 A：第一条 upsert，多余暂停（防多条活跃混乱）
+        let multi = vec![
+            DnsRecord { record_id: 7, rtype: "A".into(), value: "1.1.1.1".into(), enabled: true },
+            DnsRecord { record_id: 8, rtype: "A".into(), value: "2.2.2.2".into(), enabled: true },
+        ];
+        assert_eq!(
+            reconcile(&multi, &DnsTarget::Mesh("10.126.126.1".into())),
+            vec![
+                RecordOp::UpdateValue { record_id: 7, rtype: "A".into(), value: "10.126.126.1".into() },
+                RecordOp::SetStatus { record_id: 8, enable: false },
+            ]
+        );
     }
 
     #[test]
