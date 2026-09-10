@@ -220,7 +220,7 @@ pub async fn switch_channel(
 
     let cur = settings.current();
     // 前置就绪：穿透配置（settings.tunnel）∧ frpc 二进制 ∧ 访问密钥（AC7/AC14）
-    let ops = WindowsFrpcOps::new(ctx.scripts_dir.clone());
+    let ops = WindowsFrpcOps::new(ctx.scripts_dir.clone(), cur.stack_dir.clone());
     let tunnel_ready = cur.tunnel.is_some() && ops.exe_exists() && ops.access_key().is_some();
     let actions = switch_actions(cur.access_channel, target, tunnel_ready).map_err(|e| match e {
         SwitchReject::NotConfigured { .. } => {
@@ -258,7 +258,7 @@ pub async fn switch_channel(
                 use crate::consts::{DOMAIN, DOMAIN_ROOT};
                 use crate::dns_api;
                 use crate::settings::AccessChannel as Ac;
-                let Some(cred) = dns_api::read_credential() else {
+                let Some(cred) = dns_api::read_credential(&cur.stack_dir) else {
                     log::warn!("DNS 自动切换跳过：未找到腾讯云凭证（.env / ddns-go.yaml），请按指引手动修改解析");
                     continue;
                 };
@@ -377,8 +377,11 @@ pub async fn restart_tunnel(
 
 /// 打开栈目录（穿透设置指引的「栈目录」超链接目标）
 #[tauri::command]
-pub fn open_stack_dir() -> Result<(), String> {
-    scripts::open_dir(std::path::Path::new(crate::consts::STACK_DIR))
+pub fn open_stack_dir(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<(), String> {
+    let dir = settings.current().stack_dir;
+    scripts::open_dir(std::path::Path::new(&dir))
         .map_err(|code| format!("打开目录失败（退出码 {code}）"))
 }
 
@@ -411,7 +414,7 @@ pub fn get_defender_exclusion_cmd(
         .unwrap_or_else(|| format!("安装目录\\resources\\bin\\{}", crate::consts::FRPC_EXE_NAME));
     format!(
         "Add-MpPreference -ExclusionPath '{}\\{}', '{}'",
-        crate::consts::STACK_DIR,
+        crate::consts::DEFAULT_STACK_DIR,
         crate::consts::FRPC_EXE_NAME,
         res_bin
     )
@@ -421,7 +424,7 @@ pub fn get_defender_exclusion_cmd(
 /// （WindowsFrpcOps 的栈目录回退保证可用）。校验不符一律放弃写入。
 #[tauri::command]
 pub async fn download_frpc() -> Result<String, String> {
-    use crate::consts::{FRPC_EXE_NAME, STACK_DIR};
+    use crate::consts::{FRPC_EXE_NAME, DEFAULT_STACK_DIR};
     use crate::dns_api::sha256_hex;
     use std::io::Read;
 
@@ -441,10 +444,10 @@ pub async fn download_frpc() -> Result<String, String> {
         if sha256_hex(&bytes) != EXPECTED {
             return Err("下载文件 SHA256 校验不符，已放弃写入（请检查网络或稍后重试）".into());
         }
-        let target = std::path::PathBuf::from(STACK_DIR).join(FRPC_EXE_NAME);
+        let target = std::path::PathBuf::from(DEFAULT_STACK_DIR).join(FRPC_EXE_NAME);
         std::fs::write(&target, &bytes)
-            .map_err(|e| format!("写入 {STACK_DIR}\\{FRPC_EXE_NAME} 失败：{e}"))?;
-        Ok(format!("frpc 已恢复到 {STACK_DIR}\\{FRPC_EXE_NAME}"))
+            .map_err(|e| format!("写入 {DEFAULT_STACK_DIR}\\{FRPC_EXE_NAME} 失败：{e}"))?;
+        Ok(format!("frpc 已恢复到 {DEFAULT_STACK_DIR}\\{FRPC_EXE_NAME}"))
     })
     .await
     .map_err(|e| format!("下载线程失败：{e}"))?

@@ -209,6 +209,8 @@ pub fn run() {
             let _net_poller = net_monitor.spawn_poller();
 
             // ── 穿透通道（spec 004）：frpc 管理器 + 守护线程 ────────────────
+            // 栈目录为设置快照（用户可配置，重启生效）
+            let stack_dir = app.state::<settings::SettingsState>().current().stack_dir;
             // frpc 随包分发（resources/bin），ops 用已解析的脚本目录定位；
             // 通道源/事件出口接 AppHandle（装配层适配，tunnel.rs 保持无 Tauri 依赖）；
             // 守护线程每 5s 收敛「期望通道×开关 ↔ frpc 实况」（AC3/8/11），
@@ -218,7 +220,7 @@ pub fn run() {
             let health_handle = app.handle().clone();
             let shared_for_view = std::sync::Arc::clone(&shared_health);
             let tunnel_mgr = std::sync::Arc::new(tunnel::TunnelManager::new(
-                std::sync::Arc::new(tunnel::WindowsFrpcOps::new(scripts_dir.clone())),
+                std::sync::Arc::new(tunnel::WindowsFrpcOps::new(scripts_dir.clone(), stack_dir.clone())),
                 std::sync::Arc::new(AppChannelSource { app: app.handle().clone() }),
                 std::sync::Arc::new(TauriTunnelEmitter { app: app.handle().clone() }),
                 Some(std::sync::Arc::new(move || {
@@ -260,11 +262,16 @@ pub fn run() {
 
             app.manage(monitor);
 
-            // ── 自启上下文（T11/T15）：脚本目录 + 禁用原因 + 日志目录 ────────
+            // ── 自启上下文（T11/T15）：脚本目录 + 禁用原因 + 日志目录 + 栈目录 ──
+            let stack_dir = {
+                let s = app.state::<settings::SettingsState>().current();
+                s.stack_dir.clone()
+            };
             app.manage(autostart::AutostartContext {
                 scripts_dir,
                 scripts_disabled_reason,
                 log_dir,
+                stack_dir: Some(stack_dir),
             });
 
             tray::setup(app, effective_lang)?;

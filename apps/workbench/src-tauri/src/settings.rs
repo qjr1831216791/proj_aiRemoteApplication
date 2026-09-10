@@ -89,6 +89,9 @@ pub struct Settings {
     pub tunnel_enabled: bool,
     /// 域名心跳检测（spec 005 AC7）：关闭则不发探测，既有标记冻结
     pub domain_heartbeat: bool,
+    /// HTTPS 栈部署目录（spec 004：用户可配置；输入安装根自动追加
+    /// `cloudcli-https` 子目录并规整；**重启工作台后生效**）
+    pub stack_dir: String,
 }
 
 impl Default for Settings {
@@ -106,6 +109,7 @@ impl Default for Settings {
             tunnel: None,
             tunnel_enabled: true,
             domain_heartbeat: true,
+            stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
         }
     }
 }
@@ -134,6 +138,8 @@ pub struct SettingsPatch {
     pub tunnel_enabled: Option<bool>,
     /// 域名心跳开关（spec 005 AC7）
     pub domain_heartbeat: Option<bool>,
+    /// 栈目录（spec 004：用户输入安装根，保存时自动规整）
+    pub stack_dir: Option<String>,
 }
 
 /// scriptsDirOverride 三态反序列化（仅字段出现时被调用）：
@@ -259,7 +265,26 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     if let Some(v) = patch.domain_heartbeat {
         merged.domain_heartbeat = v;
     }
+    if let Some(v) = patch.stack_dir.as_deref() {
+        merged.stack_dir = normalize_stack_dir(v);
+    }
     merged
+}
+
+/// 栈目录规整（纯函数）：去首尾空白与尾随分隔符；未以 `cloudcli-https`
+/// 子目录结尾则自动追加（需求方：用户输入安装根，子目录名固定）；
+/// 空输入回落默认值。
+pub fn normalize_stack_dir(input: &str) -> String {
+    let t = input.trim().trim_end_matches(['\\', '/']);
+    if t.is_empty() {
+        return crate::consts::DEFAULT_STACK_DIR.to_string();
+    }
+    let lower = t.to_ascii_lowercase();
+    if lower.ends_with("\\cloudcli-https") || lower.ends_with("/cloudcli-https") {
+        t.to_string()
+    } else {
+        format!("{t}\\cloudcli-https")
+    }
 }
 
 /// 原子保存：写同目录临时文件后 rename 覆盖（半写防护）
@@ -374,6 +399,23 @@ mod tests {
         assert_eq!(d.tunnel, None, "穿透默认未配置（AC7）");
         assert!(d.tunnel_enabled);
         assert!(d.domain_heartbeat, "心跳默认开（spec 005 AC1）");
+        assert_eq!(d.stack_dir, crate::consts::DEFAULT_STACK_DIR);
+    }
+
+    #[test]
+    fn stack_dir_normalization() {
+        // 需求方 2026-09-10：输入安装根，自动追加 cloudcli-https 子目录
+        assert_eq!(normalize_stack_dir("D:\\Software\\"), "D:\\Software\\cloudcli-https");
+        assert_eq!(normalize_stack_dir(" D:\\Software "), "D:\\Software\\cloudcli-https");
+        // 完整路径原样（大小写/尾斜杠容忍）
+        assert_eq!(
+            normalize_stack_dir("d:\\software\\CloudCLI-HTTPS\\"),
+            "d:\\software\\CloudCLI-HTTPS"
+        );
+        assert_eq!(normalize_stack_dir("E:\\MyStack"), "E:\\MyStack\\cloudcli-https");
+        // 空输入回落默认
+        assert_eq!(normalize_stack_dir(""), crate::consts::DEFAULT_STACK_DIR);
+        assert_eq!(normalize_stack_dir("   "), crate::consts::DEFAULT_STACK_DIR);
     }
 
     #[test]
@@ -557,6 +599,7 @@ mod tests {
                 node_domain: "frp-can.com".into(),
             }),
             tunnel_enabled: Some(false),
+            stack_dir: Some("D:\\Software\\".into()),
             ..Default::default()
         };
         let merged = apply_patch(&base, &patch);
@@ -566,6 +609,8 @@ mod tests {
             "29080263"
         );
         assert!(!merged.tunnel_enabled);
+        // 栈目录输入安装根 → 规整追加子目录（需求方 2026-09-10）
+        assert_eq!(merged.stack_dir, "D:\\Software\\cloudcli-https");
     }
 
     #[test]

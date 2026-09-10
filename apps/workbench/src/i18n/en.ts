@@ -139,6 +139,11 @@ export const en = {
   "settings.whitelistCopied": "Whitelist command copied; run it in an admin terminal",
   "settings.downloadFrpc": "Restore frpc",
   "settings.downloadFrpcDone": "frpc restored",
+  "settings.stackDirEditable": "Deploy directory (HTTPS stack)",
+  "settings.stackDirDesc":
+    "Install location of caddy/ddns-go/frpc. Enter the install root (the cloudcli-https subfolder is appended automatically). Takes effect after restarting the app, and the new path must have components installed (install script with -StackDir)",
+  "settings.stackDirSaved": "Deploy directory saved; restart the app to apply",
+  "settings.stackDirEmpty": "Deploy directory must not be empty",
 
   // Tunnel channel (spec 004)
   "tunnel.title": "Access Channel",

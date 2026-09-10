@@ -41,6 +41,8 @@ export function SettingsView(props: SettingsViewProps) {
   // 穿透设置表单（spec 004 AC14；初始值取已存配置，空串 = 未配置）
   const [tunnelId, setTunnelId] = useState(settings.tunnel?.tunnelId ?? "");
   const [nodeDomain, setNodeDomain] = useState(settings.tunnel?.nodeDomain ?? "");
+  // 部署目录（spec 004：用户输入安装根，重启生效）
+  const [stackDir, setStackDir] = useState(settings.stackDir);
 
   /** 任务类自启开关：先执行计划任务命令，成功后持久化到设置文件 */
   const runAutostartToggle = async (key: "autostartServices" | "autostartApp", enable: boolean) => {
@@ -119,11 +121,27 @@ export function SettingsView(props: SettingsViewProps) {
       .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
   };
 
+  /** 部署目录保存（spec 004）：非空校验 → 持久化；重启工作台后全链生效 */
+  const saveStackDir = async () => {
+    const dir = stackDir.trim();
+    if (!dir) {
+      onToast(t("settings.stackDirEmpty", lang), "error");
+      return;
+    }
+    try {
+      const saved = await api.saveSettings({ stackDir: dir });
+      onSettingsChange(saved);
+      setStackDir(saved.stackDir);
+      onToast(t("settings.stackDirSaved", lang), "success");
+    } catch (e) {
+      onToast(`${t("toast.saveFailed", lang)}: ${String(e)}`, "error");
+    }
+  };
+
   const readonlyRows: { label: string; value: string }[] = [
     { label: t("settings.portCloudcli", lang), value: String(READONLY.cloudcliPort) },
     { label: t("settings.portCaddy", lang), value: String(READONLY.caddyPort) },
     { label: t("settings.portDdnsgo", lang), value: String(READONLY.ddnsgoPort) },
-    { label: t("settings.stackDir", lang), value: READONLY.stackDir },
     { label: t("settings.domain", lang), value: READONLY.domain },
   ];
 
@@ -175,6 +193,29 @@ export function SettingsView(props: SettingsViewProps) {
         </div>
       </section>
 
+      {/* 部署目录（spec 004：用户可配置，重启生效） */}
+      <section class="card">
+        <h2 class="card__title">{t("settings.stackDirEditable", lang)}</h2>
+        <p class="muted">{t("settings.stackDirDesc", lang)}</p>
+        <div class="settings__rows">
+          <div class="settings__row">
+            <div class="settings__row-text">
+              <span class="settings__label">{t("settings.stackDirEditable", lang)}</span>
+              <input
+                class="form-input"
+                value={stackDir}
+                onInput={(e) => setStackDir(e.currentTarget.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <div class="settings__actions">
+          <button class="btn btn--sm btn--primary" onClick={() => void saveStackDir()}>
+            {t("settings.tunnelSave", lang)}
+          </button>
+        </div>
+      </section>
+
       {/* 穿透设置（spec 004 AC14/15/16） */}
       <section class="card">
         <h2 class="card__title">{t("settings.tunnel", lang)}</h2>
@@ -215,7 +256,7 @@ export function SettingsView(props: SettingsViewProps) {
             <span class="settings__label">
               {t("settings.openStackDir", lang)}：
               <button class="link-btn" onClick={() => api.openStackDir().catch((e) => onToast(String(e), "error"))}>
-                {READONLY.stackDir}
+                {settings.stackDir}
               </button>
             </span>
           </div>

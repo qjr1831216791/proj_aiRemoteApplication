@@ -8,7 +8,7 @@
 //!   （宪法 §3；spec 004 §4.2「凭证不进 APP 数据」）。
 
 use crate::consts::{
-    FRPC_ENV_FILE, FRPC_EXE_NAME, FRPC_LOG_FILE, SAKURA_KEY_VAR, STACK_DIR,
+    FRPC_ENV_FILE, FRPC_EXE_NAME, FRPC_LOG_FILE, SAKURA_KEY_VAR, DEFAULT_STACK_DIR,
 };
 use crate::settings::AccessChannel;
 use serde::Serialize;
@@ -225,11 +225,13 @@ pub struct WindowsFrpcOps {
     /// 资源 bin 目录（exe 同级 resources/bin 或开发态 src-tauri/resources/bin；
     /// None = 定位失败，仅剩栈目录回退）
     bin_dir: Option<PathBuf>,
+    /// 栈目录（用户可配置，spec 004；构造时从设置快照注入，重启生效）
+    stack_dir: String,
 }
 
 impl WindowsFrpcOps {
-    pub fn new(bin_dir: Option<PathBuf>) -> Self {
-        Self { bin_dir }
+    pub fn new(bin_dir: Option<PathBuf>, stack_dir: String) -> Self {
+        Self { bin_dir, stack_dir }
     }
 
     /// 候选路径（有序：资源目录 → 栈目录）
@@ -238,7 +240,7 @@ impl WindowsFrpcOps {
         if let Some(dir) = &self.bin_dir {
             v.push(dir.join(FRPC_EXE_NAME));
         }
-        v.push(PathBuf::from(STACK_DIR).join(FRPC_EXE_NAME));
+        v.push(PathBuf::from(&self.stack_dir).join(FRPC_EXE_NAME));
         v
     }
 
@@ -247,11 +249,11 @@ impl WindowsFrpcOps {
     }
 
     fn env_path(&self) -> PathBuf {
-        PathBuf::from(STACK_DIR).join(FRPC_ENV_FILE)
+        PathBuf::from(&self.stack_dir).join(FRPC_ENV_FILE)
     }
 
     fn log_path(&self) -> PathBuf {
-        PathBuf::from(STACK_DIR).join(FRPC_LOG_FILE)
+        PathBuf::from(&self.stack_dir).join(FRPC_LOG_FILE)
     }
 }
 
@@ -449,11 +451,11 @@ impl TunnelManager {
             return Err("穿透未配置：请先在设置中填写隧道 ID".into());
         };
         if !self.ops.exe_exists() {
-            return Err(format!("未找到 {FRPC_EXE_NAME}：请将其下载后放入 {STACK_DIR}"));
+            return Err("未找到 frpc.exe：请在设置页使用「下载恢复 frpc」，或将文件放置到栈目录".into());
         }
         let Some(key) = self.ops.access_key() else {
             return Err(format!(
-                "访问密钥未配置：请在 {STACK_DIR}\\{FRPC_ENV_FILE} 中设置 {SAKURA_KEY_VAR}"
+                "访问密钥未配置：请在 {DEFAULT_STACK_DIR}\\{FRPC_ENV_FILE} 中设置 {SAKURA_KEY_VAR}"
             ));
         };
         self.ops

@@ -267,6 +267,8 @@ pub struct OrchestratorConfig {
     pub log_dir: PathBuf,
     /// sprint0 脚本目录（None = 定位失败，CloudCLI 启停禁用并给原因）
     pub scripts_dir: Option<PathBuf>,
+    /// 栈目录（spec 004：用户可配置，Settings.stack_dir，重启生效）
+    pub stack_dir: String,
 }
 
 impl OrchestratorConfig {
@@ -278,6 +280,7 @@ impl OrchestratorConfig {
             stop: StopConfig::default(),
             lang,
             log_dir,
+            stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
             scripts_dir: None,
         }
     }
@@ -440,7 +443,7 @@ impl Orchestrator {
                 }
                 log::warn!("组件 {} 在途启动登记超限，自愈清除并按探测实况纠正", id.as_str());
             }
-            let (state, detail) = match self.probe.probe(id) {
+            let (state, detail) = match self.probe.probe(id, &self.cfg.stack_dir) {
                 ProbeState::Running { .. } => (ComponentState::Running, None),
                 ProbeState::Stopped => (ComponentState::Stopped, None),
                 ProbeState::PortHeld { process_name } => (
@@ -502,6 +505,7 @@ impl Orchestrator {
                 cfg,
                 &texts,
                 &self.cfg.log_dir,
+                &self.cfg.stack_dir,
                 deadline,
             ),
             ComponentId::DdnsGo => crate::stop::stop_ddnsgo(
@@ -509,6 +513,7 @@ impl Orchestrator {
                 self.procs.as_ref(),
                 cfg,
                 &texts,
+                &self.cfg.stack_dir,
                 deadline,
             ),
         };
@@ -551,7 +556,7 @@ impl Orchestrator {
         let begun = Instant::now();
         let texts = crate::lang::detail_texts(self.current_lang());
         // 1. 守卫（AC3 幂等）：已运行跳过；被无关进程占如实上报且不拉起（AC7）
-        match self.probe.probe(id) {
+        match self.probe.probe(id, &self.cfg.stack_dir) {
             ProbeState::Running { .. } => {
                 self.set_state(id, ComponentState::Running, None);
                 log::info!("组件 {} 已在运行：守卫跳过（AC3 幂等）", id.as_str());
@@ -626,12 +631,12 @@ impl Orchestrator {
                 }
             }
             ComponentId::Caddy => {
-                if !self.dispatch_native(cancel, &caddy_run(&self.cfg.log_dir), id) {
+                if !self.dispatch_native(cancel, &caddy_run(&self.cfg.log_dir, &self.cfg.stack_dir), id) {
                     return;
                 }
             }
             ComponentId::DdnsGo => {
-                if !self.dispatch_native(cancel, &ddns_go_run(&self.cfg.log_dir), id) {
+                if !self.dispatch_native(cancel, &ddns_go_run(&self.cfg.log_dir, &self.cfg.stack_dir), id) {
                     return;
                 }
             }
@@ -644,7 +649,7 @@ impl Orchestrator {
                 log::info!("组件 {} 启动轮询被取消（停止管线接管）", id.as_str());
                 return;
             }
-            match self.probe.probe(id) {
+            match self.probe.probe(id, &self.cfg.stack_dir) {
                 ProbeState::Running { .. } => {
                     self.set_state_if_active(cancel, id, ComponentState::Running, None);
                     log::info!("组件 {} 就绪（耗时 {:?}）", id.as_str(), begun.elapsed());
@@ -908,7 +913,7 @@ pub(crate) mod test_support {
             }
         }
 
-        fn probe(&self, id: ComponentId) -> ProbeState {
+        fn probe(&self, id: ComponentId, _stack_dir: &str) -> ProbeState {
             self.probe_calls.fetch_add(1, Ordering::SeqCst);
             let popped = self
                 .states

@@ -10,7 +10,7 @@
 
 use crate::consts::{
     CADDYFILE_PATH, CLOUDCLI_PORT, DDNSGO_CONFIG_PATH, DDNSGO_INTERVAL_SECS,
-    DDNSGO_LISTEN, STACK_DIR,
+    DDNSGO_LISTEN, DEFAULT_STACK_DIR,
 };
 use crate::lang::Lang;
 use std::path::{Path, PathBuf};
@@ -264,10 +264,10 @@ pub fn stop_server(dir: &Path, lang: Lang, log_dir: &Path) -> CommandSpec {
 }
 
 /// setup-autostart.ps1：服务自启任务开（false）/ 关（true，-Remove）
-pub fn setup_autostart(dir: &Path, lang: Lang, log_dir: &Path, remove: bool) -> CommandSpec {
+pub fn setup_autostart(dir: &Path, lang: Lang, log_dir: &Path, remove: bool, stack_dir: &str) -> CommandSpec {
     let mut spec = hidden_script_spec(dir, Script::SetupAutostart, lang, log_dir, &[]);
     spec.args.push("-StackDir".into());
-    spec.args.push(STACK_DIR.into());
+    spec.args.push(stack_dir.into());
     if remove {
         spec.args.push("-Remove".into());
     }
@@ -275,23 +275,23 @@ pub fn setup_autostart(dir: &Path, lang: Lang, log_dir: &Path, remove: bool) -> 
 }
 
 /// Caddy 原生拉起（plan §5.2：不经 powershell；参数与 setup-autostart.ps1 任务一致）
-pub fn caddy_run(log_dir: &Path) -> CommandSpec {
+pub fn caddy_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
     CommandSpec {
-        program: format!(r"{STACK_DIR}\caddy.exe"),
+        program: format!(r"{stack_dir}\caddy.exe"),
         args: vec!["run".into(), "--config".into(), CADDYFILE_PATH.into()],
         creation_flags: CREATE_NO_WINDOW,
         stdout_log: Some(log_dir.join("caddy.log")),
         stderr_log: Some(log_dir.join("caddy.err.log")),
         // 派发后由编排层轮询端口就绪（T8），此处超时仅为执行器兜底
         timeout: Duration::from_secs(15),
-        working_dir: Some(PathBuf::from(STACK_DIR)),
+        working_dir: Some(PathBuf::from(stack_dir)),
     }
 }
 
 /// ddns-go 原生拉起（-c 配置 -l 监听 -f 间隔；与 setup-autostart.ps1 任务一致）
-pub fn ddns_go_run(log_dir: &Path) -> CommandSpec {
+pub fn ddns_go_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
     CommandSpec {
-        program: format!(r"{STACK_DIR}\ddns-go.exe"),
+        program: format!(r"{stack_dir}\ddns-go.exe"),
         args: vec![
             "-c".into(),
             DDNSGO_CONFIG_PATH.into(),
@@ -304,7 +304,7 @@ pub fn ddns_go_run(log_dir: &Path) -> CommandSpec {
         stdout_log: Some(log_dir.join("ddns-go.log")),
         stderr_log: Some(log_dir.join("ddns-go.err.log")),
         timeout: Duration::from_secs(15),
-        working_dir: Some(PathBuf::from(STACK_DIR)),
+        working_dir: Some(PathBuf::from(stack_dir)),
     }
 }
 
@@ -766,12 +766,12 @@ mod tests {
         assert!(stop.command_line().contains("-Lang en"), "{}", stop.command_line());
         assert_eq!(stop.timeout, Duration::from_secs(30));
 
-        let enable = setup_autostart(&dir, Lang::Zh, &logs, false);
+        let enable = setup_autostart(&dir, Lang::Zh, &logs, false, DEFAULT_STACK_DIR);
         assert!(enable.command_line().contains("-StackDir D:\\Software\\cloudcli-https"), "{}", enable.command_line());
         assert!(!enable.command_line().contains("-Remove"), "开启分支不应带 -Remove");
         assert_eq!(enable.timeout, Duration::from_secs(60));
 
-        let disable = setup_autostart(&dir, Lang::Zh, &logs, true);
+        let disable = setup_autostart(&dir, Lang::Zh, &logs, true, DEFAULT_STACK_DIR);
         assert!(disable.command_line().contains("-Remove"), "关闭分支应带 -Remove");
     }
 
@@ -779,19 +779,19 @@ mod tests {
     fn native_caddy_spec_matches_autostart_contract() {
         // setup-autostart.ps1：caddy.exe run --config '<StackDir>\Caddyfile'
         let logs = PathBuf::from(r"D:\any\logs");
-        let spec = caddy_run(&logs);
+        let spec = caddy_run(&logs, DEFAULT_STACK_DIR);
         assert_eq!(spec.program, r"D:\Software\cloudcli-https\caddy.exe");
         assert_eq!(spec.args, vec!["run".to_string(), "--config".to_string(), CADDYFILE_PATH.to_string()]);
         assert_eq!(spec.creation_flags, CREATE_NO_WINDOW, "服务进程也不许弹窗");
         assert_eq!(spec.stdout_log.as_deref(), Some(logs.join("caddy.log").as_path()), "{:?}", spec.stdout_log);
-        assert_eq!(spec.working_dir.as_deref(), Some(Path::new(STACK_DIR)));
+        assert_eq!(spec.working_dir.as_deref(), Some(Path::new(DEFAULT_STACK_DIR)));
     }
 
     #[test]
     fn native_ddnsgo_spec_matches_autostart_contract() {
         // setup-autostart.ps1：ddns-go.exe -c '<StackDir>\ddns-go.yaml' -l :9876 -f 300
         let logs = PathBuf::from(r"D:\any\logs");
-        let spec = ddns_go_run(&logs);
+        let spec = ddns_go_run(&logs, DEFAULT_STACK_DIR);
         assert_eq!(spec.program, r"D:\Software\cloudcli-https\ddns-go.exe");
         assert_eq!(
             spec.args,
@@ -940,7 +940,7 @@ mod tests {
         let dir = script_dir("mock");
         let logs = dir.join("logs");
         assert_eq!(mock.execute(&run_server_hidden(&dir, Lang::En, &logs)), ExecOutcome::Exited(0));
-        assert!(mock.dispatch(&caddy_run(&logs)).is_ok());
+        assert!(mock.dispatch(&caddy_run(&logs, DEFAULT_STACK_DIR)).is_ok());
         let recorded = mock.recorded.lock().unwrap();
         assert_eq!(recorded.len(), 2);
         assert!(recorded[0].command_line().contains("-Lang en"));

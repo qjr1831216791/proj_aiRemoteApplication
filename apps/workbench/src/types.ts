@@ -41,6 +41,7 @@ export interface Settings {
   tunnel: TunnelConfig | null;
   tunnelEnabled: boolean;
   domainHeartbeat: boolean;
+  stackDir: string;
 }
 
 /** 补丁（save_settings 入参；只提交要改的字段） */
@@ -55,6 +56,7 @@ export interface SettingsPatch {
   tunnel?: TunnelConfig;
   tunnelEnabled?: boolean;
   domainHeartbeat?: boolean;
+  stackDir?: string;
 }
 
 /** 隧道运行状态（tunnel://status 载荷；tag="state" camelCase） */

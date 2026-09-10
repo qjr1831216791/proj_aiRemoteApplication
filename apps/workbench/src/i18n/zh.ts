@@ -138,6 +138,11 @@ export const zh = {
   "settings.whitelistCopied": "白名单命令已复制，请在管理员终端中执行",
   "settings.downloadFrpc": "下载恢复 frpc",
   "settings.downloadFrpcDone": "frpc 已恢复",
+  "settings.stackDirEditable": "部署目录（HTTPS 栈）",
+  "settings.stackDirDesc":
+    "Caddy/ddns-go/frpc 的安装位置。输入安装根目录即可（自动追加 cloudcli-https 子目录）。修改后需重启工作台生效，并确保新路径已完成组件安装（装机脚本传 -StackDir 新路径）",
+  "settings.stackDirSaved": "部署目录已保存，重启工作台后生效",
+  "settings.stackDirEmpty": "部署目录不能为空",
 
   // 穿透通道（spec 004）
   "tunnel.title": "访问通道",

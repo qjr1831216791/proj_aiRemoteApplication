@@ -15,7 +15,7 @@
 //! detail 文案经 [`crate::lang::stop_texts`] 双语化（AC25：用户可见路径
 //! zh/en 同源；调用方传生效语言，编排器取实时语言源）。
 
-use crate::consts::{CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT, DDNSGO_PORT, STACK_DIR};
+use crate::consts::{CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT, DDNSGO_PORT, DEFAULT_STACK_DIR};
 use crate::lang::StopTexts;
 use crate::probe::{paths_equal, StatusProbe};
 use crate::scripts::{CommandExecutor, CommandSpec, CREATE_NO_WINDOW, ExecOutcome};
@@ -194,15 +194,15 @@ fn verify_port_released(
 }
 
 /// Caddy 优雅停命令（`<StackDir>\caddy.exe stop`，5s 超时，stdio→日志）
-pub fn caddy_stop_spec(cfg: &StopConfig, log_dir: &Path) -> CommandSpec {
+pub fn caddy_stop_spec(cfg: &StopConfig, log_dir: &Path, stack_dir: &str) -> CommandSpec {
     CommandSpec {
-        program: format!(r"{STACK_DIR}\caddy.exe"),
+        program: format!(r"{stack_dir}\caddy.exe"),
         args: vec!["stop".into()],
         creation_flags: CREATE_NO_WINDOW,
         stdout_log: Some(log_dir.join("caddy-stop.log")),
         stderr_log: Some(log_dir.join("caddy-stop.err.log")),
         timeout: cfg.caddy_stop_timeout,
-        working_dir: Some(PathBuf::from(STACK_DIR)),
+        working_dir: Some(PathBuf::from(stack_dir)),
     }
 }
 
@@ -280,6 +280,7 @@ pub fn stop_caddy(
     cfg: &StopConfig,
     texts: &StopTexts,
     log_dir: &Path,
+    stack_dir: &str,
     deadline: Instant,
 ) -> StopOutcome {
     if let Some(t) = budget_expired(cfg, deadline, CADDY_PORT, texts) {
@@ -290,7 +291,7 @@ pub fn stop_caddy(
     }
     // 1. 优雅停：caddy stop（admin API；5s 超时由 CommandSpec 承载）
     let graceful_ok = matches!(
-        exec.execute(&caddy_stop_spec(cfg, log_dir)),
+        exec.execute(&caddy_stop_spec(cfg, log_dir, stack_dir)),
         ExecOutcome::Exited(0)
     );
     if graceful_ok {
@@ -311,7 +312,7 @@ pub fn stop_caddy(
     if holders.listen_addrs.is_empty() {
         return StopOutcome::Stopped; // 优雅停生效（复核间隙内已释放）
     }
-    let expected = format!(r"{STACK_DIR}\caddy.exe");
+    let expected = format!(r"{stack_dir}\caddy.exe");
     let victim = holders
         .processes
         .iter()
@@ -350,13 +351,14 @@ pub fn stop_ddnsgo(
     procs: &dyn ProcessOps,
     cfg: &StopConfig,
     texts: &StopTexts,
+    stack_dir: &str,
     deadline: Instant,
 ) -> StopOutcome {
     if let Some(t) = budget_expired(cfg, deadline, DDNSGO_PORT, texts) {
         return t;
     }
     // 判据是可执行全路径（同名不同路径的进程不碰）
-    let expected = format!(r"{STACK_DIR}\ddns-go.exe");
+    let expected = format!(r"{stack_dir}\ddns-go.exe");
     let pids = procs.pids_by_exe(&expected);
     if pids.is_empty() {
         // 无本栈进程：复核端口，被无关进程占时如实报告
@@ -529,7 +531,7 @@ mod tests {
             caddy_stop_timeout: CADDY_STOP_TIMEOUT, // 断言默认契约（mock 不耗时）
             ..fast_cfg()
         };
-        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg));
+        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), DEFAULT_STACK_DIR, deadline(&cfg));
         assert_eq!(outcome, StopOutcome::Stopped);
 
         let executed = exec.executed.lock().unwrap();
@@ -556,7 +558,7 @@ mod tests {
         procs.set_descendants(200, &[201]);
 
         let cfg = fast_cfg();
-        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg));
+        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), DEFAULT_STACK_DIR, deadline(&cfg));
         assert_eq!(outcome, StopOutcome::Stopped);
 
         let entries = log.snapshot();
@@ -583,7 +585,7 @@ mod tests {
         let procs = MockProcessOps::with_log(log.clone());
 
         let cfg = fast_cfg();
-        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg));
+        let outcome = stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), DEFAULT_STACK_DIR, deadline(&cfg));
         match outcome {
             StopOutcome::Failed(detail) => {
                 assert!(detail.contains("caddy.exe"), "应指出占用者：{detail}");
@@ -603,7 +605,7 @@ mod tests {
         let procs = MockProcessOps::with_log(log.clone());
         procs.set_by_exe(r"D:\Software\cloudcli-https\ddns-go.exe", &[300, 301]);
 
-        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), deadline(&fast_cfg()));
+        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), DEFAULT_STACK_DIR, deadline(&fast_cfg()));
         assert_eq!(outcome, StopOutcome::Stopped);
 
         let entries = log.snapshot();
@@ -628,7 +630,7 @@ mod tests {
         let log = probe.log();
         let procs = MockProcessOps::with_log(log.clone());
 
-        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), deadline(&fast_cfg()));
+        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), DEFAULT_STACK_DIR, deadline(&fast_cfg()));
         match outcome {
             StopOutcome::Failed(detail) => {
                 assert!(detail.contains("other.exe"), "{detail}");
@@ -653,11 +655,11 @@ mod tests {
             StopOutcome::AlreadyStopped
         );
         assert_eq!(
-            stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), deadline(&cfg)),
+            stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), DEFAULT_STACK_DIR, deadline(&cfg)),
             StopOutcome::AlreadyStopped
         );
         assert_eq!(
-            stop_ddnsgo(&probe, &procs, &cfg, &zh(), deadline(&cfg)),
+            stop_ddnsgo(&probe, &procs, &cfg, &zh(), DEFAULT_STACK_DIR, deadline(&cfg)),
             StopOutcome::AlreadyStopped
         );
         let entries = log.snapshot();

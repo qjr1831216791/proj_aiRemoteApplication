@@ -8,8 +8,9 @@ pub const CADDY_PORT: u16 = 443;
 /// ddns-go 管理 UI 端口
 pub const DDNSGO_PORT: u16 = 9876;
 
-/// HTTPS 栈部署目录（sprint0 setup-autostart.ps1 默认 StackDir）
-pub const STACK_DIR: &str = r"D:\Software\cloudcli-https";
+/// HTTPS 栈部署目录**默认值**（spec 004 起可由用户在设置中配置，
+/// 持久化于 Settings.stack_dir，运行时各组件读配置；重启生效）
+pub const DEFAULT_STACK_DIR: &str = r"D:\Software\cloudcli-https";
 /// Caddy 配置文件（setup-autostart.ps1 契约：caddy.exe run --config）
 pub const CADDYFILE_PATH: &str = r"D:\Software\cloudcli-https\Caddyfile";
 /// ddns-go 配置文件（setup-autostart.ps1 契约：ddns-go.exe -c）

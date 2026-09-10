@@ -7,7 +7,7 @@
 //!   TC3 正确性由真机调用验证（签名错则 API 报 AuthFailure）
 //! - 同步失败由调用方降级：不阻断通道切换，检测循环继续显示手动指引
 
-use crate::consts::{DOMAIN, DOMAIN_ROOT, FRPC_ENV_FILE, STACK_DIR};
+use crate::consts::{DOMAIN, DOMAIN_ROOT, FRPC_ENV_FILE, DEFAULT_STACK_DIR};
 use crate::tunnel::parse_env_value;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -22,14 +22,14 @@ pub struct TcCredential {
 // ── 凭证读取（回退链：.env → ddns-go.yaml）─────────────────────────────────
 
 /// 读取腾讯云凭证（None = 两处都没有 → 调用方跳过自动切换走手动指引）
-pub fn read_credential() -> Option<TcCredential> {
-    let env_path = std::path::PathBuf::from(STACK_DIR).join(FRPC_ENV_FILE);
+pub fn read_credential(stack_dir: &str) -> Option<TcCredential> {
+    let env_path = std::path::PathBuf::from(stack_dir).join(FRPC_ENV_FILE);
     if let Ok(content) = std::fs::read_to_string(&env_path) {
         if let Some(cred) = parse_env_creds(&content) {
             return Some(cred);
         }
     }
-    let yaml_path = std::path::PathBuf::from(STACK_DIR).join("ddns-go.yaml");
+    let yaml_path = std::path::PathBuf::from(stack_dir).join("ddns-go.yaml");
     if let Ok(content) = std::fs::read_to_string(&yaml_path) {
         if let Some(cred) = parse_yaml_creds(&content) {
             return Some(cred);

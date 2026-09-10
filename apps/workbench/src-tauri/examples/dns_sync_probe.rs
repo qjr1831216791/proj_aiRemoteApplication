@@ -5,7 +5,7 @@
 use ai_remote_workbench_lib::dns_api;
 
 fn main() {
-    let Some(cred) = dns_api::read_credential() else {
+    let Some(cred) = dns_api::read_credential("D:\\Software\\cloudcli-https") else {
         eprintln!("未找到腾讯云凭证（.env / ddns-go.yaml）");
         std::process::exit(1);
     };

@@ -143,6 +143,7 @@ pub fn set_services_autostart(
     scripts_dir: &Path,
     lang: Lang,
     log_dir: &Path,
+    stack_dir: &str,
     enable: bool,
 ) -> Result<ServicesAutostartOutcome, String> {
     // 接管检测（AC8）：开启前查询三条任务存在性，任一存在 = 接管存量。
@@ -161,7 +162,7 @@ pub fn set_services_autostart(
         false
     };
     // 开/关统一走 setup-autostart.ps1（幂等重建 / -Remove；AC9：移除不影响运行中进程）
-    let spec = setup_autostart(scripts_dir, lang, log_dir, !enable);
+    let spec = setup_autostart(scripts_dir, lang, log_dir, !enable, stack_dir);
     match executor.execute(&spec) {
         ExecOutcome::Exited(0) => Ok(ServicesAutostartOutcome { took_over }),
         outcome => Err(exec_error(Script::SetupAutostart, outcome, lang)),
@@ -216,6 +217,8 @@ pub struct AutostartContext {
     /// 脚本目录不可用时的禁用原因（spec §4.5：按钮禁用 + 定位提示透传前端）
     pub scripts_disabled_reason: Option<String>,
     pub log_dir: PathBuf,
+    /// 栈目录（spec 004：用户可配置；启动时从设置快照，重启生效）
+    pub stack_dir: Option<String>,
 }
 
 /// set_autostart_services 返回载荷（plan §5.1：`-> { tookOver: bool }`）
@@ -239,8 +242,12 @@ pub async fn set_autostart_services(
         return Err(crate::lang::err_texts(lang).scripts_dir_unavailable_autostart());
     };
     let log_dir = ctx.log_dir.clone();
+    let stack_dir = ctx
+        .stack_dir
+        .clone()
+        .unwrap_or_else(|| crate::consts::DEFAULT_STACK_DIR.to_string());
     let out = tauri::async_runtime::spawn_blocking(move || {
-        set_services_autostart(&crate::scripts::ProcessExecutor, &dir, lang, &log_dir, enable)
+        set_services_autostart(&crate::scripts::ProcessExecutor, &dir, lang, &log_dir, &stack_dir, enable)
     })
     .await
     .map_err(|e| crate::lang::err_texts(lang).autostart_join_failed(&e.to_string()))??;
@@ -271,6 +278,7 @@ pub async fn set_autostart_app(
 
 #[cfg(test)]
 mod tests {
+    use crate::consts::DEFAULT_STACK_DIR;
     use super::*;
     use crate::orchestrator::test_support::MockExecutor;
 
@@ -339,7 +347,7 @@ mod tests {
             ExecOutcome::Exited(0), // 查询：ddns-go 存在
             ExecOutcome::Exited(0), // setup-autostart.ps1 成功
         ]);
-        let out = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), true)
+        let out = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), DEFAULT_STACK_DIR, true)
             .expect("开启应成功");
         assert!(out.took_over, "任一任务存在即视为接管");
 
@@ -365,7 +373,7 @@ mod tests {
             ExecOutcome::Exited(1),
             ExecOutcome::Exited(0),
         ]);
-        let out = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::En, &logs(), true)
+        let out = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::En, &logs(), DEFAULT_STACK_DIR, true)
             .expect("开启应成功");
         assert!(!out.took_over);
     }
@@ -374,7 +382,7 @@ mod tests {
     fn disable_services_passes_remove_without_queries() {
         // AC9：关闭 = setup-autostart.ps1 -Remove；不做接管检测
         let exec = MockExecutor::with_exits(&[ExecOutcome::Exited(0)]);
-        let out = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), false)
+        let out = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), DEFAULT_STACK_DIR, false)
             .expect("关闭应成功");
         assert!(!out.took_over, "关闭分支 tookOver 不适用");
         let executed = exec.executed.lock().unwrap();
@@ -388,7 +396,7 @@ mod tests {
     fn services_setup_failure_maps_sprint0_exit1() {
         // setup-autostart.ps1 exit 1 = 栈目录缺 caddy.exe/ddns-go.exe（sprint0 契约）
         let exec = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
-        let err = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), false)
+        let err = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), DEFAULT_STACK_DIR, false)
             .expect_err("exit 1 应报错");
         assert!(err.contains("栈目录缺少"), "应映射 sprint0 exit 1 语义：{err}");
     }
@@ -477,6 +485,7 @@ mod tests {
             Path::new(r"D:\scripts"),
             Lang::En,
             &logs(),
+            DEFAULT_STACK_DIR,
             false,
         )
         .unwrap_err();
