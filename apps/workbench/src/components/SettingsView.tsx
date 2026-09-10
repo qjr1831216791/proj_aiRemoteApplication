@@ -198,7 +198,7 @@ export function SettingsView(props: SettingsViewProps) {
               onInput={(e) => setNodeDomain(e.currentTarget.value)}
             />
           </div>
-          <button class="btn btn--primary tunnel-form-save" onClick={() => void saveTunnel()}>
+          <button class="btn btn--sm btn--primary tunnel-form-save" onClick={() => void saveTunnel()}>
             {t("settings.tunnelSave", lang)}
           </button>
         </div>

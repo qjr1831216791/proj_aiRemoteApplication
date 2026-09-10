@@ -137,6 +137,10 @@
   min-width: 160px;
 }
 
+.tunnel-form-save {
+  margin-bottom: 1px;
+}
+
 /* 链接式按钮（提示文案中的可点击路径） */
 .link-btn {
   background: none;
