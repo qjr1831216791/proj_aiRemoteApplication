@@ -21,9 +21,10 @@ pub const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 /// 标红阈值（AC6 防抖：连续失败次数）
 pub const FAILURE_THRESHOLD: u32 = 2;
 
-/// 单次探测结论分类
+/// 单次探测结论分类（序列化为纯字符串——此前误用 tag 形态，
+/// 前端收到 `{"kind":{"kind":"dns"}}` 渲染成 [object Object]，2026-09-10 真机发现）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "lowercase")]
 pub enum HealthKind {
     /// HTTPS 2xx/3xx
     Ok,
