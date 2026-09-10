@@ -331,9 +331,28 @@ export const zh = {
   "wizard.tencent.keyBtn": "输入访问密钥（不回显）",
   "wizard.https.desc": "下载带证书插件的 Caddy 与 ddns-go，生成配置并放行 443。证书将在 Caddy 启动后自动签发（约 1~2 分钟，无需 80/443 入站）。",
   "wizard.https.run": "开始安装 HTTPS 栈（管理员）",
-  "wizard.channel.desc": "选择访问通道（二者互斥，可随时在主界面切换）。",
+  "wizard.channel.desc":
+    "选择访问通道（互斥，可随时在主界面切换）。组网不对公网开任何入站端口，安全性最好；直连会把本机出口 IP 发布到公网 DNS，暴露面最大。",
   "wizard.channel.direct": "直连（DDNS）",
-  "wizard.channel.directDesc": "域名解析到本机出口 IP；要求访客能直连到本机（蜂窝热点/部分家庭宽带不可行）",
+  "wizard.channel.directDesc":
+    "域名解析到本机出口 IP，公网可直接探测本机（暴露面最大）；且要求访客能直连到本机（蜂窝热点/部分家庭宽带不可行）。安全敏感场景建议改选组网。",
+  "wizard.channel.mesh": "组网（EasyTier，推荐）",
+  "wizard.channel.meshDesc":
+    "经 EasyTier 虚拟组网访问：本机不对公网开入站端口，访客设备加入同一网络（网络名 + 密钥）后经虚拟网络到达。密钥不外泄即几乎无法被入侵。",
+  "wizard.channel.meshSecretBtn": "① 写入组网密钥（不回显）",
+  "wizard.channel.meshSecretHint":
+    "密钥决定谁能加入你的虚拟网络：点上方按钮在弹出的控制台输入，脚本直写栈目录（不经程序、不落日志）",
+  "wizard.channel.meshInstallBtn": "② 安装组网服务（管理员）",
+  "wizard.channel.meshServiceHint":
+    "服务以 Windows 服务形态常驻（登录自启）；未安装或需修复时点此按钮",
+  "wizard.channel.meshPeerGuide":
+    "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端，加入网络「{name}」（密钥与本机写入的相同），即可经虚拟网络访问本机",
+  "wizard.channel.meshApplyBtn": "应用配置并重启服务（管理员）",
+  "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
+  "wizard.channel.meshDnsHint":
+    "把 ai.jackqi.cn 的 A 记录自动同步为虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
+  "wizard.channel.tunnelDeprecated":
+    "此向导此前选择了穿透通道：穿透入口已从向导移除（安全考量，经第三方节点中转）。既有穿透配置不受影响——可在主界面「访问通道」继续使用，或在设置页停用。建议改选组网。",
   "wizard.channel.tunnel": "穿透（SakuraFrp）",
   "wizard.channel.tunnelDesc": "经海外节点中转，免公网入站；需 SakuraFrp 账号（实名）",
   "wizard.channel.ddnsBtn": "配置 ddns-go 并启动（自动维护 A 记录）",
@@ -371,6 +390,11 @@ export const zh = {
   "wizard.code.warn_ipv6": "出口探测返回 IPv6：直连可用性视访客网络而定，建议以外部设备实测",
   "wizard.code.warn_no_public_ip": "出口 IP 探测失败：无法判断直连可达性，建议以外部设备实测或改用穿透",
   "wizard.code.warn_no_a_record": "子域暂无生效的 A 记录：ddns-go 会在几分钟内自动创建，稍后重新校验",
+  "wizard.code.missing_secret": "组网密钥未写入（点上方按钮①在弹出的控制台输入）",
+  "wizard.code.missing_service": "组网服务未安装（点上方按钮②安装，需管理员）",
+  "wizard.code.service_stopped": "组网服务已停止：点「应用配置并重启服务」恢复",
+  "wizard.code.mesh_wait_peer": "组网已运行，等待成员设备加入（按上方指引在成员设备安装客户端）",
+  "wizard.code.mesh_dns_pending": "组网就绪但 DNS 尚未对齐：点上方「同步 DNS」按钮，或稍后重新校验",
 
   // 提示（toast）
   "toast.opFailed": "操作失败",

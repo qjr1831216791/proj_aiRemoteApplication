@@ -332,9 +332,28 @@ export const en = {
   "wizard.tencent.keyBtn": "Enter access keys (hidden input)",
   "wizard.https.desc": "Downloads Caddy (with the cert plugin) and ddns-go, generates configs and opens 443. The certificate is issued automatically once Caddy starts (about 1-2 minutes, no inbound 80/443 needed).",
   "wizard.https.run": "Install HTTPS stack (admin)",
-  "wizard.channel.desc": "Pick an access channel (mutually exclusive; switchable anytime on the Main view).",
+  "wizard.channel.desc":
+    "Pick an access channel (mutually exclusive; switchable anytime on the Main view). Mesh opens no inbound ports to the public internet — best security; direct publishes this PC's egress IP to public DNS — largest exposure surface.",
   "wizard.channel.direct": "Direct (DDNS)",
-  "wizard.channel.directDesc": "Domain resolves to this PC's egress IP; visitors must reach this PC directly (not feasible on cellular hotspots / some home broadband)",
+  "wizard.channel.directDesc":
+    "Domain resolves to this PC's egress IP; the public internet can probe this PC directly (largest exposure surface). Visitors must also reach this PC directly (not feasible on cellular hotspots / some home broadband). For security-sensitive use, prefer mesh.",
+  "wizard.channel.mesh": "Mesh (EasyTier, recommended)",
+  "wizard.channel.meshDesc":
+    "Access via an EasyTier virtual network: no inbound ports opened to the public internet; visitor devices join the same network (network name + secret) and arrive via the virtual network. Without the secret, intrusion is practically impossible.",
+  "wizard.channel.meshSecretBtn": "① Write mesh secret (hidden input)",
+  "wizard.channel.meshSecretHint":
+    "The secret decides who can join your virtual network: click the button above and type it in the popped-up console; the script writes it straight to the stack directory (never through the app, never logged)",
+  "wizard.channel.meshInstallBtn": "② Install mesh service (admin)",
+  "wizard.channel.meshServiceHint":
+    "The service runs as a Windows service (starts at logon); click this if not installed yet or needs repair",
+  "wizard.channel.meshPeerGuide":
+    "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases, join network \"{name}\" (the same secret you wrote here), then reach this PC via the virtual network",
+  "wizard.channel.meshApplyBtn": "Apply config & restart service (admin)",
+  "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
+  "wizard.channel.meshDnsHint":
+    "Automatically points the ai.jackqi.cn A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
+  "wizard.channel.tunnelDeprecated":
+    "This wizard previously picked the tunnel channel: the tunnel entry has been removed from the wizard (security reasons — relayed via a third-party node). Existing tunnel config is unaffected — keep using it under Main → Access Channel, or disable it in Settings. Switching to mesh is recommended.",
   "wizard.channel.tunnel": "Tunnel (SakuraFrp)",
   "wizard.channel.tunnelDesc": "Relayed via an overseas node, no inbound required; needs a SakuraFrp account (real-name)",
   "wizard.channel.ddnsBtn": "Configure & start ddns-go (maintains the A record)",
@@ -372,6 +391,11 @@ export const en = {
   "wizard.code.warn_ipv6": "Egress probe returned IPv6: direct reachability depends on the visitor's network — test from an external device",
   "wizard.code.warn_no_public_ip": "Egress IP probe failed: direct reachability unknown — test from an external device or use the tunnel",
   "wizard.code.warn_no_a_record": "No active A record for the subdomain yet: ddns-go creates it within minutes; verify again later",
+  "wizard.code.missing_secret": "Mesh secret not written (click button ① above and type it in the console)",
+  "wizard.code.missing_service": "Mesh service not installed (click button ② above; admin required)",
+  "wizard.code.service_stopped": "Mesh service stopped: click \"Apply config & restart service\" to restore",
+  "wizard.code.mesh_wait_peer": "Mesh running; waiting for member devices to join (install the client following the guide above)",
+  "wizard.code.mesh_dns_pending": "Mesh ready but DNS not aligned: click \"Sync DNS\" above, or verify again later",
 
   // Toasts
   "toast.opFailed": "Operation failed",
