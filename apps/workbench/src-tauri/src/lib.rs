@@ -178,10 +178,18 @@ pub fn run() {
                 orchestrator::OrchestratorConfig::new(effective_lang, log_dir.clone());
             orch_cfg.scripts_dir = scripts_dir.clone();
             let lang_handle = app.handle().clone();
+            let channel_handle = app.handle().clone();
             let orch = build_orchestrator(app.handle().clone(), orch_cfg)
                 // 语言切换后脚本 -Lang 与状态 detail 即时跟随（AC25）
                 .with_lang_source(std::sync::Arc::new(move || {
                     lang_handle.state::<lang::LanguageState>().current()
+                }))
+                // 通道感知（spec 004 AC8）：穿透通道下 start_all/联动跳过 ddns-go
+                .with_channel_source(std::sync::Arc::new(move || {
+                    channel_handle
+                        .state::<settings::SettingsState>()
+                        .current()
+                        .access_channel == settings::AccessChannel::Tunnel
                 }));
             app.manage(orch.clone());
             // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：句柄随 setup 结束丢弃——
