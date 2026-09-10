@@ -45,11 +45,18 @@ pub enum SwitchAction {
     StartFrpc,
     /// 停止 frpc
     StopFrpc,
-    /// DNS 记录自动同步（AC12/13 语义升级）：穿透=清 A 建 CNAME；直连=清 CNAME。
+    /// DNS 记录自动同步（AC12/13 语义升级）：穿透=清 A 建 CNAME；直连=清 CNAME；
+    /// 组网=CNAME 全删 + A upsert 虚拟 IP（spec 007 §3.4）。
     /// 凭证缺失/API 失败由执行层降级为手动指引，不阻断切换
     SyncDns(AccessChannel),
     /// 持久化通道到设置
     Persist(AccessChannel),
+    /// 组网生效（spec 007 plan §3.2）：渲染 config.toml（含 secret）→
+    /// `--check-config` 办后校验 → 提权重启 EasyTierMesh 服务。
+    /// 由 mesh.rs 的渲染/校验函数支撑，服务经 mesh-service.ps1 管理
+    RestartMeshService,
+    /// 停止组网服务（提权；mesh → direct/tunnel 反向切换的收尾）
+    StopMeshService,
 }
 
 /// 切换被拒原因（AC7：未配置；AC5/6：重复切换）
@@ -57,16 +64,22 @@ pub enum SwitchAction {
 pub enum SwitchReject {
     /// 穿透未配置（tunnel 配置或访问密钥缺失）→ 前端呈引导态
     NotConfigured { missing: &'static str },
+    /// 组网未就绪（network_secret 未配置或服务未安装，spec 007 AC9 前置）
+    /// missing = "mesh"
+    MeshNotReady,
     /// 已在目标通道上
     AlreadyOnTarget,
 }
 
 /// 通道切换 → 有序动作集（纯函数，单测核心）。
-/// `tunnel_ready` = 配置就绪（tunnel 配置存在 **且** 访问密钥可读）。
+/// `tunnel_ready` = 配置就绪（tunnel 配置存在 **且** 访问密钥可读）；
+/// `mesh_ready` = 组网就绪（network_secret 已写入 **且** 服务已安装——
+/// 具体判定在执行层，渲染前置校验在 RestartMeshService 执行时兜底）。
 pub fn switch_actions(
     current: AccessChannel,
     target: AccessChannel,
     tunnel_ready: bool,
+    mesh_ready: bool,
 ) -> Result<Vec<SwitchAction>, SwitchReject> {
     if target == current {
         return Err(SwitchReject::AlreadyOnTarget);
@@ -74,27 +87,112 @@ pub fn switch_actions(
     if target == AccessChannel::Tunnel && !tunnel_ready {
         return Err(SwitchReject::NotConfigured { missing: "tunnel" });
     }
+    if target == AccessChannel::Mesh && !mesh_ready {
+        return Err(SwitchReject::MeshNotReady);
+    }
     Ok(match target {
         // 执行序为「先起新、再停旧」：起新失败（如密钥误填）时旧通道无恙，
         // 不产生半途破碎状态；DNS 同步在机器侧就绪后执行，失败降级手动指引
-        AccessChannel::Tunnel => vec![
-            SwitchAction::StartFrpc,
-            SwitchAction::StopDdnsGo,
-            SwitchAction::SyncDns(AccessChannel::Tunnel),
-            SwitchAction::Persist(AccessChannel::Tunnel),
-        ],
-        AccessChannel::Direct => vec![
-            SwitchAction::StartDdnsGo,
-            SwitchAction::StopFrpc,
-            SwitchAction::SyncDns(AccessChannel::Direct),
-            SwitchAction::Persist(AccessChannel::Direct),
-        ],
-        // spec 007：三通道矩阵（渲染→服务重启→DNS upsert）由 T6 落地；
-        // 此前以「未就绪」拒绝，防前端提前触达产生半途状态
-        AccessChannel::Mesh => {
-            return Err(SwitchReject::NotConfigured { missing: "mesh" });
+        AccessChannel::Tunnel => {
+            let mut actions = vec![SwitchAction::StartFrpc, SwitchAction::StopDdnsGo];
+            // mesh → tunnel：反向收尾（提权停服务；动作幂等，非 mesh 态 no-op）
+            if current == AccessChannel::Mesh {
+                actions.push(SwitchAction::StopMeshService);
+            }
+            actions.push(SwitchAction::SyncDns(AccessChannel::Tunnel));
+            actions.push(SwitchAction::Persist(AccessChannel::Tunnel));
+            actions
         }
+        AccessChannel::Direct => {
+            let mut actions = vec![SwitchAction::StartDdnsGo];
+            if current == AccessChannel::Mesh {
+                actions.push(SwitchAction::StopMeshService);
+            }
+            actions.push(SwitchAction::StopFrpc);
+            actions.push(SwitchAction::SyncDns(AccessChannel::Direct));
+            actions.push(SwitchAction::Persist(AccessChannel::Direct));
+            actions
+        }
+        // spec 007 plan §3.2：与 004「先起新」哲学相反，**先停旧再起新**——
+        // ddns-go 在跑会把 A 记录写回公网 IP、frpc 的 CNAME 同理，与 mesh 的
+        // DNS 调和（A=虚拟 IP + CNAME 全删）互踩，必须先停。mesh 服务起不来
+        // 的残余态 = 无通道（远程不可达，用户在场修），安全侧优于公网暴露延续
+        AccessChannel::Mesh => vec![
+            SwitchAction::StopFrpc,
+            SwitchAction::StopDdnsGo,
+            SwitchAction::RestartMeshService,
+            SwitchAction::SyncDns(AccessChannel::Mesh),
+            SwitchAction::Persist(AccessChannel::Mesh),
+        ],
     })
+}
+
+// ── 停用编排（spec 007 AC5/AC6，纯函数）────────────────────────────────────
+
+/// 停用目标通道
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisableTarget {
+    Tunnel,
+    Direct,
+}
+
+/// 停用编排原子步骤（与 SwitchAction 不同集——停用是消除暴露面，DNS 取删除
+/// 语义；切换是可逆互斥，DNS 取暂停语义）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisableAction {
+    /// 停 frpc + 守护停止（若在跑）
+    StopFrpc,
+    /// 停 ddns-go 托管 + 自启取消（若在跑）
+    StopDdnsGo,
+    /// 删除全部 CNAME（AC5「彻底清理」：残留 CNAME 是可重启的公网旁路）
+    DeleteCname,
+    /// 删除 A 记录（AC6 非组网态「按用户选择清理」；组网态 A=虚拟 IP 不动）
+    DeleteA,
+    /// 持久化停用标记（看板「已停用」态与重新启用警示的来源）
+    MarkDisabled(DisableTarget),
+}
+
+/// 停用被拒原因
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisableReject {
+    /// 目标通道现役——先切换到其他通道再停用（不引入「无通道」第四态）
+    ChannelActive { target: DisableTarget },
+}
+
+/// 停用编排 → 有序动作集（纯函数，plan §5.2 动作定义）。
+/// `delete_a`：停用直连时是否删除 A 记录（用户选择；仅 tunnel 态有意义——
+/// mesh 态 A 已指虚拟 IP 由组网持有，不删）。
+pub fn disable_actions(
+    current: AccessChannel,
+    target: DisableTarget,
+    delete_a: bool,
+) -> Result<Vec<DisableAction>, DisableReject> {
+    match target {
+        DisableTarget::Tunnel => {
+            if current == AccessChannel::Tunnel {
+                return Err(DisableReject::ChannelActive { target });
+            }
+            // frpc 若在跑先停（mesh/direct 态下通常已停，幂等）
+            Ok(vec![
+                DisableAction::StopFrpc,
+                DisableAction::DeleteCname,
+                DisableAction::MarkDisabled(DisableTarget::Tunnel),
+            ])
+        }
+        DisableTarget::Direct => {
+            if current == AccessChannel::Direct {
+                return Err(DisableReject::ChannelActive { target });
+            }
+            let mut actions = vec![DisableAction::StopDdnsGo];
+            // mesh 在用：A 已指虚拟 IP（切换时完成），无 DNS 动作；
+            // tunnel 在用：A 已是暂停态，按用户选择删除（保留则跳过）
+            if current == AccessChannel::Tunnel && delete_a {
+                actions.push(DisableAction::DeleteA);
+            }
+            actions.push(DisableAction::MarkDisabled(DisableTarget::Direct));
+            Ok(actions)
+        }
+    }
 }
 
 // ── .env 解析（spec 004 §4.2，纯函数）───────────────────────────────────────
@@ -748,7 +846,7 @@ mod tests {
     fn switch_direct_to_tunnel_starts_frpc_before_stopping_ddns() {
         // AC5：直连 → 穿透 = 起 frpc + 停 ddns-go + DNS 同步 + 持久化。
         // 「先起新再停旧」：起 frpc 失败（如密钥误填）时直连通道无恙。
-        let actions = switch_actions(AccessChannel::Direct, AccessChannel::Tunnel, true)
+        let actions = switch_actions(AccessChannel::Direct, AccessChannel::Tunnel, true, false)
             .expect("就绪时应允许切换");
         assert_eq!(
             actions,
@@ -764,7 +862,7 @@ mod tests {
     #[test]
     fn switch_tunnel_to_direct_starts_ddns_before_stopping_frpc() {
         // AC6：穿透 → 直连 = 恢复 ddns-go + 停 frpc + DNS 同步 + 持久化（同「先起新」序）
-        let actions = switch_actions(AccessChannel::Tunnel, AccessChannel::Direct, true)
+        let actions = switch_actions(AccessChannel::Tunnel, AccessChannel::Direct, true, false)
             .expect("切回直连无需穿透就绪");
         assert_eq!(
             actions,
@@ -781,15 +879,122 @@ mod tests {
     fn switch_rejects_unconfigured_and_noop() {
         // AC7：未配置 → NotConfigured；同通道 → AlreadyOnTarget
         assert_eq!(
-            switch_actions(AccessChannel::Direct, AccessChannel::Tunnel, false),
+            switch_actions(AccessChannel::Direct, AccessChannel::Tunnel, false, false),
             Err(SwitchReject::NotConfigured { missing: "tunnel" })
         );
         assert_eq!(
-            switch_actions(AccessChannel::Direct, AccessChannel::Direct, true),
+            switch_actions(AccessChannel::Direct, AccessChannel::Direct, true, false),
             Err(SwitchReject::AlreadyOnTarget)
         );
         // 切回直连永远允许（回退路径不设门槛）
-        assert!(switch_actions(AccessChannel::Tunnel, AccessChannel::Direct, false).is_ok());
+        assert!(switch_actions(AccessChannel::Tunnel, AccessChannel::Direct, false, false).is_ok());
+    }
+
+    /// spec 007 plan §3.2：切组网 = 先停旧（ddns-go 会把 A 写回公网 IP，与
+    /// mesh 的 A=虚拟 IP 调和互踩——与 004「先起新」相反的理由注释在实现处）
+    #[test]
+    fn switch_to_mesh_stops_legacy_before_service_restart() {
+        for from in [AccessChannel::Direct, AccessChannel::Tunnel] {
+            let actions =
+                switch_actions(from, AccessChannel::Mesh, true, true).expect("mesh 就绪应允许");
+            assert_eq!(
+                actions,
+                vec![
+                    SwitchAction::StopFrpc,
+                    SwitchAction::StopDdnsGo,
+                    SwitchAction::RestartMeshService,
+                    SwitchAction::SyncDns(AccessChannel::Mesh),
+                    SwitchAction::Persist(AccessChannel::Mesh),
+                ],
+                "from {from:?}"
+            );
+        }
+        // mesh 未就绪（secret 未配/服务未装）→ 拒绝（AC9 前置）
+        assert_eq!(
+            switch_actions(AccessChannel::Direct, AccessChannel::Mesh, true, false),
+            Err(SwitchReject::MeshNotReady)
+        );
+    }
+
+    /// mesh → direct/tunnel：新通道先起，反向收尾=提权停 mesh 服务
+    #[test]
+    fn switch_from_mesh_appends_stop_mesh_service() {
+        let to_direct = switch_actions(AccessChannel::Mesh, AccessChannel::Direct, true, true)
+            .expect("切直连无需 mesh 就绪");
+        assert_eq!(
+            to_direct,
+            vec![
+                SwitchAction::StartDdnsGo,
+                SwitchAction::StopMeshService,
+                SwitchAction::StopFrpc,
+                SwitchAction::SyncDns(AccessChannel::Direct),
+                SwitchAction::Persist(AccessChannel::Direct),
+            ]
+        );
+        let to_tunnel = switch_actions(AccessChannel::Mesh, AccessChannel::Tunnel, true, false)
+            .expect("切穿透无需 mesh 就绪");
+        assert_eq!(
+            to_tunnel,
+            vec![
+                SwitchAction::StartFrpc,
+                SwitchAction::StopDdnsGo,
+                SwitchAction::StopMeshService,
+                SwitchAction::SyncDns(AccessChannel::Tunnel),
+                SwitchAction::Persist(AccessChannel::Tunnel),
+            ]
+        );
+    }
+
+    /// spec 007 AC5/AC6 停用编排：现役拒绝 + 动作矩阵
+    #[test]
+    fn disable_actions_matrix() {
+        // 停用现役通道 → 拒绝（先切换，不引入「无通道」态）
+        assert_eq!(
+            disable_actions(AccessChannel::Tunnel, DisableTarget::Tunnel, false),
+            Err(DisableReject::ChannelActive { target: DisableTarget::Tunnel })
+        );
+        assert_eq!(
+            disable_actions(AccessChannel::Direct, DisableTarget::Direct, false),
+            Err(DisableReject::ChannelActive { target: DisableTarget::Direct })
+        );
+
+        // 停穿透（mesh 现役）：停 frpc（幂等）+ 删 CNAME + 标记
+        assert_eq!(
+            disable_actions(AccessChannel::Mesh, DisableTarget::Tunnel, false).unwrap(),
+            vec![
+                DisableAction::StopFrpc,
+                DisableAction::DeleteCname,
+                DisableAction::MarkDisabled(DisableTarget::Tunnel),
+            ]
+        );
+
+        // 停直连（mesh 现役）：A=虚拟 IP 由组网持有 → 无 DNS 删除动作
+        assert_eq!(
+            disable_actions(AccessChannel::Mesh, DisableTarget::Direct, true).unwrap(),
+            vec![
+                DisableAction::StopDdnsGo,
+                DisableAction::MarkDisabled(DisableTarget::Direct),
+            ],
+            "mesh 态停直连不删 A（AC6：组网生效时 A 已指虚拟 IP）"
+        );
+
+        // 停直连（tunnel 现役）：A 已暂停，按用户选择删（保留则跳过）
+        assert_eq!(
+            disable_actions(AccessChannel::Tunnel, DisableTarget::Direct, true).unwrap(),
+            vec![
+                DisableAction::StopDdnsGo,
+                DisableAction::DeleteA,
+                DisableAction::MarkDisabled(DisableTarget::Direct),
+            ]
+        );
+        assert_eq!(
+            disable_actions(AccessChannel::Tunnel, DisableTarget::Direct, false).unwrap(),
+            vec![
+                DisableAction::StopDdnsGo,
+                DisableAction::MarkDisabled(DisableTarget::Direct),
+            ],
+            "用户选择保留 A 记录 → 跳过删除"
+        );
     }
 
     #[test]

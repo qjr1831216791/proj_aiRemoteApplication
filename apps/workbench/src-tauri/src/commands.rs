@@ -223,21 +223,36 @@ pub async fn switch_channel(
     use crate::tunnel::WindowsFrpcOps;
 
     let cur = settings.current();
-    // 前置就绪：穿透配置（settings.tunnel）∧ frpc 二进制 ∧ 访问密钥（AC7/AC14）
+    // 前置就绪：穿透配置（settings.tunnel）∧ frpc 二进制 ∧ 访问密钥（AC7/AC14）；
+    // 组网 = network_secret 已写入 ∧ 服务已安装（服务存在性 T8 接入，先按密钥判定）
     let ops = WindowsFrpcOps::new(ctx.scripts_dir.clone(), cur.stack_dir.clone());
     let tunnel_ready = cur.tunnel.is_some() && ops.exe_exists() && ops.access_key().is_some();
-    let actions = switch_actions(cur.access_channel, target, tunnel_ready).map_err(|e| match e {
-        SwitchReject::NotConfigured { .. } => {
-            "穿透未就绪：请先在穿透设置中填写隧道 ID 与节点域名，并按指引配置 frpc.exe 与访问密钥"
-                .to_string()
-        }
-        SwitchReject::AlreadyOnTarget => "已处于目标通道".to_string(),
-    })?;
+    let mesh_ready = crate::mesh::read_network_secret(&cur.stack_dir).is_some();
+    let actions =
+        switch_actions(cur.access_channel, target, tunnel_ready, mesh_ready).map_err(|e| match e {
+            SwitchReject::NotConfigured { .. } => {
+                "穿透未就绪：请先在穿透设置中填写隧道 ID 与节点域名，并按指引配置 frpc.exe 与访问密钥"
+                    .to_string()
+            }
+            SwitchReject::MeshNotReady => {
+                "组网未就绪：请先运行 set-mesh-secret.ps1 写入密钥，并安装组网服务（向导或设置区入口）"
+                    .to_string()
+            }
+            SwitchReject::AlreadyOnTarget => "已处于目标通道".to_string(),
+        })?;
 
     for action in actions {
         match action {
             SwitchAction::StartFrpc => mgr.start()?,
             SwitchAction::StopFrpc => mgr.stop(),
+            // 组网生效（渲染→校验→提权重启）与反向收尾（提权停）随 T9 命令层
+            // 接 mesh-service.ps1；当前不可达（mesh_ready 判定后正常路径才会产出）
+            SwitchAction::RestartMeshService => {
+                return Err("组网服务管理待 T9 接入（mesh-service.ps1）".into());
+            }
+            SwitchAction::StopMeshService => {
+                return Err("组网服务管理待 T9 接入（mesh-service.ps1）".into());
+            }
             SwitchAction::StartDdnsGo => orch
                 .start_one(ComponentId::DdnsGo)
                 .map_err(|e| format!("ddns-go 启动派发失败：{e}"))?,
@@ -268,15 +283,15 @@ pub async fn switch_channel(
                 };
                 let sub = dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
                 let node_domain = cur.tunnel.as_ref().map(|t| t.node_domain.clone());
+                let virtual_ip = cur.mesh.virtual_ip.clone();
                 let result = tauri::async_runtime::spawn_blocking(move || match to {
                     Ac::Tunnel => match node_domain {
                         Some(nd) => dns_api::sync_to_tunnel(&cred, DOMAIN_ROOT, &sub, &nd),
                         None => Err("穿透配置缺失，无法同步 CNAME".into()),
                     },
                     Ac::Direct => dns_api::sync_to_direct(&cred, DOMAIN_ROOT, &sub),
-                    // spec 007 T6 接入组网 DNS 调和（A 记录 upsert 虚拟 IP）；
-                    // 当前 switch_actions 不产出该动作，仅为枚举穷尽
-                    Ac::Mesh => Err("组网通道 DNS 同步待 T6 实现".into()),
+                    // spec 007：CNAME 全删 + A upsert 虚拟 IP（AC6/AC7）
+                    Ac::Mesh => dns_api::sync_to_mesh(&cred, DOMAIN_ROOT, &sub, &virtual_ip),
                 })
                 .await;
                 match result {
