@@ -250,6 +250,33 @@ pub async fn switch_channel(
                     ));
                 }
             }
+            SwitchAction::SyncDns(to) => {
+                // DNS 自动切换（AC12/13 升级）：凭证缺失/API 失败仅记录不阻断——
+                // 检测循环会继续显示手动指引（降级闭环）。凭证复用机器上已有的
+                // 腾讯云密钥（.env → ddns-go.yaml），不新增用户输入
+                use crate::consts::{DOMAIN, DOMAIN_ROOT};
+                use crate::dns_api;
+                use crate::settings::AccessChannel as Ac;
+                let Some(cred) = dns_api::read_credential() else {
+                    log::warn!("DNS 自动切换跳过：未找到腾讯云凭证（.env / ddns-go.yaml），请按指引手动修改解析");
+                    continue;
+                };
+                let sub = dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
+                let node_domain = cur.tunnel.as_ref().map(|t| t.node_domain.clone());
+                let result = tauri::async_runtime::spawn_blocking(move || match to {
+                    Ac::Tunnel => match node_domain {
+                        Some(nd) => dns_api::sync_to_tunnel(&cred, DOMAIN_ROOT, &sub, &nd),
+                        None => Err("穿透配置缺失，无法同步 CNAME".into()),
+                    },
+                    Ac::Direct => dns_api::sync_to_direct(&cred, DOMAIN_ROOT, &sub),
+                })
+                .await;
+                match result {
+                    Ok(Ok(n)) => log::info!("DNS 自动切换完成（{to:?}），应用 {n} 条记录操作"),
+                    Ok(Err(e)) => log::warn!("DNS 自动切换失败（回退手动指引）：{e}"),
+                    Err(e) => log::warn!("DNS 切换线程失败：{e}"),
+                }
+            }
             SwitchAction::Persist(ch) => {
                 settings
                     .patch(&SettingsPatch { access_channel: Some(ch), ..Default::default() })

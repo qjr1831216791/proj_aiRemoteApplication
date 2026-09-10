@@ -38,6 +38,9 @@ pub enum SwitchAction {
     StartFrpc,
     /// 停止 frpc
     StopFrpc,
+    /// DNS 记录自动同步（AC12/13 语义升级）：穿透=清 A 建 CNAME；直连=清 CNAME。
+    /// 凭证缺失/API 失败由执行层降级为手动指引，不阻断切换
+    SyncDns(AccessChannel),
     /// 持久化通道到设置
     Persist(AccessChannel),
 }
@@ -66,16 +69,17 @@ pub fn switch_actions(
     }
     Ok(match target {
         // 执行序为「先起新、再停旧」：起新失败（如密钥误填）时旧通道无恙，
-        // 不产生半途破碎状态；新旧短暂并存无害（ddns-go 抢写只威胁 CNAME，
-        // 而 CNAME 是持久化之后用户才去配置的外部步骤）
+        // 不产生半途破碎状态；DNS 同步在机器侧就绪后执行，失败降级手动指引
         AccessChannel::Tunnel => vec![
             SwitchAction::StartFrpc,
             SwitchAction::StopDdnsGo,
+            SwitchAction::SyncDns(AccessChannel::Tunnel),
             SwitchAction::Persist(AccessChannel::Tunnel),
         ],
         AccessChannel::Direct => vec![
             SwitchAction::StartDdnsGo,
             SwitchAction::StopFrpc,
+            SwitchAction::SyncDns(AccessChannel::Direct),
             SwitchAction::Persist(AccessChannel::Direct),
         ],
     })
@@ -602,7 +606,7 @@ mod tests {
 
     #[test]
     fn switch_direct_to_tunnel_starts_frpc_before_stopping_ddns() {
-        // AC5：直连 → 穿透 = 起 frpc + 停 ddns-go + 持久化。
+        // AC5：直连 → 穿透 = 起 frpc + 停 ddns-go + DNS 同步 + 持久化。
         // 「先起新再停旧」：起 frpc 失败（如密钥误填）时直连通道无恙。
         let actions = switch_actions(AccessChannel::Direct, AccessChannel::Tunnel, true)
             .expect("就绪时应允许切换");
@@ -611,6 +615,7 @@ mod tests {
             vec![
                 SwitchAction::StartFrpc,
                 SwitchAction::StopDdnsGo,
+                SwitchAction::SyncDns(AccessChannel::Tunnel),
                 SwitchAction::Persist(AccessChannel::Tunnel),
             ]
         );
@@ -618,7 +623,7 @@ mod tests {
 
     #[test]
     fn switch_tunnel_to_direct_starts_ddns_before_stopping_frpc() {
-        // AC6：穿透 → 直连 = 恢复 ddns-go + 停 frpc + 持久化（同「先起新」序）
+        // AC6：穿透 → 直连 = 恢复 ddns-go + 停 frpc + DNS 同步 + 持久化（同「先起新」序）
         let actions = switch_actions(AccessChannel::Tunnel, AccessChannel::Direct, true)
             .expect("切回直连无需穿透就绪");
         assert_eq!(
@@ -626,6 +631,7 @@ mod tests {
             vec![
                 SwitchAction::StartDdnsGo,
                 SwitchAction::StopFrpc,
+                SwitchAction::SyncDns(AccessChannel::Direct),
                 SwitchAction::Persist(AccessChannel::Direct),
             ]
         );

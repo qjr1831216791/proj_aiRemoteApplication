@@ -9,6 +9,7 @@
 mod autostart;
 mod commands;
 mod consts;
+pub mod dns_api;
 mod exit_flow;
 mod lang;
 mod network;

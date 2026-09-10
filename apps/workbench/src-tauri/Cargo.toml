@@ -31,6 +31,12 @@ serde_json = "1"
 netstat2 = "0.9"
 # T6 进程身份：PID → 可执行文件路径/名称（与监听者身份匹配，AC7 双重判据）
 sysinfo = "0.33"
+# spec 004 DNS 自动切换：腾讯云 DNS API（TC3-HMAC-SHA256 签名）+ HTTPS 客户端。
+# ureq 轻量单二进制（rustls）；sha2/hmac 为 RustCrypto 成熟库，仅用于 TC3 签名
+ureq = { version = "2", features = ["json", "tls"] }
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.61", features = [
