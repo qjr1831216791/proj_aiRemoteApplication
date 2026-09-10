@@ -199,12 +199,13 @@ pub fn run() {
                 .with_lang_source(std::sync::Arc::new(move || {
                     lang_handle.state::<lang::LanguageState>().current()
                 }))
-                // 通道感知（spec 004 AC8）：穿透通道下 start_all/联动跳过 ddns-go
+                // 通道感知（spec 007 枚举化）：现役通道实时读取——穿透/组网下
+                // start_all 跳过 ddns-go（004 AC8 / 007 §3.2），直连全启
                 .with_channel_source(std::sync::Arc::new(move || {
                     channel_handle
                         .state::<settings::SettingsState>()
                         .current()
-                        .access_channel == settings::AccessChannel::Tunnel
+                        .access_channel
                 }));
             app.manage(orch.clone());
             // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：句柄随 setup 结束丢弃——
@@ -247,6 +248,28 @@ pub fn run() {
             ));
             app.manage(tunnel_mgr.clone());
             tunnel_mgr.spawn_guard();
+
+            // ── 组网通道（spec 007 T8）：状态观察者（只探询不动手，plan §3.3）──
+            // 服务拉起/自愈归 SCM（T7 服务恢复策略），此处周期探询（sc 服务态 +
+            // RPC peers）→ 四态判定 → 变化发 mesh://status；cli 候选：随包 →
+            // 栈目录落位副本（升级解耦，plan §4.2）
+            let mesh_channel_handle = app.handle().clone();
+            let mesh_monitor = std::sync::Arc::new(mesh::MeshMonitor::new(
+                std::sync::Arc::new(mesh::WindowsMeshOps::new(
+                    scripts_dir.clone(),
+                    stack_dir.clone(),
+                )),
+                std::sync::Arc::new(move || {
+                    mesh_channel_handle
+                        .state::<settings::SettingsState>()
+                        .current()
+                        .access_channel
+                }),
+                stack_dir.clone(),
+                std::sync::Arc::new(TauriMeshEmitter { app: app.handle().clone() }),
+            ));
+            app.manage(mesh_monitor.clone());
+            mesh_monitor.spawn();
 
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
@@ -320,6 +343,32 @@ pub fn run() {
                 // spec 004 AC10：收摊语义覆盖隧道——frpc 与三组件一并退出
                 // （幂等：未运行时 kill 为无操作；state 类型与 manage 一致为 Arc 包裹）
                 app.state::<std::sync::Arc<tunnel::TunnelManager>>().stop();
+                // spec 007：现役 mesh + 收摊意图 → 提权停组网服务（UAC 派发
+                // 不等待：拒绝则服务保持运行，下次开机 SCM delayed-auto 拉回，
+                // 组网可用性不因退出流程被破坏）
+                {
+                    let (channel, wants_stop, stack) = {
+                        let s = app.state::<settings::SettingsState>().current();
+                        let wants_stop = app.state::<exit_flow::ExitGate>().last_request()
+                            == Some(exit_flow::ExitSemantics::StopServices);
+                        (s.access_channel, wants_stop, s.stack_dir.clone())
+                    };
+                    if channel == settings::AccessChannel::Mesh && wants_stop {
+                        if let Some(dir) =
+                            app.state::<autostart::AutostartContext>().scripts_dir.clone()
+                        {
+                            let lang = app.state::<lang::LanguageState>().current();
+                            let params = mesh::service_action_params(
+                                &dir, "stop", &stack, lang,
+                            );
+                            if let Err(e) = scripts::elevate("powershell.exe", &params) {
+                                log::error!("组网服务停止派发失败（不阻断退出）：{e}");
+                            }
+                        } else {
+                            log::warn!("脚本目录不可用：组网服务停止派发跳过（不阻断退出）");
+                        }
+                    }
+                }
                 let stopper: std::sync::Arc<dyn exit_flow::ServiceStopper> = {
                     let orch = app.state::<orchestrator::Orchestrator>();
                     std::sync::Arc::new(orch.inner().clone())
@@ -395,6 +444,20 @@ impl tunnel::TunnelEventSink for TauriTunnelEmitter {
         use tauri::Emitter;
         if let Err(e) = self.app.emit(tunnel::EVENT_TUNNEL_STATUS, status) {
             log::error!("发送 {} 失败：{e}", tunnel::EVENT_TUNNEL_STATUS);
+        }
+    }
+}
+
+/// 组网状态事件出口（`mesh://status`；载荷 MeshStatus，spec 007）
+struct TauriMeshEmitter {
+    app: tauri::AppHandle,
+}
+
+impl mesh::MeshEventSink for TauriMeshEmitter {
+    fn emit_mesh_status(&self, status: &mesh::MeshStatus) {
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit(mesh::EVENT_MESH_STATUS, status) {
+            log::error!("发送 {} 失败：{e}", mesh::EVENT_MESH_STATUS);
         }
     }
 }

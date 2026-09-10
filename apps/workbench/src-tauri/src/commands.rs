@@ -253,9 +253,13 @@ pub async fn switch_channel(
             SwitchAction::StopMeshService => {
                 return Err("组网服务管理待 T9 接入（mesh-service.ps1）".into());
             }
-            SwitchAction::StartDdnsGo => orch
-                .start_one(ComponentId::DdnsGo)
-                .map_err(|e| format!("ddns-go 启动派发失败：{e}"))?,
+            SwitchAction::StartDdnsGo => {
+                orch.start_one(ComponentId::DdnsGo)
+                    .map_err(|e| format!("ddns-go 启动派发失败：{e}"))?;
+                // 条件恢复 ddns-go 自启托管（仅自启开关开启时重建，判据见
+                // set_ddnsgo_autostart）——切回直连后开机拉起行为跟随用户开关
+                sync_ddnsgo_autostart(&ctx, cur.language, cur.stack_dir.clone(), true).await;
+            }
             SwitchAction::StopDdnsGo => {
                 // 停止管线有 10s 预算 → spawn_blocking 不阻塞 UI 线程（沿 stop_all）
                 let orch2 = orch.inner().clone();
@@ -269,6 +273,10 @@ pub async fn switch_channel(
                         "ddns-go 停止未确认（{outcome:?}）：frpc 已启动，请检查 ddns-go 状态后重试"
                     ));
                 }
+                // 取消 ddns-go 自启托管（007 §3.2，对 tunnel/mesh 双方向同语义——
+                // 004 补强）：开机任务拉起 ddns-go 会把 A 记录写回公网 IP，与穿透
+                // CNAME / 组网虚拟 IP 的 DNS 调和互踩
+                sync_ddnsgo_autostart(&ctx, cur.language, cur.stack_dir.clone(), false).await;
             }
             SwitchAction::SyncDns(to) => {
                 // DNS 自动切换（AC12/13 升级）：凭证缺失/API 失败仅记录不阻断——
@@ -308,6 +316,42 @@ pub async fn switch_channel(
         }
     }
     Ok(settings.current())
+}
+
+/// 通道切换的 ddns-go 自启托跟进/退（StopDdnsGo/StartDdnsGo 配套，007 §3.2）。
+/// 失败仅告警不阻断切换——自启只影响下次开机行为，不应反手让已完成的通道
+/// 切换报错（进程已停/已起的即时效果不因任务残留回滚）。
+async fn sync_ddnsgo_autostart(
+    ctx: &tauri::State<'_, AutostartContext>,
+    language: crate::settings::LanguageSetting,
+    stack_dir: String,
+    enable: bool,
+) {
+    let Some(scripts_dir) = ctx.scripts_dir.clone() else {
+        log::warn!("脚本目录不可用：跳过 ddns-go 自启托管调整（不阻断切换）");
+        return;
+    };
+    let lang = lang::resolve_setting(language);
+    let log_dir = ctx.log_dir.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::autostart::set_ddnsgo_autostart(
+            &scripts::ProcessExecutor,
+            &scripts_dir,
+            lang,
+            &log_dir,
+            &stack_dir,
+            enable,
+        )
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => log::info!(
+            "ddns-go 自启托管已{}（enable={enable}）",
+            if enable { "恢复" } else { "取消" }
+        ),
+        Ok(Err(e)) => log::warn!("ddns-go 自启托管调整失败（不阻断切换）：{e}"),
+        Err(e) => log::warn!("ddns-go 自启托管线程失败（不阻断切换）：{e}"),
+    }
 }
 
 /// 穿透启用/停用（AC11）：非穿透通道下仅改开关（守护循环按通道×开关收敛，

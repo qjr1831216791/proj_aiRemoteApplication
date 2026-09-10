@@ -46,6 +46,9 @@ pub enum Script {
     SetTencentKey,
     /// ddns-go 配置生成 + 拉起（可见交互窗，无需管理员；spec 006）
     ConfigDdnsGo,
+    /// EasyTier 组网服务管理（install/uninstall/start/stop/restart/status；
+    /// 需管理员，变更动作自检提权——spec 007，status 只读免提权）
+    MeshService,
 }
 
 /// 窗口形态（spec §4.3）
@@ -73,6 +76,7 @@ impl Script {
             Script::SetFrpKey => "set-frp-key.ps1",
             Script::SetTencentKey => "set-tencent-key.ps1",
             Script::ConfigDdnsGo => "config-ddnsgo.ps1",
+            Script::MeshService => "mesh-service.ps1",
         }
     }
 
@@ -81,7 +85,8 @@ impl Script {
             Script::RunServerHidden | Script::StopServer | Script::SetupAutostart => {
                 Visibility::Hidden
             }
-            Script::InstallServer | Script::InstallHttps | Script::EnableHttps => {
+            Script::InstallServer | Script::InstallHttps | Script::EnableHttps
+            | Script::MeshService => {
                 Visibility::Elevated
             }
             Script::InstallClient
@@ -108,6 +113,8 @@ impl Script {
             Script::SetFrpKey => Duration::from_secs(300),
             Script::SetTencentKey => Duration::from_secs(300),
             Script::ConfigDdnsGo => Duration::from_secs(120),
+            // 服务动作最快（stop/start 秒级；install 含落位与 Start-Service 预算 60s）
+            Script::MeshService => Duration::from_secs(60),
         }
     }
 }

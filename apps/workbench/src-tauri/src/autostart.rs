@@ -22,12 +22,13 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// sprint0 服务自启任务名（与 setup-autostart.ps1 组件定义逐字对齐，AC8）
-pub const SERVICE_TASK_NAMES: [&str; 3] = [
-    "CloudCLI Sprint0 autostart",
-    "Caddy Sprint0 autostart",
-    "ddns-go Sprint0 autostart",
-];
+/// sprint0 服务自启任务名（与 setup-autostart.ps1 组件定义逐字对齐，AC8）。
+/// 单条常量供通道切换的精确操作（spec 007：只动 ddns-go，不碰另两条）。
+pub const CLOUDCLI_TASK_NAME: &str = "CloudCLI Sprint0 autostart";
+pub const CADDY_TASK_NAME: &str = "Caddy Sprint0 autostart";
+pub const DDNSGO_TASK_NAME: &str = "ddns-go Sprint0 autostart";
+pub const SERVICE_TASK_NAMES: [&str; 3] =
+    [CLOUDCLI_TASK_NAME, CADDY_TASK_NAME, DDNSGO_TASK_NAME];
 
 /// 程序自身登录任务名（AC10，plan §5.2）
 pub const APP_TASK_NAME: &str = "AI Remote Workbench Autostart";
@@ -113,6 +114,21 @@ pub fn app_task_remove_spec(log_dir: &Path) -> CommandSpec {
     ps_command_spec(&script, APP_TASK_TIMEOUT, "autostart-app-remove", log_dir)
 }
 
+/// 单条服务自启任务移除命令（幂等；spec 007 plan §3.2：切 mesh/tunnel 时
+/// 取消 ddns-go 自启托管——否则开机任务把 ddns-go 拉起来写回 A 记录，
+/// 与组网 A=虚拟 IP / 穿透 CNAME 的 DNS 调和互踩）
+pub fn service_task_remove_spec(task_name: &str, log_dir: &Path) -> CommandSpec {
+    let name = ps_quote(task_name);
+    let script = format!(
+        "try {{ \
+         if (Get-ScheduledTask -TaskName '{name}' -ErrorAction SilentlyContinue) {{ \
+         Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false \
+         }}; exit 0 \
+         }} catch {{ exit 1 }}"
+    );
+    ps_command_spec(&script, APP_TASK_TIMEOUT, "autostart-task-remove", log_dir)
+}
+
 // ── 核心操作（依赖全注入；单测 mock executor）──────────────────────────────
 
 /// 查询单条计划任务是否存在（查询异常返回 Err，交上层决定放行与否）
@@ -167,6 +183,49 @@ pub fn set_services_autostart(
     match executor.execute(&spec) {
         ExecOutcome::Exited(0) => Ok(ServicesAutostartOutcome { took_over }),
         outcome => Err(exec_error(Script::SetupAutostart, outcome, lang)),
+    }
+}
+
+/// ddns-go 自启精确开/关（spec 007 plan §3.2：通道切换整合）。
+/// - enable=false：单条注销 ddns-go 任务，另两条不动（caddy 仍为穿透/直连
+///   终结 TLS、CloudCLI 任务是自启开关的状态代理）；
+/// - enable=true：仅当用户自启开关开启（= CloudCLI 任务存在）时经
+///   setup-autostart.ps1 幂等重建——开关无 settings 持久化，任务存在性即
+///   唯一不漂移的判据（避免与设置页开关打架）；不存在/查询失败跳过不阻断。
+pub fn set_ddnsgo_autostart(
+    executor: &dyn CommandExecutor,
+    scripts_dir: &Path,
+    lang: Lang,
+    log_dir: &Path,
+    stack_dir: &str,
+    enable: bool,
+) -> Result<(), String> {
+    if !enable {
+        return match executor.execute(&service_task_remove_spec(DDNSGO_TASK_NAME, log_dir)) {
+            ExecOutcome::Exited(0) => Ok(()),
+            ExecOutcome::Exited(code) => {
+                Err(format!("ddns-go 自启任务注销失败（退出码 {code}）"))
+            }
+            ExecOutcome::TimedOut => Err("ddns-go 自启任务注销超时".into()),
+            ExecOutcome::SpawnFailed(e) => Err(format!("ddns-go 自启任务无法执行：{e}")),
+        };
+    }
+    match task_exists(executor, CLOUDCLI_TASK_NAME, log_dir) {
+        Ok(true) => {
+            let spec = setup_autostart(scripts_dir, lang, log_dir, false, stack_dir);
+            match executor.execute(&spec) {
+                ExecOutcome::Exited(0) => Ok(()),
+                outcome => Err(exec_error(Script::SetupAutostart, outcome, lang)),
+            }
+        }
+        Ok(false) => {
+            log::info!("自启开关未开（CloudCLI 任务不存在）：跳过重建 ddns-go 自启任务");
+            Ok(())
+        }
+        Err(e) => {
+            log::warn!("自启开关状态查询失败，跳过重建 ddns-go 自启任务：{e}");
+            Ok(())
+        }
     }
 }
 
@@ -400,6 +459,113 @@ mod tests {
         let err = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), DEFAULT_STACK_DIR, false)
             .expect_err("exit 1 应报错");
         assert!(err.contains("栈目录缺少"), "应映射 sprint0 exit 1 语义：{err}");
+    }
+
+    #[test]
+    fn service_task_remove_spec_contract() {
+        // spec 007：单条移除命令形态（幂等 + 不弹窗 + 单引号转义）
+        let spec = service_task_remove_spec(DDNSGO_TASK_NAME, &logs());
+        let line = spec.command_line();
+        assert!(
+            line.contains(&format!("Unregister-ScheduledTask -TaskName '{DDNSGO_TASK_NAME}'")),
+            "{line}"
+        );
+        assert!(line.contains("SilentlyContinue"), "不存在时应幂等成功：{line}");
+        assert_eq!(spec.creation_flags, CREATE_NO_WINDOW);
+        assert_eq!(spec.timeout, APP_TASK_TIMEOUT);
+        // 任务名含单引号防注入
+        let q = service_task_remove_spec("jack's task", &logs()).command_line();
+        assert!(q.contains(r"'jack''s task'"), "PS 单引号须转义：{q}");
+    }
+
+    #[test]
+    fn disable_ddnsgo_autostart_unregisters_single_task() {
+        // 关：单条注销 ddns-go，不碰另两条任务、不跑 setup-autostart.ps1
+        let exec = MockExecutor::with_exits(&[ExecOutcome::Exited(0)]);
+        set_ddnsgo_autostart(
+            &exec,
+            Path::new(r"D:\scripts"),
+            Lang::Zh,
+            &logs(),
+            DEFAULT_STACK_DIR,
+            false,
+        )
+        .expect("注销应成功");
+        let executed = exec.executed.lock().unwrap();
+        assert_eq!(executed.len(), 1, "关闭只执行一条移除命令");
+        let line = executed[0].command_line();
+        assert!(
+            line.contains("Unregister-ScheduledTask -TaskName 'ddns-go Sprint0 autostart'"),
+            "{line}"
+        );
+        assert!(!line.contains("CloudCLI"), "不得碰 CloudCLI 任务：{line}");
+        assert!(!line.contains("setup-autostart.ps1"), "关闭走单条注销而非整脚本：{line}");
+
+        // 失败映射（exit 1 = try/catch 显式失败码）
+        let failing = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
+        let err = set_ddnsgo_autostart(
+            &failing,
+            Path::new(r"D:\scripts"),
+            Lang::Zh,
+            &logs(),
+            DEFAULT_STACK_DIR,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.contains("ddns-go 自启任务注销失败"), "{err}");
+    }
+
+    #[test]
+    fn enable_ddnsgo_autostart_rebuilds_only_when_switch_on() {
+        // 开关开（CloudCLI 任务存在）→ setup-autostart.ps1 幂等重建（不带 -Remove）
+        let exec = MockExecutor::with_exits(&[
+            ExecOutcome::Exited(0), // 查询：CloudCLI 存在
+            ExecOutcome::Exited(0), // setup-autostart.ps1 成功
+        ]);
+        set_ddnsgo_autostart(
+            &exec,
+            Path::new(r"D:\scripts"),
+            Lang::En,
+            &logs(),
+            DEFAULT_STACK_DIR,
+            true,
+        )
+        .expect("重建应成功");
+        let executed = exec.executed.lock().unwrap();
+        assert_eq!(executed.len(), 2, "1 次判据查询 + 1 次重建");
+        assert!(
+            executed[0].command_line().contains("CloudCLI Sprint0 autostart"),
+            "重建判据 = CloudCLI 任务存在（开关代理）：{}",
+            executed[0].command_line()
+        );
+        let line = executed[1].command_line();
+        assert!(line.contains("setup-autostart.ps1"), "{line}");
+        assert!(!line.contains("-Remove"), "重建分支不得带 -Remove：{line}");
+
+        // 开关未开（任务不存在）→ 跳过且 Ok（不阻断通道切换）
+        let off = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
+        set_ddnsgo_autostart(
+            &off,
+            Path::new(r"D:\scripts"),
+            Lang::Zh,
+            &logs(),
+            DEFAULT_STACK_DIR,
+            true,
+        )
+        .expect("开关未开应跳过并返回 Ok");
+        assert_eq!(off.executed.lock().unwrap().len(), 1, "跳过路径只有判据查询");
+
+        // 判据查询失败 → 同样跳过不阻断
+        let broken = MockExecutor::with_exits(&[ExecOutcome::Exited(2)]);
+        set_ddnsgo_autostart(
+            &broken,
+            Path::new(r"D:\scripts"),
+            Lang::Zh,
+            &logs(),
+            DEFAULT_STACK_DIR,
+            true,
+        )
+        .expect("查询失败应跳过并返回 Ok");
     }
 
     #[test]

@@ -15,6 +15,7 @@
 
 use crate::lang::Lang;
 use crate::probe::{ComponentId, ProbeState, StatusProbe};
+use crate::settings::AccessChannel;
 use crate::scripts::{
     caddy_run, ddns_go_run, interpret_exit, run_server_hidden, CommandExecutor, CommandSpec,
     ExecOutcome, Script, ScriptOutcome,
@@ -317,9 +318,9 @@ pub struct Orchestrator {
     /// 实时语言源（T14：语言切换后脚本 -Lang 与状态 detail 即时跟随；
     /// None = 回落 cfg.lang，单测/默认路径）
     lang_source: Option<Arc<dyn Fn() -> Lang + Send + Sync>>,
-    /// 通道感知源（spec 004 AC8：穿透通道下 start_all 跳过 ddns-go——
-    /// 通道互斥，ddns-go 会在 DNS 上与 CNAME 抢写记录；frpc 由隧道守护负责）
-    channel_source: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+    /// 通道感知源（spec 004 AC8 + 007 三通道：现役通道实时读取——
+    /// 穿透/组网下 start_all 跳过 ddns-go，见 [`Orchestrator::start_all]）
+    channel_source: Option<Arc<dyn Fn() -> AccessChannel + Send + Sync>>,
 }
 
 impl Orchestrator {
@@ -361,15 +362,18 @@ impl Orchestrator {
         self
     }
 
-    /// 注入通道感知源（装配层接 SettingsState；返回 true = 当前为穿透通道）
-    pub fn with_channel_source(mut self, source: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+    /// 注入通道感知源（装配层接 SettingsState，返回现役通道枚举）
+    pub fn with_channel_source(
+        mut self,
+        source: Arc<dyn Fn() -> AccessChannel + Send + Sync>,
+    ) -> Self {
         self.channel_source = Some(source);
         self
     }
 
-    /// 当前是否穿透通道（无通道源 = 直连语义，保持既有行为）
-    fn is_tunnel_channel(&self) -> bool {
-        self.channel_source.as_ref().map(|f| f()).unwrap_or(false)
+    /// 现役通道（无通道源 = 直连语义，保持既有行为；spec 007 三通道枚举化）
+    fn current_channel(&self) -> AccessChannel {
+        self.channel_source.as_ref().map(|f| f()).unwrap_or(AccessChannel::Direct)
     }
 
     /// 当前生效语言（语言源实时读取；缺省 cfg.lang）
@@ -405,13 +409,27 @@ impl Orchestrator {
     }
 
     /// 一键启动：逐组件派发（在途组件跳过，幂等重入）。
-    /// 穿透通道下跳过 ddns-go（spec 004 AC8 通道互斥——否则它启动即把 A 记录
-    /// 重新写回，与 CNAME 混挂；2026-09-10 真机实证）。frpc 由隧道守护负责拉起。
+    /// 非直连通道下跳过 ddns-go（通道互斥，枚举匹配替代 004 的 bool 判定）：
+    /// - 穿透（004 AC8）：ddns-go 启动即把 A 记录写回，与 CNAME 混挂
+    ///  （2026-09-10 真机实证）；
+    /// - 组网（007 plan §3.2）：ddns-go 会把 A 记录写回公网 IP，与组网通道
+    ///   的 A=虚拟 IP DNS 调和互踩——暴露面回归，破坏 AC7。
+    /// frpc 由隧道守护负责拉起；easytier-core 由 SCM 服务承载（不进组件表）。
     pub fn start_all(&self) {
-        let tunnel_mode = self.is_tunnel_channel();
+        let skip_ddnsgo = match self.current_channel() {
+            AccessChannel::Direct => false,
+            AccessChannel::Tunnel | AccessChannel::Mesh => true,
+        };
         for id in COMPONENT_ORDER {
-            if tunnel_mode && id == ComponentId::DdnsGo {
-                log::info!("start_all 跳过 ddns-go（穿透通道互斥，spec 004 AC8）");
+            if skip_ddnsgo && id == ComponentId::DdnsGo {
+                log::info!(
+                    "start_all 跳过 ddns-go（{}通道互斥，spec 004 AC8 / 007 §3.2）",
+                    match self.current_channel() {
+                        AccessChannel::Tunnel => "穿透",
+                        AccessChannel::Mesh => "组网",
+                        AccessChannel::Direct => unreachable!("direct 已判 false"),
+                    }
+                );
                 continue;
             }
             // 单组件失败已隔离为其 failed 态（AC6），此处只吞"在途跳过"
@@ -1688,6 +1706,60 @@ mod tests {
         for id in COMPONENT_ORDER {
             assert!(orch.wait_start_idle(id, Duration::from_secs(2)));
         }
+    }
+
+    #[test]
+    fn start_all_skips_ddnsgo_when_channel_not_direct() {
+        // spec 007：通道源枚举化——穿透/组网下跳过 ddns-go（A 记录回写与
+        // CNAME/虚拟 IP 调和互踩），直连全启（对照上一测试 dispatched==2）
+        for channel in [AccessChannel::Tunnel, AccessChannel::Mesh] {
+            let probe = Arc::new(ScriptedProbe::new());
+            for id in COMPONENT_ORDER {
+                probe.pin(id, ProbeState::Stopped);
+            }
+            let exec = Arc::new(MockExecutor::new());
+            let (orch, _sink, _) = build(probe, exec.clone());
+            let orch = orch.with_channel_source(Arc::new(move || channel));
+
+            orch.start_all();
+            // CloudCLI（脚本）与 Caddy（原生派发）照常；ddns-go 被跳过
+            assert!(
+                orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)),
+                "{channel:?} 下 CloudCLI 应派发"
+            );
+            assert!(
+                orch.wait_start_idle(ComponentId::Caddy, Duration::from_secs(2)),
+                "{channel:?} 下 Caddy 应派发"
+            );
+            assert!(
+                orch.wait_start_idle(ComponentId::DdnsGo, Duration::from_secs(2)),
+                "ddns-go 未派发时在途登记应立即可等待通过"
+            );
+            let dispatched = exec.dispatched.lock().unwrap();
+            assert_eq!(dispatched.len(), 1, "{channel:?} 应仅 Caddy 原生派发（ddns-go 跳过）");
+            assert!(
+                dispatched[0].program.contains("caddy"),
+                "唯一原生派发应为 Caddy：{:?}",
+                dispatched[0].program
+            );
+        }
+    }
+
+    #[test]
+    fn channel_source_defaults_to_direct() {
+        // 无通道源（单测/默认路径）= 直连语义：三组件全启（004 前既有行为）
+        let probe = Arc::new(ScriptedProbe::new());
+        for id in COMPONENT_ORDER {
+            probe.pin(id, ProbeState::Stopped);
+        }
+        let exec = Arc::new(MockExecutor::new());
+        let (orch, _sink, _) = build(probe, exec.clone());
+        assert_eq!(orch.current_channel(), AccessChannel::Direct);
+        orch.start_all();
+        for id in [ComponentId::CloudCli, ComponentId::Caddy, ComponentId::DdnsGo] {
+            assert!(orch.wait_start_idle(id, Duration::from_secs(2)), "{id:?} 应派发");
+        }
+        assert_eq!(exec.dispatched.lock().unwrap().len(), 2, "Caddy/ddns-go 均原生派发");
     }
 
     // ── T14：语言源实时覆盖（切换语言后脚本 -Lang 与 detail 即时跟随）────

@@ -20,7 +20,7 @@
 | 运行形态 | **Windows 服务**（`sc create`，SYSTEM，delayed-auto + SCM failure recovery） | TUN/wintun 需管理员：服务一次安装后免每次提权；SCM 崩溃自愈（≤60s）强于应用层守护且不依赖工作台在跑；开机先于登录可用 | ①工作台直接 spawn（每次 UAC 弹窗、守护无法无人值守拉起，违背 AC3）；②计划任务最高权限（停止同样需提权、崩溃自愈语义弱、004 踩过任务结束杀子进程坑）；③--no-tun（宿主机必须持虚拟 IP 供成员访问 443，无 TUN 不成立）；④`easytier-cli service install` 官方装服务（网络参数进服务命令行——含密钥，违背 AC8；core 原生支持 SCM，binPath 由我们构造即可） |
 | 默认对端 | 社区节点 `tcp://sh.vomiku.com:7910`（2026-09-10 实测解析正常，腾讯云上海） | `public.easytier.cn` 已 NXDOMAIN（本机 + 223.5.5.5 实测）；官方隐私政策明示不提供托管公共服务器；TCP 对端受 UDP QoS 影响小 | 官方公共节点（不存在）；单一硬编码对端（社区节点无 SLA，必须多对端 + 可编辑） |
 | 凭证注入 | 栈目录 `easytier/network-secret` 文件（脚本交互写入）→ 工作台渲染进 config.toml（栈目录，ACL 已收紧） | AC8：命令行无密钥（修正 frpc 已知暴露面）；secret 与非敏感参数分离，工作台是 config.toml 唯一渲染者，无双源漂移 | 命令行传参（WMI 可读）；settings.json（明文库）；TOML `${VAR}` 环境变量展开（服务环境是 SYSTEM 的，注入路径别扭） |
-| 状态探询 | `easytier-cli peer --rpc 127.0.0.1:15888 -o json`（rpc 仅绑 localhost） | RPC 实时接口无日志陈旧问题（004 教训）；127.0.0.1 绑定即安全边界 | 解析日志文件（004 踩过陈旧日志误判坑） |
+| 状态探询 | `easytier-cli -p 127.0.0.1:15888 -o json peer list`（rpc 仅绑 localhost；全局选项 `-p/-o` 须在子命令前——clap 结构，置后报 unexpected argument） | RPC 实时接口无日志陈旧问题（004 教训）；127.0.0.1 绑定即安全边界 | 解析日志文件（004 踩过陈旧日志误判坑） |
 | TOML 生成 | Rust `toml` crate（serde 序列化） | 配置结构体强类型渲染 + `--check-config` 办后校验 | 手写字符串模板（转义/缩进易错，006 Caddyfile 拼接坑同源） |
 
 **第三方依赖登记（宪法 §3）**：
@@ -67,7 +67,7 @@ flowchart LR
 ```
 切换到 mesh：
   1.（若 frpc 在跑）StopFrpc —— 守护停止拉起
-  2.（若 ddns-go 在跑）StopDdnsGo + 取消其自启托管 —— 防止把 A 记录写回公网 IP
+  2.（若 ddns-go 在跑）StopDdnsGo + 取消其自启托管 —— 防止把 A 记录写回公网 IP（对切 tunnel 方向同适用，004 补强：开机自启任务拉起 ddns-go 同样会把 A 记录写回，与 CNAME 调和互踩）
   3. 渲染 config.toml（MeshConfig + secret）→ easytier-core --check-config 办后校验
   4.（服务未装）提示先装服务（向导/设置入口，UAC）；（已装）提权脚本重启服务
   5. DNS 调和：删除 CNAME（若存在）→ A 记录 upsert 值=虚拟 IP（UpdateValue）
@@ -257,3 +257,4 @@ disable_direct（前置：channel ≠ direct；典型时序 = 切 mesh 后执行
 | 2026-09-10 | 初稿 | 需求方指示实施；消化两项 plan 前取证新事实——①`public.easytier.cn` 实测 NXDOMAIN（本机 + 223.5.5.5）且官方隐私政策明示不提供托管公共服务器 → 默认对端改社区节点 `tcp://sh.vomiku.com:7910`、多对端可编辑（R1）；②Windows TUN 需管理员 → easytier-core 取 Windows 服务形态（SCM 承担 AC3 守护语义），工作台转「渲染者+观察者」 |
 | 2026-09-10 | **secure-mode 降级为 legacy 模式**：§1 概述与降级决策注记、§2 选型表、§3.1 两段加密模型改单段、§4.3 渲染模板去 [secure_mode] 段（+hostname/listeners 字段实测修正 + 渲染前置校验=密钥就绪）、§6 AC9 测试映射、§7-R4 改写为升级路径 | T2 双实例真机实测（tasks.md 附注②）：secure 客户端→legacy 社区节点被拒（conn closed during wait handshake response）、legacy→secure 同网络被拒（same-network peers must use the same secure mode）、Android App 无 secure UI → 全链 secure 不可达；legacy 全链（双实例+社区节点中继）实测互通（46ms/0% 丢包） |
 | 2026-09-10 | T7 实现期两处事实修正：①§4.4 提权惯例措辞对齐实际（install-https.ps1 并非自提权，是「自检管理员身份 + 拒绝提示」，UAC 由工作台 runas 拉起提供）；②§2 运行形态备选补④——`easytier-cli service install` 官方装服务路径 | T7 源码级取证：core main 无条件先走 `service_dispatcher::start`（被 SCM 拉起即进 win_service_main、从进程命令行解析 `-c`；控制台启动报 ERROR 0x427 被吞走 CLI）→ `sc create` 直装成立；但官方 cli 装服务会把网络参数（含密钥）写进服务命令行，违背 AC8 → 弃用，自有脚本 binPath 只含 `-c config.toml` 路径参数 |
+| 2026-09-10 | T8 实现期三处修正：①§2 状态探询命令形态实测修正——全局选项为 `-p/--rpc-portal`（非 `--rpc`）且必须在子命令之前（`easytier-cli -p 127.0.0.1:15888 -o json peer list`），并确认 peer list 首项恒为本机（cost="Local"），在线判定须排除本机项；②状态四态之外增设 `inactive`（现役通道非 mesh 时的看板呈现，对齐 004 TunnelState::Inactive 惯例）；③§3.2「StopDdnsGo + 取消自启托管」对切 tunnel 方向同适用（004 补强） | easytier-cli v2.6.4 clap 结构实测（选项置后报 unexpected argument）+ easytier-cli.rs 源码取证（PeerTableItem 首项 From&lt;NodeInfo&gt; 恒为本机）——「peers 非空即在线」在单机无成员时会误判，必须排除 is_local 项；切通道后仅停进程不取消自启任务，下次开机 ddns-go 被任务拉起即通道互踩（与 004 AC8 同源） |
