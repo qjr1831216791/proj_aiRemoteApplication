@@ -10,7 +10,7 @@
 
 ## 阶段 1: 资源与前置实测
 
-- [ ] T1 easytier v2.6.4 二进制入库：下载 windows-x64 官方 Release（easytier-core.exe + easytier-cli.exe），落 `resources/bin/`，manifest.json 登记版本 + SHA256，Cargo 侧校验函数（frpc 先例，commands.rs:436 旁）（验收: AC1 前置；完成标志：manifest 与哈希校验单测通过）
+- [x] T1 easytier v2.6.4 二进制入库：下载 windows-x64 官方 Release（easytier-core.exe + easytier-cli.exe + **wintun.dll**——TUN 驱动库随包，落位必须同带），落 `resources/bin/`，consts.rs 登记版本 + 三文件 SHA256，`mesh.rs` 校验函数 + 单测 3 项（真文件/缺失/篡改）。（验收: AC1 前置；完成标志：cargo 168 全绿 ✓。下载经 gh 官方通道；镜像通道文件与官方不符已弃用——供应链教训记 plan §7-R6）
 - [ ] T2 外部事实真机实测（依赖: T1；验收: AC1/AC9 前提 + spec §5 验收前提约束）：①临时 config + 手动服务方式跑通社区节点 `tcp://sh.vomiku.com:7910`（移动网络 + WiFi 双环境）；②Android 官方 App 以 legacy 身份加入 secure-mode 网络，验证连通（plan §3.1 两段加密模型的实证）；③A 记录临时指私网 IP 后公共递归（223.5.5.5 / 8.8.8.8 / 运营商默认）是否照常返回（bogon 风险，异常则启用 hosts/Split DNS 兜底并回填 spec）；④本机物理网卡网段与 10.126.126.0/24 冲突排查。完成标志：四项结论记录于本文件附注（不达标即触发升级路径评估，停实施）
 
 ## 阶段 2: Rust 核心（测试先行）

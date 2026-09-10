@@ -118,8 +118,9 @@ struct MeshConfig {
 
 ```
 <stack>/easytier/
-├── easytier-core.exe     # 安装时从 resources/bin 复制（manifest 版本+SHA256 校验，frpc 先例）
+├── easytier-core.exe     # 安装时从 resources/bin 复制（版本+SHA256 校验，frpc 先例；T1 已入库）
 ├── easytier-cli.exe      # 同上；服务 binPath 与探询均用栈目录副本（升级解耦 + ACL 保护）
+├── wintun.dll            # TUN 驱动库（easytier 官方包随附）——落位必须同带，否则服务起不来（T1 取证补充）
 ├── network-secret        # set-mesh-secret.ps1 交互写入（不回显 ×2、直写、复核末 4 位）
 ├── config.toml           # 工作台唯一渲染（含 secret 明文——AC8 口径：文件注入、命令行无密钥）
 └── logs/                 # --file-log-dir（服务参数）

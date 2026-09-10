@@ -45,3 +45,23 @@ pub const SAKURA_KEY_VAR: &str = "SAKURA_FRP_KEY";
 pub const FRPC_LOG_FILE: &str = "frpc-run.log";
 /// 对外域名根（权威 NS 查询起点，AC12/13 权威比对口径）
 pub const DOMAIN_ROOT: &str = "jackqi.cn";
+
+// ── 组网通道（spec 007：EasyTier v2.6.4 随包分发，版本+SHA256 锁定）──────────
+
+/// EasyTier 版本（升级 = 替换资源 + 同步下方三哈希，plan §7-R6 供应链防线）
+pub const EASYTIER_VERSION: &str = "2.6.4";
+/// easytier 主程序（Windows 服务承载，spec 007 plan §3/§4.4）
+pub const EASYTIER_CORE_EXE_NAME: &str = "easytier-core.exe";
+/// easytier 状态探询 CLI（RPC 仅绑 127.0.0.1，plan §3.1）
+pub const EASYTIER_CLI_EXE_NAME: &str = "easytier-cli.exe";
+/// TUN 虚拟网卡驱动库（easytier 官方包随附；栈目录落位必须同带，否则服务起不来）
+pub const WINTUN_DLL_NAME: &str = "wintun.dll";
+/// 期望 SHA256：官方 Release easytier-windows-x86_64-v2.6.4.zip 内件
+/// （2026-09-10 经 gh 官方通道下载，zip 完整性 unzip -t 通过；镜像通道文件
+/// 与官方不符已弃用——plan §7-R6 教训）
+pub const EASYTIER_CORE_SHA256: &str =
+    "da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d";
+pub const EASYTIER_CLI_SHA256: &str =
+    "d8783e851e944b44a9b71b39fd02f227ec0a2a82b3165c55ead5dd32dcde53a1";
+pub const WINTUN_DLL_SHA256: &str =
+    "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce";

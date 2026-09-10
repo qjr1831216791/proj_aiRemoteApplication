@@ -13,6 +13,7 @@ pub mod dns_api;
 mod exit_flow;
 mod heartbeat;
 mod lang;
+mod mesh;
 mod network;
 mod orchestrator;
 mod probe;
