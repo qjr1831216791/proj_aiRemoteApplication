@@ -93,14 +93,6 @@ export function TunnelCard(props: TunnelCardProps) {
     }
   };
 
-  const toggleEnabled = async (enabled: boolean) => {
-    try {
-      onSettingsChange(await api.setTunnelEnabled(enabled));
-    } catch (e) {
-      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
-    }
-  };
-
   const configured = tunnelCfg !== null;
   const state = tunnelStatus?.state ?? (configured ? null : "notConfigured");
 
@@ -264,18 +256,7 @@ export function TunnelCard(props: TunnelCardProps) {
         </div>
       ) : null}
 
-      {/* 穿透通道下的启用开关（AC11 停用语义；未配置不展示） */}
-      {channel === "tunnel" && configured ? (
-        <div class="net__row">
-          <span class="net__name">{t("tunnel.enabledLabel", lang)}</span>
-          <span class="net__spacer" />
-          <button class="btn btn--sm" disabled={switching} onClick={() => void toggleEnabled(!settings?.tunnelEnabled)}>
-            {settings?.tunnelEnabled ? t("common.stop", lang) : t("common.start", lang)}
-          </button>
-        </div>
-      ) : null}
-
-      {/* 隧道状态行 */}
+      {/* 隧道状态行（右侧：重新检测 + 重启隧道） */}
       <div class="net__row">
         <span class="net__name">{t("tunnel.statusLabel", lang)}</span>
         {state ? (
@@ -291,6 +272,9 @@ export function TunnelCard(props: TunnelCardProps) {
           <span class="muted">—</span>
         )}
         <span class="net__spacer" />
+        <button class="btn btn--sm" disabled={dnsChecking} onClick={checkDns}>
+          {dnsChecking ? t("tunnel.dnsChecking", lang) : t("tunnel.dnsRecheck", lang)}
+        </button>
         {channel === "tunnel" && configured && settings?.tunnelEnabled ? (
           <button
             class="btn btn--sm"
@@ -307,18 +291,12 @@ export function TunnelCard(props: TunnelCardProps) {
         ) : null}
       </div>
 
-      {/* DNS 指引（穿透待切换 / 直连待恢复 / 目标不符 / 已对齐；AC12/13） */}
+      {/* DNS 指引：仅异常时显示，对齐后自动隐藏（需求方 2026-09-10） */}
       {dns ? <DnsNotice dns={dns} channel={channel} target={tunnelCfg?.nodeDomain ?? ""} lang={lang} /> : null}
-      {channel === "tunnel" || (dns !== null && dns.kind !== "alignedDirect") ? (
-        <div class="settings__actions">
-          <button class="btn btn--sm" disabled={dnsChecking} onClick={checkDns}>
-            {dnsChecking ? t("tunnel.dnsChecking", lang) : t("tunnel.dnsRecheck", lang)}
-          </button>
-        </div>
-      ) : null}
 
       {/* 通道体检（复用 DNS/归类/隧道/组件/全链路检查知识） */}
-      <div class="settings__actions">
+      <div class="checkup__head">
+        <span class="muted">{t("tunnel.checkup", lang)}</span>
         <button class="btn btn--sm" disabled={checking} onClick={() => void runCheckup()}>
           {checking ? t("tunnel.checkupRunning", lang) : t("tunnel.checkupRun", lang)}
         </button>
@@ -326,14 +304,12 @@ export function TunnelCard(props: TunnelCardProps) {
       {checkup ? (
         <div class="checkup__list">
           {checkup.map((item) => (
-            <div class="net__row" key={item.label}>
-              <span class="net__name">{item.label}</span>
-              <span
-                class={`chip ${item.ok === null ? "chip--stopped" : item.ok ? "chip--running" : "chip--failed"}`}
-              >
-                {item.ok === null ? "—" : item.ok ? t("tunnel.check.ok", lang) : t("tunnel.check.fail", lang)}
+            <div class="checkup__item" key={item.label}>
+              <span class={`checkup__icon ${item.ok === null ? "is-na" : item.ok ? "is-ok" : "is-bad"}`}>
+                {item.ok === null ? "—" : item.ok ? "✓" : "✕"}
               </span>
-              {item.detail ? <span class="settings__desc">{item.detail}</span> : null}
+              <span class="checkup__label">{item.label}</span>
+              {item.detail ? <span class="checkup__detail">{item.detail}</span> : null}
             </div>
           ))}
         </div>
@@ -342,9 +318,8 @@ export function TunnelCard(props: TunnelCardProps) {
   );
 }
 
-/** DNS 结论 → 提示条（kind 色 + 文案；AC12 检测一致后指引自然退场）。
- * 「对齐」判定与当前通道配对才算完成：穿透通道下残留 A 记录 = 待切换
- * （显示切换指引而非"已恢复直连"），反之亦然——避免通道盲区误导。 */
+/** DNS 结论 → 提示条（仅异常时显示；对齐且通道配对 → null 自动隐藏，需求方 2026-09-10）。
+ * 「对齐」判定与当前通道配对才算完成：穿透通道下残留 A 记录 = 待切换，反之亦然。 */
 function DnsNotice(props: {
   dns: DnsAlignment;
   channel: AccessChannel;
@@ -354,17 +329,15 @@ function DnsNotice(props: {
   const { dns, channel, target, lang } = props;
   switch (dns.kind) {
     case "alignedTunnel":
-      return channel === "tunnel" ? (
-        <p class="notice notice--ok">{t("tunnel.dnsOkTunnel", lang)}</p>
-      ) : (
+      if (channel === "tunnel") return null;
+      return (
         <p class="notice notice--warn">
           {t("tunnel.dnsGuideDirect", lang).replace("{target}", target)}
         </p>
       );
     case "alignedDirect":
-      return channel === "direct" ? (
-        <p class="notice notice--ok">{t("tunnel.dnsOkDirect", lang)}</p>
-      ) : (
+      if (channel === "direct") return null;
+      return (
         <p class="notice notice--warn">
           {t("tunnel.dnsGuideTunnel", lang).replace("{target}", target)}
         </p>

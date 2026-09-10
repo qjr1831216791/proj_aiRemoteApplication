@@ -203,6 +203,7 @@ export const en = {
   "tunnel.check.upstream": "Upstream service (:3001)",
   "tunnel.check.domain": "Domain end-to-end (local view)",
   "tunnel.checkupDnsHint": "Not aligned; see the DNS guide above",
+  "tunnel.ddnsOffInTunnel": "Stopped in tunnel mode (channels are mutually exclusive; DNS is managed by the tunnel)",
   "tunnel.restart": "Restart tunnel",
   "tunnel.restarted": "Tunnel restarted (local DNS cache flushed); re-logging in",
 

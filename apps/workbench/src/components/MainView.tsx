@@ -137,6 +137,9 @@ export function MainView(props: MainViewProps) {
               ) : null}
             </p>
             {s.detail ? <p class="status__detail">{s.detail}</p> : null}
+            {s.id === "ddnsgo" && settings?.accessChannel === "tunnel" && s.state === "stopped" ? (
+              <p class="status__detail">{t("tunnel.ddnsOffInTunnel", lang)}</p>
+            ) : null}
             {s.state === "failed" || s.state === "port-held" ? (
               <button class="btn btn--sm" disabled={busy} onClick={() => onRetry(s.id)}>
                 {t("common.retry", lang)}

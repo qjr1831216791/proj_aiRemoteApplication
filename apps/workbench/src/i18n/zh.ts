@@ -202,6 +202,7 @@ export const zh = {
   "tunnel.check.upstream": "上游服务（:3001）",
   "tunnel.check.domain": "域名全链路（本机视角）",
   "tunnel.checkupDnsHint": "未对齐，见上方 DNS 指引",
+  "tunnel.ddnsOffInTunnel": "穿透模式下已停用（通道互斥，DNS 由隧道自动管理）",
   "tunnel.restart": "重启隧道",
   "tunnel.restarted": "隧道已重启（本机 DNS 缓存已刷新），正在重新登录",
 

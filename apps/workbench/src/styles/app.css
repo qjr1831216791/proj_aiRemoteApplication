@@ -166,11 +166,60 @@
   background: #dc2626;
 }
 
-/* 通道体检清单 */
+/* 通道体检（spec 004/005：清单式呈现） */
+.checkup__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+
 .checkup__list {
   display: flex;
   flex-direction: column;
+}
+
+.checkup__item {
+  display: flex;
+  align-items: baseline;
   gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px dashed var(--c-border, #e4e4e7);
+  font-size: var(--fs-sm);
+}
+
+.checkup__item:last-child {
+  border-bottom: none;
+}
+
+.checkup__icon {
+  width: 18px;
+  text-align: center;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.checkup__icon.is-ok {
+  color: var(--c-ok);
+}
+
+.checkup__icon.is-bad {
+  color: #dc2626;
+}
+
+.checkup__icon.is-na {
+  color: #9ca3af;
+}
+
+.checkup__label {
+  flex-shrink: 0;
+}
+
+.checkup__detail {
+  color: #6b7280;
+  text-align: right;
+  flex: 1;
+  word-break: break-all;
 }
 
 .notice__detail {
