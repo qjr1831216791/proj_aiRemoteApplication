@@ -36,7 +36,7 @@
 ## 阶段 5: 验收与收尾
 
 - [x] T14 真机手工验收（依赖: 全部）：建 `acceptance-manual.md` 清单，逐 AC 验证（AC7 双通道口径：外部非成员探测不可达 + 成员访问正常；AC10 换钥吊销真机实测；AC2 换网重连；AC3 杀进程 SCM 自愈 ≤60s）✓ 2026-09-11 清单已建（[acceptance-manual.md](./acceptance-manual.md)：AC1~AC12 逐条步骤/预期/自动化覆盖标注/实测留白 + 附加观察项 O1~O3——TUN 网卡防火墙归类影响（T11~T13 遗留）、bogon 复测留档（并入 AC7）、社区节点质量观察），**真机执行与回填待需求方**；AC 勾选与 spec 状态翻转随回填进行
-- [ ] T15 文档同步收尾：CHANGELOG Unreleased 登记、`.env.example` SAKURA_FRP_KEY 标注停用后可清除、MOC 状态流转、spec.md AC 勾选与状态 done、README 通道描述核对；对照 DoD 清单收尾
+- [~] T15 文档同步收尾：CHANGELOG Unreleased 登记、`.env.example` SAKURA_FRP_KEY 标注停用后可清除、MOC 状态流转、spec.md AC 勾选与状态 done、README 通道描述核对；对照 DoD 清单收尾（先行部分 ✓ 2026-09-11：CHANGELOG Unreleased 登记 007 三 Added/一 Changed/一 Removed、`.env.example` SAKURA_FRP_KEY 停用可清除标注、MOC 007 行注记（顺带修正 secure-mode→legacy 陈旧表述）、README 核对无需改（根 README 仅 001 能力概述无通道表述，apps/workbench 无 README）；**待真机验收后收尾**：spec.md AC 勾选与状态 done、MOC 流转 done、DoD 清单勾选）
 
 ## 完成标志（DoD 检查）
 
