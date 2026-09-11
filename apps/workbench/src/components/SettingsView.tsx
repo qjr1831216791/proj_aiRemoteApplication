@@ -344,7 +344,7 @@ export function SettingsView(props: SettingsViewProps) {
         <div class="settings__rows">
           <div class="settings__row">
             <div class="settings__row-text">
-              <span class="settings__label">{t("settings.stackDirEditable", lang)}</span>
+              <span class="settings__label">{t("settings.stackDir", lang)}</span>
               <input
                 class="form-input"
                 value={stackDir}

@@ -242,6 +242,7 @@
   padding: var(--sp-2) var(--sp-4);
   font-size: var(--fs-md);
   cursor: pointer;
+  white-space: nowrap; /* 按钮文字不折行（窄容器下「写入组网密钥…」等被拆两行，2026-09-11 需求方反馈） */
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
