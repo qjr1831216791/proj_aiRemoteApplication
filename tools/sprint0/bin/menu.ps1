@@ -108,8 +108,9 @@ while ($true) {
             Show-Status
             Write-Host (T '  本机访问:  http://localhost:3001' '  This PC:  http://localhost:3001')
             foreach ($ip in (Get-LanIps)) {
-                Write-Host (T "  局域网:    http://${ip}:3001   |   https://ai.jackqi.cn（推荐）" "  LAN:      http://${ip}:3001   |   https://ai.jackqi.cn (recommended)")
+                Write-Host (T "  局域网:    http://${ip}:3001（同 WiFi 直访）" "  LAN:      http://${ip}:3001 (same WiFi)")
             }
+            Write-Host (T '  跨网组网:  https://ai.jackqi.cn（成员设备加入 EasyTier 组网后可达；非成员不可达是设计使然）' '  Mesh:      https://ai.jackqi.cn (reachable once the device joins the EasyTier mesh; unreachable for non-members by design)')
         }
         '4' {
             Invoke-Elevated (Join-Path $PSScriptRoot 'install-server.ps1')
