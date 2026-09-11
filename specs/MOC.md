@@ -5,7 +5,7 @@
 ## 按状态导航
 
 ### 🟡 草稿（draft）
-- （暂无）
+- [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) — v0.5.0 调优迭代：组网网段冲突检测接线（spec 007 §6 决议落地）+ 发版版本校验脚本 release-check + 008 真机旧通道清理收尾（范围=调优报告 P1/P3/P4，需求方 2026-09-11 确认）
 
 ### 🔵 已确认（reviewed）
 - （暂无）
@@ -38,6 +38,7 @@
 | Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书；2026-09-10 验收 done） |
 | Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道；2026-09-11 需求方签收 done） |
 | Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；2026-09-11 需求方签收 done，随 v0.4.0 发布） |
+| Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 发版校验脚本 + 真机旧通道清理（draft） |
 
 ## 按主题导航
 
