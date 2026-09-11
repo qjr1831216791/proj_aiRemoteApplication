@@ -66,6 +66,11 @@ $EtDir       = Join-Path $StackDir 'easytier'
 $CoreExe     = Join-Path $EtDir 'easytier-core.exe'
 $ConfigFile  = Join-Path $EtDir 'config.toml'
 $LogDir      = Join-Path $EtDir 'logs'
+# 服务安全描述符（install 幂等 sdset）：交互用户（IU）= 查询 + 启/停
+# （CC 查配置 / LC 查状态 / SW 枚举依赖 / RP 启动 / WP 停止），SYSTEM 与管理员
+# 全权。用途：工作台退出收摊直接 sc stop 静默停服（2026-09-11 需求方反馈：
+# 提权派发的 UAC 弹窗 + 可见脚本窗不可接受）；老装机重跑一次「安装/修复」即获授权。
+$ServiceSddl = 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWP;;;IU)'
 
 # binPath：按同公式从 StackDir 推导（与 mesh.rs service_bin_path() 单测锁形一致，
 # AC8 断言纯路径参数不含 secret）。工作台不传 -BinPath（2026-09-11 真机缺陷：
@@ -123,6 +128,8 @@ try {
             # delayed-auto 自启 + SCM 崩溃自愈（AC3：被杀 ≤60s 拉回，不依赖工作台在跑）
             Invoke-Sc @('config', $ServiceName, 'start=', 'delayed-auto')
             Invoke-Sc @('failure', $ServiceName, 'reset=', '86400', 'actions=', 'restart/60000/restart/60000/restart/60000')
+            # 交互用户启/停授权（工作台静默停服的前提；幂等刷新）
+            Invoke-Sc @('sdset', $ServiceName, $ServiceSddl)
             Start-Service -Name $ServiceName
             Write-Ok (T '服务已启动（开机延迟自启 + 崩溃 60 秒内自动拉回）' 'Service started (delayed autostart + crash auto-restart within 60s)')
         }

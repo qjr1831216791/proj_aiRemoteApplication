@@ -561,6 +561,30 @@ pub fn apply_service_action(service: MeshServiceState) -> &'static str {
     }
 }
 
+/// `sc stop` 退出码是否属于「无需再折腾」的静默完成（纯函数，单测锁定）：
+/// 0 = 停止指令已受理；1062 = 服务本就未运行；1060 = 服务未安装。
+/// 其余（含 5 = ACCESS_DENIED，旧装机无 SDDL 启停授权）→ 调用方回退 UAC 派发。
+fn stop_exit_code_is_quiet(code: i32) -> bool {
+    matches!(code, 0 | 1060 | 1062)
+}
+
+/// 退出收摊的静默停服（2026-09-11 需求方反馈：UAC 弹窗 + 可见脚本窗不可接受）。
+/// 直接 `sc stop`（CREATE_NO_WINDOW）：装服务时 mesh-service.ps1 已 sdset 授予
+/// 交互用户启/停权，此处免提权。返回 false = 需回退提权派发（旧装机未重装、
+/// 授权缺失）；Err 仅记录用。全程异步语义不变：不等待服务真正停止（SCM 异步
+/// 处理），退出流程不被阻塞。
+pub fn stop_service_silent() -> Result<bool, String> {
+    use std::os::windows::process::CommandExt;
+
+    let out = std::process::Command::new("sc.exe")
+        .args(["stop", SERVICE_NAME])
+        .creation_flags(crate::scripts::CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("sc stop 启动失败：{e}"))?;
+    let code = out.status.code().unwrap_or(-1);
+    Ok(stop_exit_code_is_quiet(code))
+}
+
 /// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
 /// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
 /// 写 config.toml → `--check-config` 办后校验。返回 (config 路径, core exe)。
@@ -1101,6 +1125,16 @@ mod tests {
         ] {
             assert_eq!(apply_service_action(s), "restart", "{s:?}");
         }
+    }
+
+    /// 静默停服退出码映射：0/1060/1062 免兜底，其余（含 5 拒绝访问）回退 UAC
+    #[test]
+    fn stop_exit_code_quiet_mapping() {
+        assert!(stop_exit_code_is_quiet(0), "受理");
+        assert!(stop_exit_code_is_quiet(1060), "未安装");
+        assert!(stop_exit_code_is_quiet(1062), "未运行");
+        assert!(!stop_exit_code_is_quiet(5), "ACCESS_DENIED → 兜底");
+        assert!(!stop_exit_code_is_quiet(1053), "异常 → 兜底");
     }
 
     /// install 派发参数：-Action install 且**不含 -BinPath**（真机缺陷教训：

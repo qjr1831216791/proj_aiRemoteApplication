@@ -362,18 +362,28 @@ pub fn run() {
                         (s.access_channel, wants_stop, s.stack_dir.clone())
                     };
                     if channel == settings::AccessChannel::Mesh && wants_stop {
-                        if let Some(dir) =
-                            app.state::<autostart::AutostartContext>().scripts_dir.clone()
-                        {
-                            let lang = app.state::<lang::LanguageState>().current();
-                            let params = mesh::service_action_params(
-                                &dir, "stop", &stack, lang,
-                            );
-                            if let Err(e) = scripts::elevate("powershell.exe", &params) {
-                                log::error!("组网服务停止派发失败（不阻断退出）：{e}");
+                        // 静默优先：装服务时已 sdset 授予交互用户启/停权，直接
+                        // sc stop（无 UAC/无窗口——2026-09-11 需求方反馈）；返回
+                        // false/Err（旧装机未重装获授权）才回退提权派发。两条路
+                        // 均不等待、不阻断退出：拒绝则服务保持运行，下次开机
+                        // SCM delayed-auto 拉回，组网可用性不因退出流程被破坏。
+                        match mesh::stop_service_silent() {
+                            Ok(true) => log::info!("组网服务已静默停止（sc stop 受理/无需停止）"),
+                            Ok(false) | Err(_) => {
+                                if let Some(dir) =
+                                    app.state::<autostart::AutostartContext>().scripts_dir.clone()
+                                {
+                                    let lang = app.state::<lang::LanguageState>().current();
+                                    let params = mesh::service_action_params(
+                                        &dir, "stop", &stack, lang,
+                                    );
+                                    if let Err(e) = scripts::elevate("powershell.exe", &params) {
+                                        log::error!("组网服务停止派发失败（不阻断退出）：{e}");
+                                    }
+                                } else {
+                                    log::warn!("脚本目录不可用：组网服务停止派发跳过（不阻断退出）");
+                                }
                             }
-                        } else {
-                            log::warn!("脚本目录不可用：组网服务停止派发跳过（不阻断退出）");
                         }
                     }
                 }
