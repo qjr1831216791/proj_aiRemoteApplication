@@ -32,6 +32,7 @@
 | Sprint 4 | 域名心跳检测（005，2026-09-11 需求方签收 done）· 傻瓜式装机向导（006，2026-09-10 验收 done） | [005](../specs/005-domain-heartbeat/spec.md) · [006](../specs/006-foolproof-install/spec.md) |
 | Sprint 5 | 访问通道安全重构：EasyTier 私有组网替代 frp（零公网暴露），停用直连与穿透旧通道（2026-09-11 需求方签收 done） | [007-mesh-access](../specs/007-mesh-access/spec.md) |
 | Sprint 6（已完成 v0.4.0） | 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案（2026-09-11 需求方签收 done；真机卸载脚本 `uninstall-legacy.ps1` 随包保留为可选动作） | [008-legacy-channel-removal](../specs/008-legacy-channel-removal/spec.md) |
+| Sprint 7（已完成 v0.5.0） | v0.5.0 调优：组网网段冲突检测接线（spec 007 §6 决议落地）· 成员入网配置展示（密钥占位符 + 推荐 Android 客户端指引）· 发版校验脚本 release-check · 真机旧通道清理收尾（2026-09-11 验收 done） | [009-mesh-subnet-guard](../specs/009-mesh-subnet-guard/spec.md) |
 
 ## 非目标（产品级）
 
