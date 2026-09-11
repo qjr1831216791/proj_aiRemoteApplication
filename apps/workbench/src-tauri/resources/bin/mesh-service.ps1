@@ -67,8 +67,10 @@ $CoreExe     = Join-Path $EtDir 'easytier-core.exe'
 $ConfigFile  = Join-Path $EtDir 'config.toml'
 $LogDir      = Join-Path $EtDir 'logs'
 
-# binPath：优先采用调用方传入（工作台 mesh.rs service_bin_path() 构造并单测锁形，
-# AC8 断言参数不含 secret）；未传则按同公式从 StackDir 推导（支持手工运行）
+# binPath：按同公式从 StackDir 推导（与 mesh.rs service_bin_path() 单测锁形一致，
+# AC8 断言纯路径参数不含 secret）。工作台不传 -BinPath（2026-09-11 真机缺陷：
+# binPath 内嵌双引号经 -Command "..." 包裹派发被 PowerShell 剥除，触发下方校验
+# 误拒）；参数保留供脱离工作台手工指定。
 if (-not $BinPath) {
     $BinPath = "`"$CoreExe`" -c `"$ConfigFile`" -r $RpcPortal --file-log-dir `"$LogDir`""
 }

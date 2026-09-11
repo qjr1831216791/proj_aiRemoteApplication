@@ -80,8 +80,10 @@ const MESH_BIN_FILES: [&str; 5] = [
 ///  -r 127.0.0.1:15888 --file-log-dir "<stack>\easytier\logs"`
 ///
 /// AC8：入参只有栈目录，输出是纯路径参数——network_secret 只进 config.toml
-/// （渲染器职责），命令行永不携带密钥。Tauri 命令层（T9）把它经 `-BinPath`
-/// 传给 mesh-service.ps1，脚本侧同公式兜底（支持脱离工作台手工运行）。
+/// （渲染器职责），命令行永不携带密钥。运行时 binPath 由 mesh-service.ps1
+/// 按同公式从 StackDir 自建（T9 曾经 `-BinPath` 传递，真机缺陷后废弃：
+/// 内嵌双引号过不了 `-Command "..."` 包裹——见 service_install_params 注释）；
+/// 本函数保留作双端形态契约锚（脚本公式若漂移，单测形态即失配暴露）。
 /// 路径全部加引号：栈目录可配置，含空格时 SCM 命令行才不被拆断。
 ///
 /// 可行性依据（v2.6.4 源码级取证）：core 的 main 无条件先走
@@ -523,22 +525,9 @@ pub fn service_action_params(
     stack_dir: &str,
     lang: crate::lang::Lang,
 ) -> String {
-    service_action_params_extra(scripts_dir, action, stack_dir, lang, &[])
-}
-
-/// 同上，可附加额外具名参数（install 的 -BinPath；参数值由调用方按 PS 单引号
-/// 字面量包裹后传入——内部双引号不逃逸，binPath 含引号路径安全）
-fn service_action_params_extra(
-    scripts_dir: &Path,
-    action: &str,
-    stack_dir: &str,
-    lang: crate::lang::Lang,
-    extra: &[&str],
-) -> String {
     // PS 单引号字面量（栈目录含空格安全，autostart::ps_quote 同规则）
     let quoted_stack = format!("'{}'", stack_dir.replace('\'', "''"));
-    let mut args: Vec<&str> = vec!["-Action", action, "-StackDir", &quoted_stack];
-    args.extend_from_slice(extra);
+    let args: Vec<&str> = vec!["-Action", action, "-StackDir", &quoted_stack];
     crate::scripts::visible_script_params(
         scripts_dir,
         crate::scripts::Script::MeshService,
@@ -547,23 +536,18 @@ fn service_action_params_extra(
     )
 }
 
-/// install 派发参数（mesh_install_service / apply 未装路径）：附 -BinPath。
-/// binPath 由 [`service_bin_path`] 构造（AC8 断言纯路径无密钥），PS 单引号
-/// 包裹原样传递——内部双引号是 SCM 命令行的路径包裹，不经 PS 解析拆断。
+/// install 派发参数（mesh_install_service / apply 未装路径）。**不传 -BinPath**：
+/// binPath 由脚本按同公式从 StackDir 自建（脚本内注释与 [`service_bin_path`]
+/// 单测锁定形态一致性）。真机缺陷教训（2026-09-11）：经 `-Command "..."`
+/// 包裹派发时，binPath 内嵌的路径双引号会提前终止外层引用、被 PowerShell
+/// 剥除后触发脚本「binPath 与栈目录不符」误拒——参数串上不出现内嵌引号才是
+/// 稳妥形态；AC8（binPath 无密钥）由公式本身保证，双端测试各自锁形。
 pub fn service_install_params(
     scripts_dir: &Path,
     stack_dir: &str,
     lang: crate::lang::Lang,
 ) -> String {
-    let bin_path = service_bin_path(stack_dir);
-    let quoted_bin = format!("'{}'", bin_path.replace('\'', "''"));
-    service_action_params_extra(
-        scripts_dir,
-        "install",
-        stack_dir,
-        lang,
-        &["-BinPath", &quoted_bin],
-    )
+    service_action_params(scripts_dir, "install", stack_dir, lang)
 }
 
 /// apply（mesh_apply_config / 切组网）的服务动作选择（纯函数）：服务未装 →
@@ -1119,17 +1103,22 @@ mod tests {
         }
     }
 
-    /// install 派发参数：-Action install + -BinPath 单引号包裹的 binPath 原文
-    ///（AC8：binPath 纯路径参数，AC8 断言由 service_bin_path 测试锁死）
+    /// install 派发参数：-Action install 且**不含 -BinPath**（真机缺陷教训：
+    /// binPath 内嵌双引号过不了 -Command 包裹，由脚本按同公式自建——2026-09-11）
     #[test]
-    fn install_params_carry_quoted_bin_path() {
+    fn install_params_omit_bin_path() {
         let dir = Path::new(r"C:\app\resources\bin");
         let stack = r"D:\Software\cloudcli-https";
         let params = service_install_params(dir, stack, crate::lang::Lang::Zh);
         assert!(params.contains("-Action install"), "{params}");
+        assert!(!params.contains("-BinPath"), "binPath 必须由脚本自建：{params}");
+        // binPath 内容不得经命令行传递（外层 -Command "..." 的包裹引号除外）
+        assert!(
+            !params.contains("easytier-core.exe"),
+            "binPath 片段不得出现在派发参数：{params}"
+        );
+        // 形态契约锚仍在：脚本公式同源（service_bin_path 单测锁 AC8）
         let bp = service_bin_path(stack);
-        // binPath 以 PS 单引号包裹原样传递（内部双引号不逃逸、不被 PS 拆断）
-        assert!(params.contains(&format!("-BinPath '{bp}'")), "{params}");
         assert!(!bp.to_ascii_lowercase().contains("secret"), "AC8：{bp}");
     }
 
