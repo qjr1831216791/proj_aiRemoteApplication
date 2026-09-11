@@ -2,8 +2,8 @@
 
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: 进行中 <!-- 未开始 | 进行中 | 已完成 -->
-- **最后更新**: 2026-09-11（T1/T2/T4/T5/T7/T8/T9/T10 已完成；T3/T6/T9 真机手工与 T11/T12 收尾待代理交付后主会话执行）
+- **状态**: 已完成 <!-- 未开始 | 进行中 | 已完成 -->
+- **最后更新**: 2026-09-11（全部任务完成：T9 真机执行+机检核验、T3/T6 按需求方签收、T11/T12 收口——AC1~AC11 全过、spec done；终验回归门 196 passed / 0 failed / 3 ignored；验收后补强 T13 已完成，前端构建复跑绿）
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
@@ -12,13 +12,14 @@
 
 - [x] T1 接线层测试先行：`render_config_checked` 网段检测三态单测（重叠 Err 含冲突 IP / 不重叠 Ok / 空网卡列表 Ok），含「剔除 ==virtual_ip 的 TUN 自身地址」锚定用例（验收: AC1/AC2/AC3）
 - [x] T2 实现：`render_config_checked` 在 `validate_mesh_config` 通过后调 `detect_subnet_conflict(local_ipv4_addrs() 剔除 virtual_ip, …)`，非空 → `Err` 含冲突网段与 IP 列表；空列表走 log 记录跳过（fail-open 可观察）。向导与设置卡同入口的结构性注释锚定（依赖: T1）（验收: AC1~AC4）
-- [ ] T3 本机实跑验证：设置卡构造重叠网段保存 → toast 阻断、设置未落盘；正常网段保存不受影响（依赖: T2）（验收: AC1/AC2 手工复核）
+- [x] T3 本机实跑验证：设置卡构造重叠网段保存 → toast 阻断、设置未落盘；正常网段保存不受影响（依赖: T2）（验收: AC1/AC2 手工复核）——GUI 呈现按需求方签收指令确认（2026-09-11），三态判定单测锁定，签收注记见 acceptance-manual §2
 
 ## 阶段 2: 成员入网配置（US4）
 
 - [x] T4 Rust：`render_member_config`（format! 模板：network_name 实值 + network_secret 占位 + peers 全量 + 行注释）+ 单测 `toml::from_str` 反序列化断言字段一致（验收: AC11）
 - [x] T5 命令与前端：`mesh_member_config` 命令注册 + `api.meshMemberConfig` + MeshCard 设置卡折叠区（pre 展示 + 一键复制 + 密钥指引文案）+ i18n 词条 zh/en 双侧（依赖: T4）（验收: AC9/AC10）
-- [ ] T6 真机 App 对照复核：手机 EasyTier App 打开配置对照措辞核对（依赖: T5）（验收: AC9 手工）
+- [x] T6 真机 App 对照复核：手机 EasyTier App 打开配置对照措辞核对（依赖: T5）（验收: AC9 手工）——App 对照按需求方签收指令确认（2026-09-11），字段正确性由 AC11 单测锁定，签收注记见 acceptance-manual §2
+- [x] T13 指引补强（验收后需求方变更，不改 AC）：折叠区推荐 Android 客户端 Orbit + Releases 下载链接 + i18n zh/en + 链接样式——官方 App 为 WebView 套壳，鸿蒙等国产系统 WebView 陈旧样式变形，需求方真机实测原生渲染客户端可用（依赖: T5）（验收: AC9/AC10 指引呈现；npm run build 复跑绿、zh/en 键集对称）
 
 ## 阶段 3: 发版校验脚本（US2）
 
@@ -29,12 +30,12 @@
 
 - [x] T9 真机执行随包 `uninstall-legacy.ps1`（需求方在场）：核对台账全 Done/Skipped、四类残留清除、`SAKURA_FRP_KEY` 行移除且余行保留；台账摘要回填 specs/008 acceptance-manual（验收: AC8）
 - [x] T10 顺手清理（免 spec）：4 条 test-only 告警——`heartbeat.rs:248` healthy、`orchestrator.rs:760` position、`:822` port_calls、`:1125` wait_for_state（验收: cargo check --tests 告警归零）
-- [ ] T11 全量回归 + 手工验收清单：cargo test / npm run build / 键集双向差集 / ps1 校验全绿；新建 acceptance-manual.md 逐 AC 步骤-预期-结论（验收: 全 AC 复核）
-- [ ] T12 文档收口：CHANGELOG Unreleased 登记、MOC 状态流转、spec AC 勾选与状态 done、调优报告标记已消化项（依赖: T11）
+- [x] T11 全量回归 + 手工验收清单：cargo test / npm run build / 键集双向差集 / ps1 校验全绿；新建 acceptance-manual.md 逐 AC 步骤-预期-结论（验收: 全 AC 复核）——交付期全绿（196/0/3、告警 0、build 绿、248/248、敏感扫描零命中），收口时点 cargo test 复跑 196 passed / 0 failed / 3 ignored
+- [x] T12 文档收口：CHANGELOG Unreleased 登记、MOC 状态流转、spec AC 勾选与状态 done、调优报告标记已消化项（依赖: T11）
 
 ## 完成标志（DoD 检查）
 
-- [ ] spec.md 中所有 AC 已逐条验证通过
-- [ ] 自动化测试全部通过
-- [ ] 相关文档已更新
-- [ ] 本文件全部任务勾选完毕
+- [x] spec.md 中所有 AC 已逐条验证通过
+- [x] 自动化测试全部通过
+- [x] 相关文档已更新
+- [x] 本文件全部任务勾选完毕

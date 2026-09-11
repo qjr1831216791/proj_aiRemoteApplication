@@ -540,6 +540,14 @@
   margin: 0 0 var(--sp-2);
 }
 
+.mesh-member__link {
+  color: var(--c-primary);
+}
+
+.mesh-member__link:hover {
+  text-decoration: underline;
+}
+
 .mesh-member__pre {
   margin: 0;
   padding: var(--sp-3);

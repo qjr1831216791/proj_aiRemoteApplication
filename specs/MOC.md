@@ -11,7 +11,7 @@
 - （暂无）
 
 ### 🟠 实现中（in-progress）
-- [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) — v0.5.0 调优迭代：组网网段冲突检测接线（spec 007 §6 决议落地）+ 成员入网 TOML 配置展示（密钥占位符）+ 发版版本校验脚本 release-check + 008 真机旧通道清理收尾（T1~T8/T10 代码与脚本已交付，T3/T6/T9 真机验收待执行）
+- （暂无）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
@@ -19,7 +19,8 @@
 - [006-foolproof-install](./006-foolproof-install/spec.md) — 傻瓜式装机向导：五阶段检测驱动（基础/腾讯云前置/HTTPS 栈/访问通道/收尾），断点续跑+办后校验；TLS 改 Caddy tencentcloud 插件自治（ADR-0003）；低频栏瘦身（2026-09-10 验收 done）
 - [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（2026-09-11 需求方签收 done）
 - [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（legacy 模式，network_secret 派生加密）替代 frp 零公网暴露 + 停用直连/穿透旧通道（easytier-core 以 Windows 服务承载；2026-09-11 需求方签收 done——AC1/AC2 联调实测，签收依据见其 acceptance-manual §3；随 008 一并发布 v0.4.0）
-- [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) — 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发、真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案；真机卸载编排 `uninstall-legacy.ps1` 随包保留为可选动作（2026-09-11 需求方签收 done，v0.4.0 发布）
+- [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) — 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发、真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案；真机卸载编排 `uninstall-legacy.ps1` 随包保留为可选动作（2026-09-11 需求方签收 done，v0.4.0 发布；真机卸载已于同日经 spec 009 T9 补执行实证）
+- [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) — v0.5.0 调优：组网网段冲突检测接线（spec 007 §6 决议落地）+ 成员入网 TOML 配置展示（密钥占位符）+ 发版校验脚本 release-check + 真机旧通道清理收尾（2026-09-11 验收 done——AC5~AC8/AC11 实测、AC1~AC4/AC9/AC10 自动化覆盖+需求方签收，记录见其 acceptance-manual）
 
 ### 📦 已归档（archived · 交付物已退役或被取代）
 - [003-ddnsgo-password-reset](./archive/003-ddnsgo-password-reset/spec.md) — ddns-go 密码重置（2026-09-11 随 008 归档：ddns-go 组件退役，功能无承载对象）
@@ -38,7 +39,7 @@
 | Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书；2026-09-10 验收 done） |
 | Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道；2026-09-11 需求方签收 done） |
 | Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；2026-09-11 需求方签收 done，随 v0.4.0 发布） |
-| Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 成员入网配置展示 + 发版校验脚本 + 真机旧通道清理（in-progress，代码就绪待真机验收） |
+| Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 成员入网配置展示 + 发版校验脚本 + 真机旧通道清理（2026-09-11 验收 done） |
 
 ## 按主题导航
 
