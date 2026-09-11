@@ -200,9 +200,7 @@ fn exec_error(script: Script, outcome: ExecOutcome, lang: Lang) -> String {
             // 经此路径的脚本仅 setup-autostart.ps1：Unavailable 即栈目录缺件语义
             crate::scripts::ScriptOutcome::Unavailable(_) => texts.stack_dir_missing(),
             crate::scripts::ScriptOutcome::Failed(code) => texts.script_exited(code),
-            crate::scripts::ScriptOutcome::Success | crate::scripts::ScriptOutcome::TimedOut => {
-                String::new()
-            }
+            crate::scripts::ScriptOutcome::Success => String::new(),
         },
         ExecOutcome::TimedOut => texts.script_timed_out(),
         ExecOutcome::SpawnFailed(e) => texts.script_spawn_failed(&e),

@@ -16,8 +16,6 @@ pub const CADDYFILE_PATH: &str = r"D:\Software\cloudcli-https\Caddyfile";
 pub const DOMAIN: &str = "ai.jackqi.cn";
 /// 工作台页面地址
 pub const WORKBENCH_URL: &str = "https://ai.jackqi.cn/";
-/// CloudCLI 本机地址（打开工作台/健康检查用）
-pub const CLOUDCLI_LOCAL_URL: &str = "http://127.0.0.1:3001/";
 
 /// CloudCLI 监听进程的可执行名：run-server-hidden.ps1 经 npm 全局拉起 node.exe，
 /// 路径不定 → 身份按文件名匹配（AC7 双重判据）
@@ -31,8 +29,6 @@ pub const DOMAIN_ROOT: &str = "jackqi.cn";
 
 // ── 组网通道（spec 007：EasyTier v2.6.4 随包分发，版本+SHA256 锁定）──────────
 
-/// EasyTier 版本（升级 = 替换资源 + 同步下方三哈希，plan §7-R6 供应链防线）
-pub const EASYTIER_VERSION: &str = "2.6.4";
 /// easytier 主程序（Windows 服务承载，spec 007 plan §3/§4.4）
 pub const EASYTIER_CORE_EXE_NAME: &str = "easytier-core.exe";
 /// easytier 状态探询 CLI（RPC 仅绑 127.0.0.1，plan §3.1）

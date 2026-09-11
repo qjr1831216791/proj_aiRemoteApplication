@@ -198,9 +198,8 @@ pub fn run() {
                     lang_handle.state::<lang::LanguageState>().current()
                 }));
             app.manage(orch.clone());
-            // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：句柄随 setup 结束丢弃——
-            // PollerHandle 无 Drop 停止语义，轮询线程随进程退出而止
-            let _poller = orch.spawn_poller();
+            // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：轮询线程随进程退出而止
+            orch.spawn_poller();
 
             // ── 网络环境监测（spec 002）：15s 轮询，变化才发 net://changed ──
             let net_monitor = build_net_monitor(app.handle().clone());
