@@ -145,10 +145,13 @@ export function MeshCard(props: MeshCardProps) {
         for (const id of ["caddy", "cloudcli"] as const) {
           const c = compR.value.find((s) => s.id === id);
           const running = c?.state === "running";
+          // port-held 是 kebab、词典键为 camel（common.portHeld），与 MainView 同款特判
+          const stateKey: DictKey =
+            c?.state === "port-held" ? "common.portHeld" : `common.${c?.state ?? "stopped"}`;
           items.push({
             label: t(id === "caddy" ? "tunnel.check.caddy" : "tunnel.check.upstream", lang),
             ok: running,
-            detail: running ? okText : t(`common.${c?.state ?? "stopped"}` as DictKey, lang),
+            detail: running ? okText : t(stateKey, lang),
           });
         }
       }
