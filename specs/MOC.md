@@ -8,10 +8,10 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) — v0.5.0 调优迭代：组网网段冲突检测接线（spec 007 §6 决议落地）+ 成员入网 TOML 配置展示（密钥占位符）+ 发版版本校验脚本 release-check + 008 真机旧通道清理收尾（2026-09-11 需求方确认，含追加的 US4）
+- （暂无）
 
 ### 🟠 实现中（in-progress）
-- （暂无）
+- [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) — v0.5.0 调优迭代：组网网段冲突检测接线（spec 007 §6 决议落地）+ 成员入网 TOML 配置展示（密钥占位符）+ 发版版本校验脚本 release-check + 008 真机旧通道清理收尾（T1~T8/T10 代码与脚本已交付，T3/T6/T9 真机验收待执行）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
@@ -38,7 +38,7 @@
 | Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书；2026-09-10 验收 done） |
 | Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道；2026-09-11 需求方签收 done） |
 | Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；2026-09-11 需求方签收 done，随 v0.4.0 发布） |
-| Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 成员入网配置展示 + 发版校验脚本 + 真机旧通道清理（reviewed） |
+| Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 成员入网配置展示 + 发版校验脚本 + 真机旧通道清理（in-progress，代码就绪待真机验收） |
 
 ## 按主题导航
 

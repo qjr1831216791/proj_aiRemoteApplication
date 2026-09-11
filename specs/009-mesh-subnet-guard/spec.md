@@ -3,7 +3,7 @@
 > 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
 > （plan / tasks 于本 spec 确认后按工作流补齐）
 
-- **状态**: reviewed <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: in-progress <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 7
 - **创建日期**: 2026-09-11
 - **最后更新**: 2026-09-11
@@ -65,7 +65,7 @@ v0.4.0 发版后全仓瘦身（merge `89b63cf`）沉淀的调优候选报告（[
 - **检测范围**：比对组网设置的虚拟网段（`virtualCidr` + `virtualIp`）与本机**活动（up）物理网卡**的 IPv4 网段；环回/虚拟网卡（TUN 自身、loopback）不在比对范围（口径在 plan 中定，避免 EasyTier 自身 TUN 误报）
 - **检测时点**：组网设置保存（含装机向导应用）——单一入口统一拦截；**加载既有设置不拦截**（决议只约束保存/切换时点，不做存量追溯）
 - **fail-open 策略**：网卡枚举失败/无网卡环境放行保存（避免把无网卡环境锁死在设置外），跳过原因写入既有日志途径
-- **错误呈现**：稳定错误码 + 双语文案（zh/en 词典同步新增），形态（行内错误 vs toast）在 plan 定
+- **错误呈现**：中文可读错误文案（含冲突网段与 IP 列表），经既有保存错误通道（toast）展示——与 `validate_mesh_config` 既有错误形态保持一致；保存错误文案整体 i18n 化不在本期（避免单独双语化制造不一致，plan §2 取舍）
 - **release-check 形态**：`scripts/release-check.ps1`（PowerShell 5.1 兼容、BOM+CRLF、遵循 sprint0 脚本约定），只读校验；默认从 package.json 读目标版本，支持显式传参
 - **成员入网配置**：以 EasyTier 官方最小可用配置为口径（`[network_identity]` + `[[peer]]`，不堆高级 flags；成员虚拟 IP 默认由组网 DHCP 自动分配）；TOML 由 Rust 侧从已保存组网设置拼装（复用既有 toml 依赖），前端仅展示与复制，不做本地拼装
 - **真机清理**：复用随包 `uninstall-legacy.ps1`（幂等、内置组网在线 + 腾讯凭证双闸门），本 spec 不改该脚本
@@ -79,9 +79,9 @@ v0.4.0 发版后全仓瘦身（merge `89b63cf`）沉淀的调优候选报告（[
 
 ## 6. 开放问题
 
-- [ ] 错误呈现形态与稳定码归属（复用 `mesh.code.*` 体系 vs 新增设置域码）——plan 定
-- [ ] release-check 是否作为 build.ps1 前置步骤自动执行——plan 定
-- [ ] 网卡枚举的"活动"判据（OperationalStatus up / 有 IPv4 即算）——plan 定
+- [x] 错误呈现形态与稳定码归属 → **已决**（plan §2）：中文直接文案 + 既有 toast 通道，不新增稳定码
+- [x] release-check 是否作为 build.ps1 前置步骤自动执行 → **已决**（plan §2）：独立脚本（CLAUDE.md 常用命令登记入口），不并入 build.ps1
+- [x] 网卡枚举的"活动"判据 → **已决**（plan §2）：`list_afinet_netifas` 枚举的非回环 IPv4 即算（既有 `local_ipv4_addrs` 口径，无 OperationalStatus 过滤）
 
 ## 7. 变更记录
 
@@ -89,3 +89,4 @@ v0.4.0 发版后全仓瘦身（merge `89b63cf`）沉淀的调优候选报告（[
 |------|----------|------|
 | 2026-09-11 | 初稿（US1 网段阻断 + US2 发版校验 + US3 真机清理） | 调优报告 P1/P3/P4 经需求方确认纳入 Sprint 7（v0.5.0） |
 | 2026-09-11 | 需求方确认原 8 条 AC；新增 US4 成员入网配置展示（AC9~AC11，TOML 官方格式、密钥占位符方案）；状态 draft → reviewed | 需求方补充移动端配置痛点；密钥呈现权衡经需求方选定为占位符（维持 007 AC8） |
+| 2026-09-11 | §4「错误呈现」修订为与既有保存错误一致的中文直接文案（原措辞"稳定码 + 双语"），§6 三条开放问题关闭；状态 reviewed → in-progress | plan 起草时现实校准：现有保存错误均为中文直接文案，单独双语化制造不一致（不允许默默偏离，显式登记） |
