@@ -1,6 +1,6 @@
 # 004-tunnel-access · 技术方案（plan）
 
-> 导航：[spec.md](./spec.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
+> 导航：[spec.md](./spec.md) · [tasks.md](./tasks.md) · 返回 [MOC](../../MOC.md)
 
 - **状态**: draft <!-- draft | reviewed -->
 - **关联需求**: [spec.md](./spec.md)

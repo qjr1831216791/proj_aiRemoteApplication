@@ -1,11 +1,13 @@
 # 003-ddnsgo-password-reset · 需求规格（spec）
 
-> 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
+> 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../../MOC.md)
 
-- **状态**: done <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: archived <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 2
 - **创建日期**: 2026-09-09
-- **最后更新**: 2026-09-09（AC 全过收口 done：自动化 127 项全绿 + 需求方真机验收）
+- **最后更新**: 2026-09-11（归档：**本 Spec 交付物已随 spec 008 整体退役**——直连通道（ddns-go）移除后，密码重置脚本/APP 入口/管理页入口均无承载对象，不再分发。历史价值保留于本归档。取代者：[008-legacy-channel-removal](../../008-legacy-channel-removal/spec.md)；组网时代密钥管理见 [007-mesh-access](../../007-mesh-access/spec.md)）
+
+> **取代注记（2026-09-11）**：spec 008 将访问通道收敛为「局域网 IP 直访 + EasyTier 组网」双方案，ddns-go 组件整体退役（真机残留经 `uninstall-legacy.ps1` 清理）。本 Spec 描述的功能已不存在，文档仅作历史记录。
 
 ## 1. 背景与问题
 

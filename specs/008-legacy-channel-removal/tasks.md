@@ -47,7 +47,7 @@
 
 ## 阶段 7: 文档与回归
 
-- [ ] T19 文档收尾：`docs/adr/0004-settings-channel-migration.md`（accessChannel 契约变更与迁移映射）；`specs/003`/`specs/004` 移入 `specs/archive/` 并在 spec.md 头部加取代注记；MOC 流转（008 行、主题导航、003/004 移档）；`CHANGELOG.md` Unreleased（Removed: frp 通道/直连通道与 ddns-go/相关 UI；Changed: 通道收敛组网单通道）；`.env.example` 删 SAKURA_FRP_KEY 段（TENCENT 注释去 ddns-go 表述）；`docs/product.md` 路线图补 008（验收: AC12；完成标志：核对清单过）
+- [x] T19 文档收尾：`docs/adr/0004-settings-channel-migration.md`（accessChannel 契约变更与迁移映射）；`specs/003`/`specs/004` 移入 `specs/archive/` 并在 spec.md 头部加取代注记；MOC 流转（008 行、主题导航、003/004 移档）；`CHANGELOG.md` Unreleased（Removed: frp 通道/直连通道与 ddns-go/相关 UI；Changed: 通道收敛组网单通道）；`.env.example` 删 SAKURA_FRP_KEY 段（TENCENT 注释去 ddns-go 表述）；`docs/product.md` 路线图补 008（验收: AC12；完成标志：核对清单过）✓ 2026-09-11（归档目录内相对链接深度统一修正；005 spec 指向 004 的链接改 archive 路径；CHANGELOG 0.3.0 历史条目按惯例不改写）
 - [ ] T20 全量回归 + 手工验收清单：`cargo test` 全绿 + `npm run build` 绿 + `$ScriptSubset`/manifest/resources 三处一致性校验 + 全文检索 frp/ddns-go 残留扫描（白名单：历史 CHANGELOG/调研/specs 归档）；建 `acceptance-manual.md`（AC1~AC12 逐条步骤/预期/实测留白 + 真机卸载编排执行清单，显著标注前置闸门：007 T14 签收 + O1 闭合）（验收: 全部；完成标志：回归绿 + 清单入库）
 
 ## 完成标志（DoD 检查）

@@ -1,6 +1,6 @@
 # 004-tunnel-access · 手工验收记录（2026-09-10 回填）
 
-> 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
+> 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../../MOC.md)
 >
 > 需求方真机验收通过（2026-09-10"验收成功"），本文件为验收证据回填与遗留观察项登记。
 > 自动化基线：`cargo test` **152 passed + 1 ignored**（2026-09-10 复跑）；`npm run build` 零错误。

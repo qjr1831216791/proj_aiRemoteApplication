@@ -1,11 +1,13 @@
 # 004-tunnel-access · 需求规格（spec）
 
-> 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
+> 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · [acceptance-manual.md](./acceptance-manual.md) · 返回 [MOC](../../MOC.md)
 
-- **状态**: done <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: archived <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 3
 - **创建日期**: 2026-09-09
-- **最后更新**: 2026-09-10（需求方真机验收通过，收口 done；自动化 152 项全绿 + 穿透端到端 HTTP 200 实证；AC2 换网重连 / AC9 重启自启 / AC10 退出清理复验 3 项实现已交付、待日常使用自然复验，见变更记录）
+- **最后更新**: 2026-09-11（归档：**本 Spec 交付物已随 spec 008 整体退役**——穿透通道（SakuraFrp/frpc）从代码/分发/真机三层面移除。历史价值保留于本归档。取代者：[007-mesh-access](../../007-mesh-access/spec.md)（EasyTier 组网）+ [008-legacy-channel-removal](../../008-legacy-channel-removal/spec.md)（通道收敛与卸载编排））
+
+> **取代注记（2026-09-11）**：spec 007 引入 EasyTier 组网（零公网入站暴露）后，穿透通道的安全劣势（经第三方节点中转明文段、token 暴露面、会话稳定性依赖节点）使其被替代；spec 008 完成代码/分发/真机三层面退役（frpc.exe 不再随包分发，真机残留经 `uninstall-legacy.ps1` 清理）。本 Spec 描述的功能已不存在，文档仅作历史记录；其通道体检/失败分类/守护自愈的工程经验由组网通道继承。
 
 ## 1. 背景与问题
 

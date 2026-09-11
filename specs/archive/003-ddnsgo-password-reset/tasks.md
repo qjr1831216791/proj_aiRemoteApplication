@@ -1,6 +1,6 @@
 # 003-ddnsgo-password-reset · 任务清单（tasks）
 
-> 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
+> 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../../MOC.md)
 
 - **状态**: 进行中
 - **最后更新**: 2026-09-09
