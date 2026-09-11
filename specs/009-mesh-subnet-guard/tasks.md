@@ -22,8 +22,8 @@
 
 ## 阶段 3: 发版校验脚本（US2）
 
-- [ ] T7 `scripts/release-check.ps1`：三处版本读取（package.json JSON / Cargo.toml 锚定 [package] 段 / tauri.conf.json JSON）+ CHANGELOG 版本节存在性；`-Version` 参数（默认 package.json）；只读、PS 5.1、BOM+CRLF、T() 双语；退出码 0/1（验收: AC5/AC6/AC7）
-- [ ] T8 脚本三态自测：仓库现状正例 + `-Version 9.9.9` 负例 + 临时副本版本不一致负例；Parser/BOM/CRLF 校验；CLAUDE.md 常用命令补一行（依赖: T7）（验收: AC5/AC6/AC7）
+- [x] T7 `scripts/release-check.ps1`：三处版本读取（package.json JSON / Cargo.toml 锚定 [package] 段 / tauri.conf.json JSON）+ CHANGELOG 版本节存在性；`-Version` 参数（默认 package.json）；只读、PS 5.1、BOM+CRLF、T() 双语；退出码 0/1（验收: AC5/AC6/AC7）
+- [x] T8 脚本三态自测：仓库现状正例 + `-Version 9.9.9` 负例 + 临时副本版本不一致负例；Parser/BOM/CRLF 校验；CLAUDE.md 常用命令补一行（依赖: T7）（验收: AC5/AC6/AC7）
 
 ## 阶段 4: 真机清理与收尾（US3 + 通用）
 

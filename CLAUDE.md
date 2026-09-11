@@ -103,4 +103,7 @@ cargo test  --manifest-path apps/workbench/src-tauri/Cargo.toml
 ```powershell
 # 一键打包（NSIS 安装器 + 便携 zip 双形态，产物落 release/）
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1
+
+# 发版前校验：三处版本号一致 + CHANGELOG 版本节存在（只读，对应 CHANGELOG「发布步骤」）
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-check.ps1
 ```
