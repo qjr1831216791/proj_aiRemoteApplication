@@ -180,6 +180,7 @@ uri = "tcp://sh.vomiku.com:7910"
 | `mesh_install_service` / `mesh_uninstall_service` | — | 复制 exe（校验 manifest）+ sc create + failure 配置 / sc delete（先 stop） | 是 |
 | `disable_legacy_channel` | `{ target: "tunnel" \| "direct" }` | 停用编排（§5.2），前置校验非现役通道 | 停 ddns-go 托管部分否 / CNAME 删除走 API 否 |
 | `clear_frp_key` | — | 指引呈现 + 拉起清除脚本（`clear-frp-key.ps1`：从栈 `.env` 移除 SAKURA_FRP_KEY 行、复核显示已移除） | 否 |
+| `mesh_diagnostics` | — | 六项只读探测返回 `Vec<DiagItem{code, ok, detail?}>`：①服务态（sc query/qc）②密钥就绪（文件存在非空）③逐条 peers TCP 可达（connect 3s 超时）④成员清单（RPC peer list，无 ipv4 的成员标记 `no_addr`）⑤本机虚拟网卡含虚拟 IP（网卡列表比对）⑥域名解析=虚拟 IP（走 `check_dns_alignment` 同源）+ 虚拟 IP:443 TCP 可达；各项独立不阻断，结果不含密钥（spec AC13） | 否 |
 | `mesh_sync_dns` | — | CNAME 全删 + A upsert 虚拟 IP（复用 `sync_to_mesh`）；前置：现役通道为 mesh + 腾讯云凭证存在。**T13 新增，见变更记录 2026-09-11** | 否（DNSPod API） |
 
 既有命令变更：`switch_channel` 入参枚举加 `"mesh"`；`channel_health`（体检）六项在 mesh 下重定义两项（隧道客户端→组网服务/对端、DNS 对齐→A 记录=虚拟 IP），其余不变；`get_settings`/`save_settings` 随 Settings 结构自动扩展（serde default 向后兼容）。
@@ -207,6 +208,7 @@ disable_direct（前置：channel ≠ direct；典型时序 = 切 mesh 后执行
 - `types.ts`：`AccessChannel = "direct" | "tunnel" | "mesh"`；`MeshConfigView`；设置区组网卡片（网络名/虚拟 IP/网段/对端列表行内编辑，保存即时校验：非空、IP/网段格式、peers URI 格式；**无密钥输入框**，仅脚本指引链接——AC8/AC11）。
 - `TunnelCard.tsx`（保留文件名，004 遗产避免无谓 diff）：三通道单选 + 停用态渲染（「已停用」chip + 「重新启用」需确认框附安全警示——公网暴露面回归）。
 - `WizardView.tsx` channel 阶段：组网分支（默认推荐）=「装服务（UAC）→ 成员设备客户端指引（官方下载地址列表）→ set-mesh-secret.ps1 → mesh_apply_config + 在线校验 → A 记录 upsert + 解析校验」；直连分支保留（安全警示前缀）；**SakuraFrp 分支移除**（AC12）；收尾页按停用状态给「停用穿透/直连」入口。
+- `SettingsView.tsx` 组网设置卡「运行诊断」入口（AC13）：点击调 `mesh_diagnostics` → 六项清单逐行呈现（通过/失败 + `mesh.diag.*` 双语修复指引码）；成员指引文案按 T14 实测修正——虚拟 IP **静态分配**（.2 起步逐台递增，宿主机静态形态无 DHCP）、建议填写主机名、判定标准（设备列表出现 `ai-remote-workbench`）。
 - i18n：zh.ts/en.ts 扁平点分键同步新增（`mesh.*`、`channel.disabled.*`、`wizard.channel.mesh*`），缺一即构建挂（既有纪律）。
 
 ## 6. 测试策略（AC × 测试映射）
@@ -260,3 +262,4 @@ disable_direct（前置：channel ≠ direct；典型时序 = 切 mesh 后执行
 | 2026-09-10 | T7 实现期两处事实修正：①§4.4 提权惯例措辞对齐实际（install-https.ps1 并非自提权，是「自检管理员身份 + 拒绝提示」，UAC 由工作台 runas 拉起提供）；②§2 运行形态备选补④——`easytier-cli service install` 官方装服务路径 | T7 源码级取证：core main 无条件先走 `service_dispatcher::start`（被 SCM 拉起即进 win_service_main、从进程命令行解析 `-c`；控制台启动报 ERROR 0x427 被吞走 CLI）→ `sc create` 直装成立；但官方 cli 装服务会把网络参数（含密钥）写进服务命令行，违背 AC8 → 弃用，自有脚本 binPath 只含 `-c config.toml` 路径参数 |
 | 2026-09-10 | T8 实现期三处修正：①§2 状态探询命令形态实测修正——全局选项为 `-p/--rpc-portal`（非 `--rpc`）且必须在子命令之前（`easytier-cli -p 127.0.0.1:15888 -o json peer list`），并确认 peer list 首项恒为本机（cost="Local"），在线判定须排除本机项；②状态四态之外增设 `inactive`（现役通道非 mesh 时的看板呈现，对齐 004 TunnelState::Inactive 惯例）；③§3.2「StopDdnsGo + 取消自启托管」对切 tunnel 方向同适用（004 补强） | easytier-cli v2.6.4 clap 结构实测（选项置后报 unexpected argument）+ easytier-cli.rs 源码取证（PeerTableItem 首项 From&lt;NodeInfo&gt; 恒为本机）——「peers 非空即在线」在单机无成员时会误判，必须排除 is_local 项；切通道后仅停进程不取消自启任务，下次开机 ddns-go 被任务拉起即通道互踩（与 004 AC8 同源） |
 | 2026-09-11 | §5.1 命令表新增 `mesh_sync_dns`（表外命令补录，AC13 的 A 记录 upsert 入口落地） | T13 向导组网分支实现时发现缺口：向导分支选择（wizard_set_branch）只 patch access_channel 不做编排，新装机默认 mesh 时 switch_channel 的 AlreadyOnTarget 短路使 A=虚拟 IP 记录无人创建——§5.3「A 记录 upsert」步骤在「分支选择≠switch_channel 编排」的向导架构（006 遗产）下需独立命令入口（前端「同步 DNS」按钮消费） |
+| 2026-09-11 | §5.1 新增 `mesh_diagnostics` 六项只读诊断命令 + §5.3 设置区「运行诊断」入口与成员指引实测修正（虚拟 IP 静态分配/主机名/判定标准） | T14 真机联调三断点实锤（需求方×AI 协作排障全程）：①电脑所在企业访客 WiFi 拦截节点 7910 出网（同机对节点 443 通 + 手机 4G 通对照实锤，frp 被拦同款）；②宿主机 dhcp=false 静态形态下 v2.6.4 网内无 DHCP 服务，成员端「自动获取」拿不到地址且回退自配 .1 与宿主机冲突——指引须改静态分配（.2 起步）；③退出收摊停服静默化（服务 SDDL 授交互用户启停权，commit c1a4427）。真机 AC1/AC2 通过：WiFi→热点切换自动重连，成员 P2P 5.7ms 经域名访问 200。诊断命令让用户可自行复现本次排障的全部检查项 |
