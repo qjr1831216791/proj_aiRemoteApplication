@@ -4,17 +4,14 @@
     "files":  {
                   "run-server-hidden.ps1":  "95f18e832c4e8eed909027db41106ab0acb5c78b8a2cb72bf76c9340f781deb0",
                   "run-caddy-hidden.ps1":  "918b85714a1c215502da7f57ead2c942743482422cad4d7827109ead988b74d8",
-                  "setup-autostart.ps1":  "683c5d622080e9aefd9bcaceb736b4441defc5743e4bcfd5a41775fd5708ce6a",
+                  "setup-autostart.ps1":  "a9e16c9b480b8d9185968c2695e5f8deb1edc1b08cc6293231ca018c30cdc319",
                   "install-server.ps1":  "6788847ae27dfac03d2583298331014ef9022d21209ebac07b8f2b759f660a9e",
-                  "install-https.ps1":  "6210eccf08164b962618c965aaa208373cf9a34201f4fb299c17c2df937dc517",
+                  "install-https.ps1":  "788fb6f7782d31c580b3bdb22ebe858cc8082fd311439881a718d11e2ea0285b",
                   "enable-https.ps1":  "bb6c801b05bdc1b9e1f7f2218c8f8021d11aec2836fab8466ae92f9558a9956b",
                   "install-client.ps1":  "357ed400ef580a011fa35ab7a5aab7af080619bdaec40b270847795a69f45805",
-                  "reset-ddns-password.ps1":  "cbe968612e0dd699ed32233c03d9c7d9f1dd6e55da14d5f67042287febfb8b0b",
-                  "set-frp-key.ps1":  "6e106f93e264378edb9f6d705c8e8bbdbce612c54a24439d47d868538c6767ad",
                   "set-tencent-key.ps1":  "f4f1b47cd73e1c7775dbda705467abf2c2aeb42dd2f5c88ddb2a3955bb5d2583",
-                  "config-ddnsgo.ps1":  "1adabd07030b65e8e5e8cb36598915cbf4dd3ad2cfe246237ba235975bb16e07",
                   "mesh-service.ps1":  "f263b3ee9e587de7cfd6186058d00f1ecde7a2d997e33bdef9cae2c8de1bddca",
                   "set-mesh-secret.ps1":  "abe03a2d02503770713b9c5344489b135072154310969aa2ce60855d1a828bca",
-                  "clear-frp-key.ps1":  "d5f6790e06c302005d7262f7cdb95c88924a9fc5c6b858cd574540959fc1cd77"
+                  "uninstall-legacy.ps1":  "99591dc40a6e83b7aada0e35360a8af3eec62935903584b91315b1079a8ecdad"
               }
 }

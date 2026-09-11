@@ -13,11 +13,11 @@
 外层只有这一个入口。双击后输入数字即可完成全部功能：
 
 ```
-  1. 启动服务（后台）并打开本机页面     6. 客户端配置（本机验证 + 桌面快捷方式）
-  2. 停止服务                           7. 开机自启：全部开启
-  3. 查看各端访问地址                   8. 开机自启：全部关闭
-  4. 安装/重装服务端（管理员）          9. 打开 ddns-go 管理页
-  5. HTTPS 环境配置（管理员）           0. 退出
+  1. 启动服务（后台）并打开本机页面     5. HTTPS 环境配置（管理员）
+  2. 停止服务                           6. 客户端配置（本机验证 + 桌面快捷方式）
+  3. 查看各端访问地址                   7. 开机自启：全部开启
+  4. 安装/重装服务端（管理员）          8. 开机自启：全部关闭
+                                        0. 退出
 ```
 
 菜单顶部实时显示 CloudCLI 与 HTTPS 的运行状态。其余说明文档照旧，下文路径均已含 `bin\`。
@@ -28,7 +28,7 @@
 [客户端] 手机/其他电脑          [服务端] 跑 AI 的电脑
   浏览器打开地址  ──局域网──>  Caddy(443) ──> CloudCLI(3001)
   什么都不用装                 └─> Claude Code + CC Switch
-  https://ai.jackqi.cn            └─> ddns-go + acme.sh 自动续期
+  https://ai.jackqi.cn
 ```
 
 | 角色 | 是哪台电脑 | 要做什么 |
@@ -47,12 +47,12 @@
 2. **记下结尾打印的"客户端访问地址"**，形如 `http://192.168.x.x:3001`（这就是给其他设备用的）。
 3. **浏览器打开 `http://localhost:3001` → 设置 → 开启需要的工具**（默认全禁用是它的安全设计；建议先开文件浏览/编辑 + Git）。
 
-**HTTPS 版（推荐，手机可装成 App）**：需要一个已实名域名（当前 `ai.jackqi.cn`）。依次：双击 `bin\install-https.bat`（下载 Caddy/ddns-go、生成 Caddyfile、跑环境配置并拉起 ddns-go）→ 按脚本结尾提示完成两步手工活（ddns-go 填密钥、acme.sh 签证书）→ 菜单 1（启动整栈）→ 手机访问 `https://ai.jackqi.cn`。原理与排障见[部署文档 §9（HTTPS/域名版）](../../docs/research/sprint0-cloudcli-lan-deploy.md)。
+**HTTPS 版（推荐，手机可装成 App）**：需要一个已实名域名（当前 `ai.jackqi.cn`）。依次：双击 `bin\install-https.bat`（下载 Caddy、生成 Caddyfile、跑环境配置）→ 按脚本结尾提示写入腾讯云密钥（`set-tencent-key.ps1`）→ 菜单 1（启动整栈）→ 手机访问 `https://ai.jackqi.cn`。原理与排障见[部署文档 §9（HTTPS/域名版）](../../docs/research/sprint0-cloudcli-lan-deploy.md)。
 
 **开机常驻（可选但推荐）**——双击 `bin\autostart-on.bat` 开启，`bin\autostart-off.bat` 关闭：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\bin\setup-autostart.ps1                # 注册登录自启（三组件）
+powershell -ExecutionPolicy Bypass -File .\bin\setup-autostart.ps1                # 注册登录自启（两组件）
 powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1   # 立即启动一次（不等重新登录）
 ```
 
@@ -90,10 +90,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 | `start-server.bat` / `.ps1` | 服务端 | 手动启动服务（双击；打印本机/移动端地址；已在运行则直接开浏览器） |
 | `stop-server.bat` / `.ps1` | 服务端 | 停止后台服务（双击；前台窗口直接 Ctrl+C 即可） |
 | `run-server-hidden.ps1` | 服务端 | 后台静默启动（自启任务/hook 内部调用，一般不直接碰；地址记入日志） |
-| `setup-autostart.ps1` | 服务端 | **开机自启开关**：启用/移除 CloudCLI + Caddy + ddns-go 三个登录自启（`-Remove` 全关） |
+| `setup-autostart.ps1` | 服务端 | **开机自启开关**：启用/移除 CloudCLI + Caddy 两个登录自启（`-Remove` 全关） |
 | `autostart-on.bat` / `autostart-off.bat` | 服务端 | 双击版自启开关：双击 on 启用、双击 off 关闭（免命令行） |
 | `enable-https.bat` / `.ps1` | 服务端 | HTTPS 一次性配置：防火墙 443 + 网络改专用 + hosts 钉定 DNS API 域名（`install-https` 会自动代跑） |
-| `install-https.bat` / `.ps1` | 服务端 | **HTTPS 栈装机**（一次）：下载 caddy.exe / ddns-go.exe（GitHub Release 最新版；直连失败用 `-CaddyZip` / `-DdnsZip` 指手动下载的 zip，升级加 `-Update`）+ 生成 Caddyfile + 跑 enable-https + 拉起 ddns-go 并开管理页 |
+| `install-https.bat` / `.ps1` | 服务端 | **HTTPS 栈装机**（一次）：下载 caddy.exe（caddyserver.com 插件构建；直连失败用 `-CaddyZip` 指手动下载的文件，升级加 `-Update`）+ 生成 Caddyfile + 跑 enable-https |
+| `uninstall-legacy.ps1` | 服务端 | **旧通道一次性卸载**（spec 008）：清 frp / ddns-go 残留进程、自启任务、文件与 .env 密钥行（前置闸门：007 验收签收后才可在真机执行） |
 
 ## 常见问题
 
@@ -110,7 +111,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 | 想升级/重装 CloudCLI | 服务端编辑 `install-server.bat`，`set "PS_ARGS=-Update"` 后重跑 |
 | 想换服务端地址 | 客户端双击 `install-client.bat`，提示处输入新地址（旧记录自动覆盖） |
 | npm install 报 npm.taobao.org 证书错误（ERR_TLS_CERT_ALTNAME_INVALID） | 机器残留了停服的旧淘宝镜像变量；重跑 `install-server.bat`，步骤 3 会检测并提示一键迁移 npmmirror |
-| `install-https` 下载 Caddy / ddns-go 失败（GitHub 直连不稳） | 浏览器手动下载 zip（失败提示里带了下载页链接），编辑 `install-https.bat` 设 `set "PS_ARGS=-CaddyZip <zip路径> -DdnsZip <zip路径>"` 后重跑（只缺哪个就只填哪个） |
+| `install-https` 下载 Caddy 失败（构建站直连不稳） | 浏览器手动下载 exe / zip（失败提示里带了下载页链接），编辑 `install-https.bat` 设 `set "PS_ARGS=-CaddyZip <文件路径>"` 后重跑 |
 
 ## 试用期你要观察什么（1~2 周）
 

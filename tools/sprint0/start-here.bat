@@ -2,8 +2,7 @@
 rem ============================================================
 rem  Sprint 0 - START HERE (double-click me)
 rem  One entry for everything: start/stop services, status and
-rem  URLs, install, HTTPS setup, client setup, autostart on/off,
-rem  ddns-go admin page.
+rem  URLs, install, HTTPS setup, client setup, autostart on/off.
 rem  Thin ASCII-only launcher: the real bilingual menu lives at
 rem  bin\menu.ps1 (keep the bin\ folder next to this file).
 rem ============================================================

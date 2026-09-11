@@ -52,13 +52,10 @@ $ScriptSubset = @(
     'install-https.ps1'       # HTTPS 栈装机（UAC）
     'enable-https.ps1'        # HTTPS 环境配置（UAC）
     'install-client.ps1'      # 客户端配置（交互式）
-    'reset-ddns-password.ps1' # ddns-go 密码重置（交互式，spec 003）
-    'set-frp-key.ps1'         # SakuraFrp 访问密钥写入 .env（交互式，spec 004）
     'set-tencent-key.ps1'     # 腾讯云 CAM 密钥写入 .env（交互式，spec 006）
-    'config-ddnsgo.ps1'       # ddns-go 配置生成 + 拉起（spec 006）
     'mesh-service.ps1'        # EasyTier 组网服务管理（UAC，spec 007）
     'set-mesh-secret.ps1'     # EasyTier 组网密钥写入 network-secret（交互式，spec 007）
-    'clear-frp-key.ps1'       # SakuraFrp 密钥清除（停用穿透收尾，spec 007）
+    'uninstall-legacy.ps1'    # 旧通道一次性卸载（frp/ddns-go 残留清理，spec 008）
 )
 
 function Write-Step { param([string]$Msg) Write-Host "`n==> $Msg" -ForegroundColor Cyan }
@@ -185,7 +182,7 @@ AI 远程工作台（$AppName）v$Version 便携版
 
 这是什么
 --------
-CloudCLI / Caddy / ddns-go 三组件的 Windows 桌面控制台：状态一览、一键启停、
+CloudCLI / Caddy / EasyTier 的 Windows 桌面控制台：状态一览、一键启停、
 自启托管、装机与 HTTPS 配置入口。便携版解压即用，无需安装。
 
 快速开始
@@ -210,7 +207,7 @@ Windows SmartScreen 提示（未签名分发的正常现象）
 
 ---------------------------------------- 以下为英文说明 (English) --------
 $AppName (portable) v$Version
-Desktop control plane for CloudCLI / Caddy / ddns-go on Windows.
+Desktop control plane for CloudCLI / Caddy / EasyTier on Windows.
 Unzip the WHOLE folder to a writable location (keep the exe next to
 resources\bin), then run ai-remote-workbench.exe. The app lives in the
 system tray; right-click the tray icon to show the UI or exit.

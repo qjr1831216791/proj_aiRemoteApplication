@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   汇总服务端全部常用操作：启动/停止服务、状态与地址、安装、HTTPS 配置、
-  客户端配置、开机自启开关、ddns-go 管理页。需要管理员的项会自动弹 UAC
+  客户端配置、开机自启开关。需要管理员的项会自动弹 UAC
   并在新的管理员窗口中执行。
 
 .EXAMPLE
@@ -78,7 +78,6 @@ function Show-Menu {
     Write-Host (T '  6. 客户端配置（本机验证 + 桌面快捷方式）' '  6. Client setup (verify + desktop shortcut)')
     Write-Host (T '  7. 开机自启：全部开启' '  7. Autostart: enable all')
     Write-Host (T '  8. 开机自启：全部关闭' '  8. Autostart: disable all')
-    Write-Host (T '  9. 打开 ddns-go 管理页' '  9. Open ddns-go admin page')
     Write-Host (T '  0. 退出' '  0. Exit')
     Write-Host ''
     Write-Host (T '请输入选项: ' 'Choose an option: ') -NoNewline -ForegroundColor Yellow
@@ -95,10 +94,6 @@ while ($true) {
                 Start-Process -FilePath (Join-Path $StackDir 'caddy.exe') -ArgumentList 'run', '--config', (Join-Path $StackDir 'Caddyfile') -WindowStyle Hidden
                 Write-Host (T '[OK] Caddy 已启动。' '[OK] Caddy started.') -ForegroundColor Green
             }
-            if (-not (Test-PortListening 9876)) {
-                Start-Process -FilePath (Join-Path $StackDir 'ddns-go.exe') -ArgumentList '-c', (Join-Path $StackDir 'ddns-go.yaml'), '-l', ':9876', '-f', '300' -WindowStyle Hidden
-                Write-Host (T '[OK] ddns-go 已启动。' '[OK] ddns-go started.') -ForegroundColor Green
-            }
             Start-Process "http://localhost:$port"
             Write-Host (T '[OK] 服务已启动（后台），浏览器已打开本机页面。' '[OK] Services started (background); opened local page in browser.') -ForegroundColor Green
         }
@@ -107,11 +102,6 @@ while ($true) {
             if (Test-PortListening $httpsPort) {
                 & (Join-Path $StackDir 'caddy.exe') stop | Out-Null
                 Write-Host (T '[OK] Caddy 已停止。' '[OK] Caddy stopped.') -ForegroundColor Green
-            }
-            $ddns = Get-Process -Name ddns-go -ErrorAction SilentlyContinue
-            if ($ddns) {
-                $ddns | Stop-Process -Force
-                Write-Host (T '[OK] ddns-go 已停止。' '[OK] ddns-go stopped.') -ForegroundColor Green
             }
         }
         '3' {
@@ -135,10 +125,6 @@ while ($true) {
         }
         '8' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'setup-autostart.ps1') -Remove
-        }
-        '9' {
-            Start-Process 'http://127.0.0.1:9876'
-            Write-Host (T '[OK] 已打开 ddns-go 管理页（如打不开，说明 ddns-go 未运行，先选 1）。' '[OK] Opened ddns-go page (if it fails, ddns-go is not running - choose 1 first).') -ForegroundColor Green
         }
         '0' {
             exit 0

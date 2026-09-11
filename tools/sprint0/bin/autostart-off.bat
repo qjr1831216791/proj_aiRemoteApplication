@@ -1,7 +1,7 @@
 @echo off
 rem ============================================================
 rem  Sprint 0 - DISABLE autostart (double-click me)
-rem  Removes logon autostart for CloudCLI + Caddy + ddns-go.
+rem  Removes logon autostart for CloudCLI + Caddy.
 rem  Running processes are NOT killed; they just will not come
 rem  back after the next reboot/logon.
 rem  To ENABLE again, double-click autostart-on.bat

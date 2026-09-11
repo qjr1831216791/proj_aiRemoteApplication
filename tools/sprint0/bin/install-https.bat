@@ -1,8 +1,8 @@
 @echo off
 rem ============================================================
 rem  Sprint 0 HTTPS stack installer - double-click launcher
-rem  Downloads caddy.exe + ddns-go.exe into the stack dir,
-rem  generates Caddyfile, runs enable-https.ps1, starts ddns-go.
+rem  Downloads caddy.exe into the stack dir, generates Caddyfile,
+rem  runs enable-https.ps1.
 rem  Thin ASCII-only launcher: logic/messages in install-https.ps1
 rem  (must be in the SAME folder).
 rem
@@ -13,7 +13,6 @@ rem
 rem  Optional: append extra args for install-https.ps1, e.g.:
 rem    set "PS_ARGS=-Update"
 rem    set "PS_ARGS=-CaddyZip C:\Users\me\Downloads\caddy_2.11.4_windows_amd64.zip"
-rem    (use -DdnsZip the same way for ddns-go)
 rem
 rem  NOTE: avoid single-quote characters (') in the folder path.
 rem ============================================================

@@ -36,8 +36,7 @@
         "type": "embedBootstrapper"
       },
       "nsis": {
-        "installMode": "currentUser",
-        "installerHooks": "./installer-hooks.nsh"
+        "installMode": "currentUser"
       }
     }
   }
