@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onDomainHealth, onMeshStatus, onNetChanged, onSettingsRepaired, onStatusChanged, onTunnelStatus, onWizardChanged } from "./api";
+import { api, onDomainHealth, onMeshStatus, onNetChanged, onSettingsRepaired, onStatusChanged, onWizardChanged } from "./api";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
   AccessUrls,
@@ -21,7 +21,6 @@ import type {
   NetStatus,
   ScriptsAvailability,
   Settings,
-  TunnelStatus,
   WizardStageId,
 } from "./types";
 import { MainView } from "./components/MainView";
@@ -46,7 +45,6 @@ export function App() {
   const [urls, setUrls] = useState<AccessUrls | null>(null);
   const [scripts, setScripts] = useState<ScriptsAvailability | null>(null);
   const [netStatus, setNetStatus] = useState<NetStatus | null>(null);
-  const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
   const [meshStatus, setMeshStatus] = useState<MeshStatus | null>(null);
   const [domainHealth, setDomainHealth] = useState<DomainHealth | null>(null);
   const [stopping, setStopping] = useState(false);
@@ -91,7 +89,6 @@ export function App() {
       api.getUrls().then(setUrls).catch(() => {});
       api.scriptsAvailability().then(setScripts).catch(() => {});
       api.getNetStatus().then(setNetStatus).catch(() => {});
-      api.getTunnelStatus().then(setTunnelStatus).catch(() => {});
       api.getMeshStatus().then(setMeshStatus).catch(() => {});
       api
         .wizardGetState()
@@ -102,8 +99,6 @@ export function App() {
       track(await onStatusChanged(setStatuses));
       // 网络环境事件（spec 002）：变化才发（Rust 侧 15s 轮询去重）
       track(await onNetChanged(setNetStatus));
-      // 隧道状态事件（spec 004）：守护线程 5s 收敛驱动，变化才发
-      track(await onTunnelStatus(setTunnelStatus));
       // 组网状态事件（spec 007）：观察者 5s 探询，变化才发
       track(await onMeshStatus(setMeshStatus));
       // 域名心跳事件（spec 005）：60s 周期探测
@@ -195,10 +190,8 @@ export function App() {
           netStatus={netStatus}
           onNetRefresh={refreshNet}
           settings={settings}
-          tunnelStatus={tunnelStatus}
           meshStatus={meshStatus}
           domainHealth={domainHealth}
-          onSettingsChange={setSettings}
           stopping={stopping}
           onStartAll={startAll}
           onStopAll={stopAll}

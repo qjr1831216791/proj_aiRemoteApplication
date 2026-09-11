@@ -27,12 +27,11 @@ export const zh = {
   // 组件名
   "component.cloudcli": "CloudCLI",
   "component.caddy": "Caddy",
-  "component.ddnsgo": "ddns-go",
 
   // 主界面：总开关与状态卡
   "main.startAll": "启动全部",
   "main.allRunning": "全部运行中",
-  "main.allRunningHint": "三组件均在运行，无需启动",
+  "main.allRunningHint": "两组件均在运行，无需启动",
   "main.stopAll": "停止全部",
   "main.stopHint": "停止会结束进行中的 AI 会话",
   "main.busy": "操作进行中…",
@@ -55,10 +54,6 @@ export const zh = {
   "tools.useMirror": "使用国内镜像源",
   "tools.installClient": "客户端配置",
   "tools.installClientDesc": "install-client.ps1（其他电脑/手机，交互式）",
-  "tools.resetDdnsPassword": "重置 ddns-go 密码",
-  "tools.resetDdnsPasswordDesc": "忘记密码时用（弹窗输入新密码，无需管理员）",
-  "tools.openDdnsAdmin": "ddns-go 管理页",
-  "tools.openDdnsAdminDesc": "DNS 解析与密钥管理",
   "tools.scriptsUnavailable": "脚本目录不可用，相关操作已禁用：",
   "tools.uacHint": "带「管理员」标记的操作会弹出 UAC 授权窗口",
   "tools.dispatched": "已派发：请在弹出的窗口中按提示完成操作",
@@ -83,7 +78,7 @@ export const zh = {
   // 设置页
   "settings.behavior": "行为设置",
   "settings.autostartServices": "服务开机自启",
-  "settings.autostartServicesDesc": "登录时由计划任务拉起三组件",
+  "settings.autostartServicesDesc": "登录时由计划任务拉起两组件（CloudCLI + Caddy；组网服务独立自启）",
   "settings.autostartApp": "程序开机自启",
   "settings.autostartAppDesc": "登录时静默启动本程序并常驻托盘",
   "settings.linkStart": "启动时联动补齐服务",
@@ -101,39 +96,18 @@ export const zh = {
   "settings.readonlyHint": "修改端口/路径须重跑安装脚本，程序内不提供修改",
   "settings.portCloudcli": "CloudCLI 端口",
   "settings.portCaddy": "Caddy 端口",
-  "settings.portDdnsgo": "ddns-go 端口",
   "settings.stackDir": "安装目录",
   "settings.domain": "域名",
   "settings.openLogs": "打开日志目录",
   "settings.tookOver": "已接管已存在的开机自启任务",
   "settings.repaired": "设置文件损坏，已恢复默认值",
 
-  // 穿透设置（spec 004 AC14/15/16）
-  "settings.tunnel": "穿透设置（SakuraFrp）",
-  "settings.tunnelDesc":
-    "配置穿透参数。访问密钥不经程序输入框：点「设置访问密钥」在弹出的控制台窗口输入，脚本直接写入本地 .env（不回显、不落日志）",
-  "settings.tunnelId": "隧道 ID",
-  "settings.tunnelIdPlaceholder": "SakuraFrp 隧道列表 ID 列的数字",
-  "settings.tunnelNodeDomain": "节点域名",
-  "settings.tunnelNodePlaceholder": "如 frp-can.com 或 cn-hk-nf-1.natfrp.cloud",
-  "settings.tunnelSave": "保存配置",
-  "settings.tunnelSaved": "穿透配置已保存",
-  "settings.tunnelIdInvalid": "隧道 ID 必须为纯数字",
-  "settings.tunnelNodeRequired": "节点域名不能为空",
-  "settings.setFrpKey": "设置访问密钥…",
-  "settings.setFrpKeyDispatched": "密钥设置窗口已打开，请在弹出的控制台中输入",
-  "settings.setFrpKeyHint":
-    "密钥获取：natfrp.com 用户中心 → 查看访问密钥；存放于栈目录 .env 的 SAKURA_FRP_KEY",
+  // 保存/目录（组网设置与部署目录卡的共用项；穿透设置卡已随通道退役——spec 008）
+  "settings.save": "保存配置",
   "settings.openStackDir": "打开栈目录",
-  "settings.frpcDeploy":
-    "frpc 客户端已随程序内置（版本 0.51.0-sakura-14），换机无需单独下载；若被杀毒软件误报删除，先「复制白名单命令」在管理员终端执行，再「下载恢复 frpc」即可",
-  "settings.copyWhitelist": "复制白名单命令",
-  "settings.whitelistCopied": "白名单命令已复制，请在管理员终端中执行",
-  "settings.downloadFrpc": "下载恢复 frpc",
-  "settings.downloadFrpcDone": "frpc 已恢复",
   "settings.stackDirEditable": "部署目录（HTTPS 栈）",
   "settings.stackDirDesc":
-    "Caddy/ddns-go/frpc 的安装位置。输入安装根目录即可（自动追加 cloudcli-https 子目录）。修改后需重启工作台生效，并确保新路径已完成组件安装（装机脚本传 -StackDir 新路径）",
+    "Caddy 等栈组件的安装位置。输入安装根目录即可（自动追加 cloudcli-https 子目录）。修改后需重启工作台生效，并确保新路径已完成组件安装（装机脚本传 -StackDir 新路径）",
   "settings.stackDirSaved": "部署目录已保存，重启工作台后生效",
   "settings.stackDirEmpty": "部署目录不能为空",
 
@@ -165,46 +139,6 @@ export const zh = {
   "settings.meshUninstallBtn": "卸载服务",
   "settings.meshUninstallDone": "组网服务卸载已派发",
 
-  // 穿透通道（spec 004）
-  "tunnel.title": "访问通道",
-  "tunnel.channelLabel": "当前通道",
-  "tunnel.channelDirect": "直连（DDNS）",
-  "tunnel.channelTunnel": "穿透（SakuraFrp）",
-  "tunnel.switchToTunnel": "切换到穿透",
-  "tunnel.switchToDirect": "切回直连",
-  "tunnel.confirmTitleTunnel": "确认切换到穿透通道？",
-  "tunnel.confirmTitleDirect": "确认切回直连通道？",
-  "tunnel.confirmStepsTunnel":
-    "本机将：启动 frpc 隧道客户端，并停止 ddns-go 托管（两通道互斥）。随后需在腾讯云 DNS 控制台把 ai.jackqi.cn 的 A 记录改为 CNAME 指向节点域名（切换后本页会显示具体值与指引）。随时可切回直连。",
-  "tunnel.confirmStepsDirect":
-    "本机将：恢复 ddns-go 托管，并停止 frpc。随后需在腾讯云 DNS 控制台删除 ai.jackqi.cn 的 CNAME 记录（ddns-go 会自动重新写入 A 记录，本页指引消失即恢复完成）。",
-  "tunnel.confirm": "确认切换",
-  "tunnel.cancel": "取消",
-  "tunnel.switching": "切换中…",
-  "tunnel.switched": "通道已切换",
-  "tunnel.notConfigured": "穿透未配置，请先到「设置 → 穿透设置」完成配置",
-  "tunnel.statusLabel": "隧道状态",
-  "tunnel.state.notConfigured": "未配置",
-  "tunnel.state.disabled": "已停用",
-  "tunnel.state.inactive": "未启用",
-  "tunnel.state.starting": "连接中",
-  "tunnel.state.online": "在线",
-  "tunnel.state.offline": "离线",
-  "tunnel.code.login_failed":
-    "节点登录失败，持续重试中。若长时间不恢复，可能是当前网络拦截了 frp——可尝试更换网络环境（如手机热点）",
-  "tunnel.enabledLabel": "穿透启用",
-  "tunnel.dnsGuideTunnel":
-    "DNS 待切换：在腾讯云 DNS 控制台删除 ai.jackqi.cn 的 A 记录，添加 CNAME 记录指向：{target}（公共解析生效最长需等一个 TTL，约 10 分钟）",
-  "tunnel.dnsGuideDirect":
-    "DNS 待恢复：在腾讯云 DNS 控制台删除 ai.jackqi.cn 的 CNAME 记录，重新添加 A 记录即可（ddns-go 会自动维护解析值）",
-  "tunnel.dnsMismatch":
-    "CNAME 目标不符：当前指向 {actual}，应改为指向 {target}，请在腾讯云 DNS 控制台修正",
-  "tunnel.dnsRecheck": "重新检测",
-  "tunnel.dnsChecking": "检测中…",
-  "tunnel.dnsFailed": "DNS 检测失败（网络或解析异常），请稍后重试",
-  "tunnel.dnsOkTunnel": "DNS 解析已对齐穿透通道",
-  "tunnel.dnsOkDirect": "DNS 解析已恢复直连",
-
   // 域名心跳（spec 005）
   "heartbeat.dotOk": "可达",
   "heartbeat.dotFail": "不可达",
@@ -219,7 +153,7 @@ export const zh = {
   "settings.heartbeatDesc":
     "每分钟探测一次访问域名，连续 2 次失败时在地址区显示红色标记，恢复后自动消除",
 
-  // 通道体检（spec 004/005 知识复用）
+  // 通道体检 + DNS 检测（spec 004/005 知识复用；spec 008 组网单通道口径）
   "tunnel.checkup": "通道体检",
   "tunnel.checkupRun": "开始体检",
   "tunnel.checkupRunning": "体检中…",
@@ -227,29 +161,17 @@ export const zh = {
   "tunnel.check.fail": "异常",
   "tunnel.check.dns": "DNS 解析对齐",
   "tunnel.check.netCategory": "网络归类（443 放行）",
-  "tunnel.check.netNaTunnel": "穿透模式不经本机入站，此项不影响",
-  "tunnel.check.netPublicWarn": "存在公用网络，443 可能被拦截",
-  "tunnel.check.tunnel": "隧道客户端",
-  "tunnel.check.tunnelOff": "未启用（直连模式）",
   "tunnel.check.caddy": "本机 HTTPS 服务（caddy:443）",
   "tunnel.check.upstream": "上游服务（:3001）",
   "tunnel.check.domain": "域名全链路（本机视角）",
   "tunnel.checkupDnsHint": "未对齐，见上方 DNS 指引",
-  "tunnel.ddnsOffInTunnel": "穿透模式下已停用（通道互斥，DNS 由隧道自动管理）",
-  "tunnel.ddnsOffInMesh": "组网模式下已停用（通道互斥，DNS 由组网通道持有）",
-  "tunnel.restart": "重启隧道",
-  "tunnel.restarted": "隧道已重启（本机 DNS 缓存已刷新），正在重新登录",
+  "tunnel.dnsRecheck": "重新检测",
+  "tunnel.dnsChecking": "检测中…",
+  "tunnel.dnsFailed": "DNS 检测失败（网络或解析异常），请稍后重试",
 
-  // 组网通道（spec 007）
-  "tunnel.channelMesh": "组网（EasyTier）",
-  "tunnel.switchToMesh": "切换到组网",
-  "tunnel.confirmTitleMesh": "确认切换到组网通道？",
-  "tunnel.confirmStepsMesh":
-    "本机将：停止 frpc 与 ddns-go 托管（三通道互斥），并确保 EasyTier 组网服务运行。DNS 的 A 记录将指向虚拟 IP {ip}（切换后本页会显示指引）。访客设备需加入同一组网才可访问。",
+  // 组网通道 DNS 指引（spec 007；spec 008 起组网为唯一通道）
   "tunnel.dnsGuideMesh":
     "DNS 待建立：在腾讯云 DNS 控制台为 ai.jackqi.cn 添加 A 记录指向虚拟 IP：{target}（公共解析生效最长需等一个 TTL，约 10 分钟）",
-  "tunnel.dnsGuideFromMesh":
-    "DNS 待恢复：域名仍指向组网虚拟 IP {ip}。当前通道不需要该记录，请到腾讯云 DNS 控制台删除或改值（直连下 ddns-go 会自动维护正确值）",
   "tunnel.dnsMismatchA":
     "A 记录不符：当前 {actual}，组网通道应为 {target}（虚拟 IP），请在腾讯云 DNS 控制台修正",
   "tunnel.dnsCnameLeftMesh":
@@ -257,7 +179,10 @@ export const zh = {
   "tunnel.check.mesh": "组网服务/对端",
   "tunnel.check.netNaMesh": "组网访客经虚拟网络到达，不经物理网络入站，此项不影响",
 
-  // 组网状态区（spec 007；detail 为 Rust 侧稳定码）
+  // 组网状态区（spec 007 + 008 T15 主看板 MeshCard；detail 为 Rust 侧稳定码）
+  "mesh.cardTitle": "组网通道（EasyTier）",
+  "mesh.virtualIpLabel": "虚拟 IP",
+  "mesh.peersOnlineLabel": "在线成员",
   "mesh.statusLabel": "组网状态",
   "mesh.state.online": "在线",
   "mesh.state.connecting": "连接中",
@@ -265,9 +190,9 @@ export const zh = {
   "mesh.state.notConfigured": "未配置",
   "mesh.state.inactive": "未启用",
   "mesh.code.secret_missing":
-    "组网密钥未写入：请到「设置 → 组网」运行写入密钥脚本（写入后无需重启）",
-  "mesh.code.service_missing": "组网服务未安装：请到「设置 → 组网」安装服务（需管理员）",
-  "mesh.code.service_stopped": "组网服务已停止：点右侧按钮应用配置并重启（需管理员）",
+    "组网密钥未写入：请运行写入密钥脚本（写入后无需重启）",
+  "mesh.code.service_missing": "组网服务未安装：请点「安装/刷新服务」安装（需管理员）",
+  "mesh.code.service_stopped": "组网服务已停止：点「应用配置并重启服务」恢复（需管理员）",
   "mesh.code.service_disabled": "组网服务启动类型已被禁用：请重新安装服务恢复",
   "mesh.code.rpc_unreachable": "组网进程在运行但状态接口未就绪（刚启动或异常），稍候自动刷新",
   "mesh.peersLabel": "成员设备",
@@ -275,34 +200,12 @@ export const zh = {
   "mesh.noPeers": "暂无其他成员设备在线：请在成员设备安装 EasyTier 客户端并加入同一网络",
   "mesh.apply": "应用配置并重启服务（管理员）",
   "mesh.applying": "派发中…",
-  "mesh.applied": "组网配置已应用，服务重启中（UAC 通过后数秒内状态自动刷新）",
-
-  // 旧通道停用（spec 007 AC5/AC6）
-  "channel.disabled.title": "旧通道停用（直连/穿透）",
-  "channel.disabled.desc":
-    "停用后对应客户端不再被拉起/自启，通道不可切换（重新启用 = 主界面切换回该通道，附安全警示确认）。建议组网稳定运行后再停用。",
-  "channel.disabled.tunnelName": "穿透（SakuraFrp）",
-  "channel.disabled.directName": "直连（DDNS）",
-  "channel.disabled.activeNow": "现役",
-  "channel.disabled.idleBadge": "可用",
-  "channel.disabled.disabledBadge": "已停用",
-  "channel.disabled.activeHint": "现役通道不可停用：请先在主界面切换到其他通道",
-  "channel.disabled.reenableHint": "已停用：到主界面「访问通道」切换回该通道即可重新启用",
-  "channel.disabled.reenableRisk":
-    "注意：该通道此前已被停用——重新启用会恢复公网暴露面。若停用出于安全考虑，请确认了解风险后再继续。",
-  "channel.disabled.disableTunnel": "停用穿透",
-  "channel.disabled.disableDirect": "停用直连",
-  "channel.disabled.confirmTunnel":
-    "停用穿透：frpc 不再被拉起/自启；穿透配置保留，但重新启用须再次确认。SAKURA_FRP_KEY 仍留在栈目录 .env，建议停用后清除（见下方按钮）。",
-  "channel.disabled.confirmDirect":
-    "停用直连：ddns-go 不再被拉起/自启，A 记录将不再被自动维护。",
-  "channel.disabled.deleteA": "同时删除 DNS A 记录（ai.jackqi.cn）",
-  "channel.disabled.doneTunnel": "穿透通道已停用",
-  "channel.disabled.doneDirect": "直连通道已停用",
-  "channel.disabled.clearKeyHint":
-    "穿透已停用：建议清除栈目录 .env 中的 SAKURA_FRP_KEY（在弹出的窗口中确认执行）",
-  "channel.disabled.clearKeyBtn": "清除 SakuraFrp 密钥…",
-  "channel.disabled.clearKeyDone": "清除命令已执行，请在弹出的窗口中确认结果",
+  "mesh.secretBtn": "写入组网密钥…",
+  "mesh.installBtn": "安装/刷新服务",
+  "mesh.syncDnsBtn": "同步 DNS：A 记录 → 虚拟 IP",
+  "mesh.syncDnsHint":
+    "同步 = 删除残留 CNAME + 把 A 记录指向虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
+  "mesh.syncDnsDone": "DNS 同步完成（{n} 条记录操作）",
 
   // 装机向导（spec 006）
   "wizard.notice": "检测到本机尚未完成装机：按向导走完即可解锁局域网/域名访问。",
@@ -326,21 +229,15 @@ export const zh = {
   "wizard.domainSave": "保存域名",
   "wizard.basis.desc": "安装 CloudCLI 服务并放行防火墙 3001 端口（管理员）。完成后本机局域网即变为可用。",
   "wizard.basis.run": "开始安装（管理员）",
-  "wizard.tencent.desc": "直连/穿透共用：签发可信证书与维护域名解析都依赖腾讯云密钥。以下三步只需做一次。",
+  "wizard.tencent.desc": "签发可信证书与维护域名解析（组网 A 记录同步）都依赖腾讯云密钥。以下三步只需做一次。",
   "wizard.tencent.step1": "打开腾讯云 CAM 控制台，新建密钥：",
   "wizard.tencent.step2": "建议：先建子用户并仅授予 QcloudDNSPodFullAccess 权限，再为其新建密钥",
   "wizard.tencent.step3": "在控制台「DNS 解析 DNSPod」确认你的域名已添加解析记录（如 ai.jackqi.cn）",
   "wizard.tencent.keyBtn": "输入访问密钥（不回显）",
-  "wizard.https.desc": "下载带证书插件的 Caddy 与 ddns-go，生成配置并放行 443。证书将在 Caddy 启动后自动签发（约 1~2 分钟，无需 80/443 入站）。",
+  "wizard.https.desc": "下载带证书插件的 Caddy，生成配置并放行 443。证书将在 Caddy 启动后自动签发（约 1~2 分钟，无需 80/443 入站）。",
   "wizard.https.run": "开始安装 HTTPS 栈（管理员）",
   "wizard.channel.desc":
-    "选择访问通道（互斥，可随时在主界面切换）。组网不对公网开任何入站端口，安全性最好；直连会把本机出口 IP 发布到公网 DNS，暴露面最大。",
-  "wizard.channel.direct": "直连（DDNS）",
-  "wizard.channel.directDesc":
-    "域名解析到本机出口 IP，公网可直接探测本机（暴露面最大）；且要求访客能直连到本机（蜂窝热点/部分家庭宽带不可行）。安全敏感场景建议改选组网。",
-  "wizard.channel.mesh": "组网（EasyTier，推荐）",
-  "wizard.channel.meshDesc":
-    "经 EasyTier 虚拟组网访问：本机不对公网开入站端口，访客设备加入同一网络（网络名 + 密钥）后经虚拟网络到达。密钥不外泄即几乎无法被入侵。",
+    "设置 EasyTier 组网访问：本机不对公网开任何入站端口，访客设备加入同一虚拟网络后经虚拟网络到达。按顺序完成以下步骤完成装机（装机后的日常维护入口在主界面「组网通道」卡）。",
   "wizard.channel.meshSecretBtn": "① 写入组网密钥（不回显）",
   "wizard.channel.meshSecretHint":
     "密钥决定谁能加入你的虚拟网络：点上方按钮在弹出的控制台输入，脚本直写栈目录（不经程序、不落日志）",
@@ -375,15 +272,12 @@ export const zh = {
   "wizard.channel.meshDnsHint":
     "把 ai.jackqi.cn 的 A 记录自动同步为虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
   "wizard.channel.meshDnsDone": "DNS 同步完成（{n} 条记录操作）",
-  "wizard.channel.tunnelDeprecated":
-    "此向导此前选择了穿透通道：穿透入口已从向导移除（安全考量，经第三方节点中转）。既有穿透配置不受影响——可在主界面「访问通道」继续使用，或在设置页停用。建议改选组网。",
-  "wizard.channel.ddnsBtn": "配置 ddns-go 并启动（自动维护 A 记录）",
   "wizard.finalize.desc": "收尾：确认目标达成情况（开机自启在「设置」页开关）。",
   "wizard.summary.lan": "局域网访问",
   "wizard.summary.domain": "域名访问",
   "wizard.finalize.done": "完成，回到主界面",
   "wizard.finalize.meshHint":
-    "组网装机完成。旧通道（直连/穿透）如已不再使用，可到「设置 → 旧通道停用」关停，收敛公网暴露面。",
+    "组网装机完成。旧通道（直连/穿透）已退役——若本机仍残留旧组件，可运行栈目录 bin 下的 uninstall-legacy.ps1 一键清理（含 frpc/ddns-go 与残留 DNS 记录），收敛公网暴露面。",
   // 向导 detail 稳定码 → 文案
   "wizard.code.ok": "校验通过",
   "wizard.code.legacy_ok": "校验通过（检测到旧版 acme.sh 证书链仍在正常服务，未迁移插件式——不影响使用，迁移可选）",
@@ -399,15 +293,6 @@ export const zh = {
   "wizard.code.missing_ddnsgo": "ddns-go.exe 未落位（重跑上方安装）",
   "wizard.code.missing_caddyfile": "Caddyfile 缺失或非插件式（重跑上方安装生成）",
   "wizard.code.not_running": "组件已就位但未运行：在主界面点「启动全部」后回来校验",
-  "wizard.code.missing_yaml": "ddns-go 尚未配置（点击上方按钮生成配置）",
-  "wizard.code.missing_key": "尚未输入 SakuraFrp 访问密钥",
-  "wizard.code.tunnel_unset": "请填写隧道 ID 与节点域名并保存",
-  "wizard.code.branch_unset": "请先选择访问通道",
-  "wizard.code.record_mismatch": "解析 A 记录与出口 IP 不一致（ddns-go 会在几分钟内自动校正，稍后重新校验）",
-  "wizard.code.warn_private_range": "出口 IP 属内网/运营商 CGNAT 段：直连大概率不可达，建议改用穿透通道",
-  "wizard.code.warn_ipv6": "出口探测返回 IPv6：直连可用性视访客网络而定，建议以外部设备实测",
-  "wizard.code.warn_no_public_ip": "出口 IP 探测失败：无法判断直连可达性，建议以外部设备实测或改用穿透",
-  "wizard.code.warn_no_a_record": "子域暂无生效的 A 记录：ddns-go 会在几分钟内自动创建，稍后重新校验",
   "wizard.code.missing_secret": "组网密钥未写入（点上方按钮①在弹出的控制台输入）",
   "wizard.code.missing_service": "组网服务未安装（点上方按钮②安装，需管理员）",
   "wizard.code.service_stopped": "组网服务已停止：点「应用配置并重启服务」恢复",

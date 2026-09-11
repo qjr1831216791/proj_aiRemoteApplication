@@ -1,20 +1,21 @@
 /**
- * 设置页（T14：AC21/22/24/25 展示层 + 007 T11：组网设置/服务/停用卡）。
+ * 设置页（T14：AC21/22/24/25 展示层 + 007 T11：组网设置/服务卡）。
  * - 五项行为开关：两项自启开关先跑计划任务命令（tookOver → 提示）再持久化；
  *   联动补齐 / 退出行为 / 启动后打开页面为纯设置项，改即存
+ * - 部署目录（spec 004）：编辑保存 + 打开栈目录（spec 008：随穿透卡退役迁入）
  * - 组网设置卡（007 AC11）：网络名/虚拟 IP/网段/对端节点编辑 + 前端预检
  *   （最终裁决在 Rust mesh_apply_config）；密钥只经脚本写入（无输入框，AC8）；
  *   服务管理（安装/应用/卸载，UAC 派发）
- * - 旧通道停用卡（007 AC5/AC6）：非现役方可停用；直连停用时可选删 A 记录
- *   （仅穿透现役时提供——mesh 态 A=虚拟 IP 不删）；停用穿透后引导清 SAKURA_FRP_KEY
+ * - 旧通道停用卡/穿透设置卡已随通道退役删除——spec 008（残留清理走
+ *   uninstall-legacy.ps1，主看板 MeshCard 常驻入口承接日常维护）
  * - 语言：跟随系统/中文/英文三选，切换立即生效（App 负责 Rust 托盘重建 + 全局换词典）
- * - 端口/路径/域名只读卡：一键复制 + "修改须重跑安装脚本"指引（AC22）
+ * - 端口/域名只读卡：一键复制 + "修改须重跑安装脚本"指引（AC22）
  * - 打开日志目录按钮；settings://repaired 事件提示在 App 层统一 toast
  * 全部乐观更新 + 失败回滚，长任务期间对应开关禁用防重复提交。
  */
 
-import { useEffect, useState } from "preact/hooks";
-import { api, copyText } from "../api";
+import { useState } from "preact/hooks";
+import { api } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
 import type {
   ExitAction,
@@ -39,7 +40,6 @@ export interface SettingsViewProps {
 const READONLY = {
   cloudcliPort: 3001,
   caddyPort: 443,
-  ddnsgoPort: 9876,
   stackDir: "D:\\Software\\cloudcli-https",
   domain: "ai.jackqi.cn",
 } as const;
@@ -49,9 +49,6 @@ export function SettingsView(props: SettingsViewProps) {
   // 任务类开关在途标记（计划任务脚本最长 ~60s，期间禁用对应开关）
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [langBusy, setLangBusy] = useState(false);
-  // 穿透设置表单（spec 004 AC14；初始值取已存配置，空串 = 未配置）
-  const [tunnelId, setTunnelId] = useState(settings.tunnel?.tunnelId ?? "");
-  const [nodeDomain, setNodeDomain] = useState(settings.tunnel?.nodeDomain ?? "");
   // 部署目录（spec 004：用户输入安装根，重启生效）
   const [stackDir, setStackDir] = useState(settings.stackDir);
 
@@ -102,34 +99,6 @@ export function SettingsView(props: SettingsViewProps) {
     } finally {
       setLangBusy(false);
     }
-  };
-
-  /** 穿透配置保存（AC14/15）：校验 → 持久化；就绪判定实时生效（守护/切换入口读设置） */
-  const saveTunnel = async () => {
-    const id = tunnelId.trim();
-    const dom = nodeDomain.trim();
-    if (!/^\d+$/.test(id)) {
-      onToast(t("settings.tunnelIdInvalid", lang), "error");
-      return;
-    }
-    if (!dom) {
-      onToast(t("settings.tunnelNodeRequired", lang), "error");
-      return;
-    }
-    try {
-      onSettingsChange(await api.saveSettings({ tunnel: { tunnelId: id, nodeDomain: dom } }));
-      onToast(t("settings.tunnelSaved", lang), "success");
-    } catch (e) {
-      onToast(`${t("toast.saveFailed", lang)}: ${String(e)}`, "error");
-    }
-  };
-
-  /** 访问密钥脚本（AC16）：拉起控制台交互窗，密钥经脚本直写 .env 不进 IPC/日志 */
-  const openSetFrpKey = () => {
-    api
-      .runTool("set_frp_key", { update: false, mirror: false })
-      .then(() => onToast(t("settings.setFrpKeyDispatched", lang), "info"))
-      .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
   };
 
   /** 部署目录保存（spec 004）：非空校验 → 持久化；重启工作台后全链生效 */
@@ -225,32 +194,7 @@ export function SettingsView(props: SettingsViewProps) {
     }
   };
 
-  // 旧通道停用确认态（007 AC5/AC6：两步确认，30s 自动还原沿全局确认模式）
-  const [confirmDisable, setConfirmDisable] = useState<"tunnel" | "direct" | null>(null);
-  const [deleteA, setDeleteA] = useState(false);
-  const [disabling, setDisabling] = useState(false);
-
-  /** 停用旧通道（AC5/AC6）：Rust 侧前置校验（现役不可停）→ 设置回写 */
-  const doDisable = async (target: "tunnel" | "direct") => {
-    setConfirmDisable(null);
-    setDisabling(true);
-    try {
-      onSettingsChange(await api.disableLegacyChannel(target, deleteA));
-      onToast(t(target === "tunnel" ? "channel.disabled.doneTunnel" : "channel.disabled.doneDirect", lang), "success");
-    } catch (e) {
-      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
-    } finally {
-      setDisabling(false);
-      setDeleteA(false);
-    }
-  };
-
-  // 停用确认 30s 未确认自动还原（给足阅读风险文案时间，沿全局确认模式）
-  useEffect(() => {
-    if (confirmDisable === null) return;
-    const id = setTimeout(() => setConfirmDisable(null), 30_000);
-    return () => clearTimeout(id);
-  }, [confirmDisable]);
+  // 旧通道停用卡已随通道退役删除（spec 008）——残留清理走 uninstall-legacy.ps1
 
   /** 组网密钥脚本入口（AC8/AC11：拉起控制台交互窗，密钥经脚本直写栈目录
    * network-secret 文件，不进 IPC 载荷/设置文件/日志——前端无密钥输入框） */
@@ -274,18 +218,9 @@ export function SettingsView(props: SettingsViewProps) {
     }
   };
 
-  /** 清除 SakuraFrp 访问密钥（停用穿透收尾，AC5）：拉起 clear-frp-key.ps1 */
-  const runClearFrpKey = () => {
-    api
-      .clearFrpKey()
-      .then(() => onToast(t("channel.disabled.clearKeyDone", lang), "info"))
-      .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
-  };
-
   const readonlyRows: { label: string; value: string }[] = [
     { label: t("settings.portCloudcli", lang), value: String(READONLY.cloudcliPort) },
     { label: t("settings.portCaddy", lang), value: String(READONLY.caddyPort) },
-    { label: t("settings.portDdnsgo", lang), value: String(READONLY.ddnsgoPort) },
     { label: t("settings.domain", lang), value: READONLY.domain },
   ];
 
@@ -355,7 +290,13 @@ export function SettingsView(props: SettingsViewProps) {
         </div>
         <div class="settings__actions">
           <button class="btn btn--sm btn--primary" onClick={() => void saveStackDir()}>
-            {t("settings.tunnelSave", lang)}
+            {t("settings.save", lang)}
+          </button>
+          <button
+            class="btn btn--sm"
+            onClick={() => api.openStackDir().catch((e) => onToast(String(e), "error"))}
+          >
+            {t("settings.openStackDir", lang)}
           </button>
         </div>
       </section>
@@ -394,7 +335,7 @@ export function SettingsView(props: SettingsViewProps) {
             class="btn btn--sm btn--primary tunnel-form-save"
             onClick={() => void saveMesh()}
           >
-            {t("settings.tunnelSave", lang)}
+            {t("settings.save", lang)}
           </button>
         </div>
         <div class="tunnel-form-field">
@@ -477,192 +418,6 @@ export function SettingsView(props: SettingsViewProps) {
             ))}
           </div>
         ) : null}
-      </section>
-
-      {/* 旧通道停用（spec 007 AC5/AC6）：非现役方可停用；停用穿透后引导清访问密钥 */}
-      <section class="card">
-        <h2 class="card__title">{t("channel.disabled.title", lang)}</h2>
-        <p class="muted">{t("channel.disabled.desc", lang)}</p>
-        <div class="settings__rows">
-          {(["tunnel", "direct"] as const).map((target) => {
-            const disabled =
-              target === "tunnel" ? settings.tunnelDisabled : settings.directDisabled;
-            const active = settings.accessChannel === target;
-            return (
-              <div key={target}>
-                <div class="settings__row">
-                  <div class="settings__row-text">
-                    <span class="settings__label">
-                      {t(
-                        target === "tunnel"
-                          ? "channel.disabled.tunnelName"
-                          : "channel.disabled.directName",
-                        lang,
-                      )}
-                    </span>
-                    <span
-                      class={`chip ${active ? "chip--running" : disabled ? "chip--stopped" : "chip--net-domain"}`}
-                    >
-                      {active
-                        ? t("channel.disabled.activeNow", lang)
-                        : disabled
-                          ? t("channel.disabled.disabledBadge", lang)
-                          : t("channel.disabled.idleBadge", lang)}
-                    </span>
-                  </div>
-                  {active ? (
-                    <span class="muted">{t("channel.disabled.activeHint", lang)}</span>
-                  ) : disabled ? (
-                    <span class="muted">{t("channel.disabled.reenableHint", lang)}</span>
-                  ) : (
-                    <button
-                      class="btn btn--sm"
-                      disabled={disabling}
-                      onClick={() => setConfirmDisable(target)}
-                    >
-                      {t(
-                        target === "tunnel"
-                          ? "channel.disabled.disableTunnel"
-                          : "channel.disabled.disableDirect",
-                        lang,
-                      )}
-                    </button>
-                  )}
-                </div>
-                {confirmDisable === target ? (
-                  <div class="net__confirm">
-                    <p class="net__risk">
-                      {t(
-                        target === "tunnel"
-                          ? "channel.disabled.confirmTunnel"
-                          : "channel.disabled.confirmDirect",
-                        lang,
-                      )}
-                    </p>
-                    {target === "direct" && settings.accessChannel === "tunnel" ? (
-                      <label class="switch-row">
-                        <span class="switch-row__body">
-                          <span class="settings__label">
-                            {t("channel.disabled.deleteA", lang)}
-                          </span>
-                        </span>
-                        <input
-                          class="switch"
-                          type="checkbox"
-                          role="switch"
-                          checked={deleteA}
-                          onChange={(e) => setDeleteA(e.currentTarget.checked)}
-                        />
-                      </label>
-                    ) : null}
-                    <button
-                      class="btn btn--sm btn--danger"
-                      disabled={disabling}
-                      onClick={() => void doDisable(target)}
-                    >
-                      {t("tunnel.confirm", lang)}
-                    </button>
-                    <button
-                      class="btn btn--sm"
-                      disabled={disabling}
-                      onClick={() => setConfirmDisable(null)}
-                    >
-                      {t("tunnel.cancel", lang)}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-        {settings.tunnelDisabled ? (
-          <div class="settings__row">
-            <div class="settings__row-text">
-              <span class="settings__label">{t("channel.disabled.clearKeyHint", lang)}</span>
-            </div>
-            <button class="btn btn--sm btn--danger" onClick={runClearFrpKey}>
-              {t("channel.disabled.clearKeyBtn", lang)}
-            </button>
-          </div>
-        ) : null}
-      </section>
-
-      {/* 穿透设置（spec 004 AC14/15/16） */}
-      <section class="card">
-        <h2 class="card__title">{t("settings.tunnel", lang)}</h2>
-        <p class="muted">{t("settings.tunnelDesc", lang)}</p>
-        <div class="tunnel-form-row">
-          <div class="tunnel-form-field">
-            <span class="settings__label">{t("settings.tunnelId", lang)}</span>
-            <input
-              class="form-input"
-              placeholder={t("settings.tunnelIdPlaceholder", lang)}
-              value={tunnelId}
-              onInput={(e) => setTunnelId(e.currentTarget.value)}
-            />
-          </div>
-          <div class="tunnel-form-field">
-            <span class="settings__label">{t("settings.tunnelNodeDomain", lang)}</span>
-            <input
-              class="form-input"
-              placeholder={t("settings.tunnelNodePlaceholder", lang)}
-              value={nodeDomain}
-              onInput={(e) => setNodeDomain(e.currentTarget.value)}
-            />
-          </div>
-          <button class="btn btn--sm btn--primary tunnel-form-save" onClick={() => void saveTunnel()}>
-            {t("settings.tunnelSave", lang)}
-          </button>
-        </div>
-        <div class="settings__row">
-          <div class="settings__row-text">
-            <span class="settings__label">{t("settings.setFrpKeyHint", lang)}</span>
-          </div>
-          <button class="btn btn--sm" onClick={openSetFrpKey}>
-            {t("settings.setFrpKey", lang)}
-          </button>
-        </div>
-        <div class="settings__row">
-          <div class="settings__row-text">
-            <span class="settings__label">
-              {t("settings.openStackDir", lang)}：
-              <button class="link-btn" onClick={() => api.openStackDir().catch((e) => onToast(String(e), "error"))}>
-                {settings.stackDir}
-              </button>
-            </span>
-          </div>
-        </div>
-        <p class="muted">{t("settings.frpcDeploy", lang)}</p>
-        <div class="settings__actions">
-          <button
-            class="btn btn--sm"
-            onClick={() =>
-              api
-                .getDefenderExclusionCmd()
-                .then(copyText)
-                .then((ok) =>
-                  onToast(
-                    ok ? t("settings.whitelistCopied", lang) : t("toast.copyFailed", lang),
-                    ok ? "success" : "error",
-                  ),
-                )
-                .catch((e) => onToast(String(e), "error"))
-            }
-          >
-            {t("settings.copyWhitelist", lang)}
-          </button>
-          <button
-            class="btn btn--sm"
-            onClick={() =>
-              api
-                .downloadFrpc()
-                .then((msg) => onToast(`${t("settings.downloadFrpcDone", lang)}：${msg}`, "success"))
-                .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"))
-            }
-          >
-            {t("settings.downloadFrpc", lang)}
-          </button>
-        </div>
       </section>
 
       {/* 域名心跳（spec 005 AC7） */}

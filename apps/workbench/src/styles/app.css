@@ -870,29 +870,6 @@
   font: inherit;
 }
 
-.wizard__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--sp-3);
-  width: 100%;
-}
-
-.wizard__choice {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  border: 1px solid var(--c-border);
-}
-
-.wizard__choice--on {
-  border-color: var(--c-info);
-  box-shadow: 0 0 0 1px var(--c-info) inset;
-}
-
 .wizard__detail {
   margin: 0;
   font-size: var(--fs-sm);
@@ -901,11 +878,6 @@
 
 .wizard__detail--bad {
   color: var(--c-error);
-}
-
-.wizard__tunnelState {
-  margin: 0;
-  font-size: var(--fs-sm);
 }
 
 /* 目标达成清单（收尾）：无项目符号；状态点在标签左侧（沿地址区「● 文字」排法），

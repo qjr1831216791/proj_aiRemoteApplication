@@ -39,11 +39,11 @@
 
 ## 阶段 6: 前端（依赖阶段 2~4 的命令契约定型）
 
-- [ ] T14 装配链收敛：`types.ts`（`AccessChannel="mesh"`、删 `TunnelConfig`/`TunnelStatus`/direct·tunnel 相关类型与 ToolKind 四值/DnsAlignment 直连变体）、`api.ts`（删九封装 + `onTunnelStatus`）、`App.tsx`（删 tunnelStatus 状态/兜底/订阅/透传）、`MainView.tsx`（删 ddnsgo 停用提示块 `:161-167` 与 tunnelStatus prop）（验收: AC1/AC3；完成标志：tsc 过）
-- [ ] T15 `TunnelCard.tsx`→`MeshCard.tsx` 重构（D5）：删三通道单选/切换确认/停用 chip/重新启用/隧道状态行/重启按钮/穿透与直连体检臂/DnsNotice 直连穿透分支；保留 mesh 体检两项与 DnsNotice mesh 分支；卡片头部增虚拟 IP + 在线成员数（`mesh_status` 数据源）；密钥指引/装服务/同步 DNS 常驻入口（T13 向导同款能力下沉）；六个文案选择函数塌缩（验收: AC4/AC8；完成标志：呈现走查过）
-- [ ] T16 `SettingsView.tsx` 收缩：删穿透设置卡（`:539-615`）/旧通道停用卡（`:431-537`）/`saveTunnel`/`openSetFrpKey`/`runClearFrpKey`/ddns-go 端口行；自启区随任务收缩；组网设置卡不动（验收: AC7；完成标志：呈现走查过）
-- [ ] T17 `WizardView.tsx` 去分支化：删分支选择器/直连操作区（`:343-362`）/tunnel 弃用提示（`:363-365`）/收尾页停用入口；通道阶段塌缩 mesh 单线步骤；`wizardSetBranch` 调用删（验收: AC6；完成标志：向导走查过）
-- [ ] T18 `ToolsSection.tsx` 4→2 + i18n 全量清理：删 ddns 两工具；zh/en 删约 70 键（`tunnel.channelDirect`/`switchTo*`/`channel.disabled.*`/`tools.resetDdns*`/`openDdnsAdmin*`/`component.ddnsgo`/`settings.portDdnsgo`/`ddnsOffIn*`/`wizard.channel.direct*`/直连专属 code 键/穿透七键——007 T13 已清——核对残留）；**保留** mesh 共用键（`tunnel.channelMesh`/`tunnel.check.mesh`/`mesh.*` 等）与 `tunnel-form-*` CSS；`app.css` 删 `.wizard__tunnelState`；两侧同步缺键即挂（验收: AC9；完成标志：`npm run build` 绿）
+- [x] T14 装配链收敛：`types.ts`（`AccessChannel="mesh"`、删 `TunnelConfig`/`TunnelStatus`/direct·tunnel 相关类型与 ToolKind 四值/DnsAlignment 直连变体）、`api.ts`（删九封装 + `onTunnelStatus`）、`App.tsx`（删 tunnelStatus 状态/兜底/订阅/透传）、`MainView.tsx`（删 ddnsgo 停用提示块 `:161-167` 与 tunnelStatus prop）（验收: AC1/AC3；完成标志：tsc 过）✓ 2026-09-11
+- [x] T15 `TunnelCard.tsx`→`MeshCard.tsx` 重构（D5）：删三通道单选/切换确认/停用 chip/重新启用/隧道状态行/重启按钮/穿透与直连体检臂/DnsNotice 直连穿透分支；保留 mesh 体检两项与 DnsNotice mesh 分支；卡片头部增虚拟 IP + 在线成员数（`mesh_status` 数据源）；密钥指引/装服务/同步 DNS 常驻入口（T13 向导同款能力下沉）；六个文案选择函数塌缩（验收: AC4/AC8；完成标志：呈现走查过）✓ 2026-09-11（TunnelCard.tsx 已 git rm；MeshCard 常态 30s DNS 轮询，对齐仅隐藏指引——见附注③）
+- [x] T16 `SettingsView.tsx` 收缩：删穿透设置卡（`:539-615`）/旧通道停用卡（`:431-537`）/`saveTunnel`/`openSetFrpKey`/`runClearFrpKey`/ddns-go 端口行；自启区随任务收缩；组网设置卡不动（验收: AC7；完成标志：呈现走查过）✓ 2026-09-11（「打开栈目录」随穿透卡退役迁入部署目录卡）
+- [x] T17 `WizardView.tsx` 去分支化：删分支选择器/直连操作区（`:343-362`）/tunnel 弃用提示（`:363-365`）/收尾页停用入口；通道阶段塌缩 mesh 单线步骤；`wizardSetBranch` 调用删（验收: AC6；完成标志：向导走查过）✓ 2026-09-11（finalize meshHint 改指引 uninstall-legacy.ps1）
+- [x] T18 `ToolsSection.tsx` 4→2 + i18n 全量清理：删 ddns 两工具；zh/en 删约 70 键（`tunnel.channelDirect`/`switchTo*`/`channel.disabled.*`/`tools.resetDdns*`/`openDdnsAdmin*`/`component.ddnsgo`/`settings.portDdnsgo`/`ddnsOffIn*`/`wizard.channel.direct*`/直连专属 code 键/穿透七键——007 T13 已清——核对残留）；**保留** mesh 共用键（`tunnel.channelMesh`/`tunnel.check.mesh`/`mesh.*` 等）与 `tunnel-form-*` CSS；`app.css` 删 `.wizard__tunnelState`；两侧同步缺键即挂（验收: AC9；完成标志：`npm run build` 绿）✓ 2026-09-11（实删 102 键、增 8 键，zh/en 各 251 键严格一致；`tunnel.channelMesh` 因无消费者一并删、`settings.tunnelSave` 更名 `settings.save`——见附注④）
 
 ## 阶段 7: 文档与回归
 
@@ -71,3 +71,5 @@
 
 1. **② `purge_cnames` 一并删除（T5）**：plan §5 原文「保留 Mesh 臂与 `purge_cnames`」，但收敛后 `purge_cnames` 在 Rust 侧的唯一消费方是 `disable_legacy_channel`（T7 删除）与 `purge_dns_records`（T7 删除）；存量 CNAME 的清理由两条更可靠的路径承接——`dns_api::sync_to_mesh`（mesh_sync_dns 命令，建 A 记录的同时删 CNAME）与 `uninstall-legacy.ps1` 的 CNAME 残留检测（指引工作台「同步 DNS」）。保留即为死代码，故删；spec AC8 的「残留 CNAME 判旁路暴露面」由 `judge_dns_mesh` 的 `MismatchedCname` 判定承接，不受影响。
 2. **T1 提交时间线**：T1 文档提交（0c68f1b）在状态 `draft → reviewed` 与实施授权同日完成，依据用户指令「起草，拆分，实施」一次性放行（宪法工作流第 1/2 步的用户确认由该指令合并给出）。
+3. **MeshCard DNS 轮询不停止（T15）**：原 TunnelCard 直连分支「对齐后停轮询」的优化在组网单通道下不沿用——A=虚拟 IP 的记录可能被外部改值或漂移，改为常态 30s 轮询、对齐仅隐藏指引条（带宽/调用开销可忽略，漂移感知优先）。
+4. **i18n 删键量与两处键名调整（T18）**：实删 102 键（拆解时估约 70，穿透通道节 29 键/停用节 20 键按「无消费者即删」原则全数清掉）；`tunnel.channelMesh` 在 MeshCard 卡标题改用新键 `mesh.cardTitle` 后无消费者，一并删（任务原文列为保留）；`settings.tunnelSave` 更名 `settings.save`（历史键名带 tunnel 但语义是通用保存按钮，组网卡/部署目录卡共用）。zh/en 键集核验各 251 条严格一致。

@@ -28,12 +28,11 @@ export const en = {
   // Components
   "component.cloudcli": "CloudCLI",
   "component.caddy": "Caddy",
-  "component.ddnsgo": "ddns-go",
 
   // Main: master switch and status cards
   "main.startAll": "Start All",
   "main.allRunning": "All Running",
-  "main.allRunningHint": "All three components are running",
+  "main.allRunningHint": "Both components are running",
   "main.stopAll": "Stop All",
   "main.stopHint": "Stopping ends any AI sessions in progress",
   "main.busy": "Working…",
@@ -56,10 +55,6 @@ export const en = {
   "tools.useMirror": "Use China npm mirror",
   "tools.installClient": "Client Setup",
   "tools.installClientDesc": "install-client.ps1 (other PC/phone, interactive)",
-  "tools.resetDdnsPassword": "Reset ddns-go Password",
-  "tools.resetDdnsPasswordDesc": "Forgot your password? Reset it (type in the popup, no admin)",
-  "tools.openDdnsAdmin": "ddns-go Admin Page",
-  "tools.openDdnsAdminDesc": "DNS records and credentials",
   "tools.scriptsUnavailable": "Scripts directory unavailable, related actions disabled:",
   "tools.uacHint": "Actions marked (admin) show a UAC prompt",
   "tools.dispatched": "Dispatched: follow the prompts in the opened window",
@@ -84,7 +79,7 @@ export const en = {
   // Settings
   "settings.behavior": "Behavior",
   "settings.autostartServices": "Autostart services at logon",
-  "settings.autostartServicesDesc": "Scheduled tasks launch the three components",
+  "settings.autostartServicesDesc": "Scheduled tasks launch both components (CloudCLI + Caddy; the mesh service autostarts on its own)",
   "settings.autostartApp": "Autostart this app at logon",
   "settings.autostartAppDesc": "Start silently to tray at logon",
   "settings.linkStart": "Link-start missing services",
@@ -102,39 +97,18 @@ export const en = {
   "settings.readonlyHint": "Changing ports/paths requires re-running the install script",
   "settings.portCloudcli": "CloudCLI port",
   "settings.portCaddy": "Caddy port",
-  "settings.portDdnsgo": "ddns-go port",
   "settings.stackDir": "Install directory",
   "settings.domain": "Domain",
   "settings.openLogs": "Open Logs Directory",
   "settings.tookOver": "Existing autostart tasks were taken over",
   "settings.repaired": "Settings file was corrupted; defaults restored",
 
-  // Tunnel settings (spec 004 AC14/15/16)
-  "settings.tunnel": "Tunnel settings (SakuraFrp)",
-  "settings.tunnelDesc":
-    "Configure tunnel parameters. The access key never goes through an app input: click \"Set access key\" and type it in the popped-up console window; the script writes it straight into the local .env (hidden input, never logged)",
-  "settings.tunnelId": "Tunnel ID",
-  "settings.tunnelIdPlaceholder": "The numeric ID from the SakuraFrp tunnel list",
-  "settings.tunnelNodeDomain": "Node domain",
-  "settings.tunnelNodePlaceholder": "e.g. frp-can.com or cn-hk-nf-1.natfrp.cloud",
-  "settings.tunnelSave": "Save configuration",
-  "settings.tunnelSaved": "Tunnel configuration saved",
-  "settings.tunnelIdInvalid": "Tunnel ID must be numeric",
-  "settings.tunnelNodeRequired": "Node domain must not be empty",
-  "settings.setFrpKey": "Set access key…",
-  "settings.setFrpKeyDispatched": "Key setup window opened; please type it in the console",
-  "settings.setFrpKeyHint":
-    "Get the key: natfrp.com user center → View Access Key; stored as SAKURA_FRP_KEY in the stack directory .env",
+  // Save / directories (shared by the mesh and deploy cards; tunnel settings retired with the channel — spec 008)
+  "settings.save": "Save configuration",
   "settings.openStackDir": "Open stack directory",
-  "settings.frpcDeploy":
-    "The frpc client ships with this app (version 0.51.0-sakura-14); no separate download is needed on a new machine. If your antivirus deleted it, run \"Copy whitelist command\" in an admin terminal first, then \"Restore frpc\"",
-  "settings.copyWhitelist": "Copy whitelist command",
-  "settings.whitelistCopied": "Whitelist command copied; run it in an admin terminal",
-  "settings.downloadFrpc": "Restore frpc",
-  "settings.downloadFrpcDone": "frpc restored",
   "settings.stackDirEditable": "Deploy directory (HTTPS stack)",
   "settings.stackDirDesc":
-    "Install location of caddy/ddns-go/frpc. Enter the install root (the cloudcli-https subfolder is appended automatically). Takes effect after restarting the app, and the new path must have components installed (install script with -StackDir)",
+    "Install location of Caddy and other stack components. Enter the install root (the cloudcli-https subfolder is appended automatically). Takes effect after restarting the app, and the new path must have components installed (install script with -StackDir)",
   "settings.stackDirSaved": "Deploy directory saved; restart the app to apply",
   "settings.stackDirEmpty": "Deploy directory must not be empty",
 
@@ -166,46 +140,6 @@ export const en = {
   "settings.meshUninstallBtn": "Uninstall service",
   "settings.meshUninstallDone": "Mesh service uninstall dispatched",
 
-  // Tunnel channel (spec 004)
-  "tunnel.title": "Access Channel",
-  "tunnel.channelLabel": "Current channel",
-  "tunnel.channelDirect": "Direct (DDNS)",
-  "tunnel.channelTunnel": "Tunnel (SakuraFrp)",
-  "tunnel.switchToTunnel": "Switch to tunnel",
-  "tunnel.switchToDirect": "Back to direct",
-  "tunnel.confirmTitleTunnel": "Switch to the tunnel channel?",
-  "tunnel.confirmTitleDirect": "Switch back to the direct channel?",
-  "tunnel.confirmStepsTunnel":
-    "This app will: start the frpc tunnel client and stop hosting ddns-go (the two channels are mutually exclusive). Afterwards, change the ai.jackqi.cn DNS record at Tencent Cloud from A to a CNAME pointing to the node domain (the exact value and guide will be shown here). You can switch back to direct at any time.",
-  "tunnel.confirmStepsDirect":
-    "This app will: resume hosting ddns-go and stop frpc. Afterwards, delete the CNAME record of ai.jackqi.cn at Tencent Cloud (ddns-go will rewrite the A record automatically; this guide disappears once restored).",
-  "tunnel.confirm": "Confirm switch",
-  "tunnel.cancel": "Cancel",
-  "tunnel.switching": "Switching…",
-  "tunnel.switched": "Channel switched",
-  "tunnel.notConfigured": "Tunnel not configured. Set it up under Settings → Tunnel first",
-  "tunnel.statusLabel": "Tunnel status",
-  "tunnel.state.notConfigured": "Not configured",
-  "tunnel.state.disabled": "Disabled",
-  "tunnel.state.inactive": "Inactive",
-  "tunnel.state.starting": "Connecting",
-  "tunnel.state.online": "Online",
-  "tunnel.state.offline": "Offline",
-  "tunnel.code.login_failed":
-    "Node login failed; retrying. If it does not recover, your network may be blocking frp — try a different network (e.g. a phone hotspot)",
-  "tunnel.enabledLabel": "Tunnel enabled",
-  "tunnel.dnsGuideTunnel":
-    "DNS pending: at Tencent Cloud DNS, delete the A record of ai.jackqi.cn and add a CNAME record pointing to: {target} (public resolvers may take up to one TTL, ~10 minutes)",
-  "tunnel.dnsGuideDirect":
-    "DNS pending: at Tencent Cloud DNS, delete the CNAME record of ai.jackqi.cn and re-add an A record (ddns-go maintains the value automatically)",
-  "tunnel.dnsMismatch":
-    "CNAME mismatch: currently pointing to {actual}; it should point to {target}. Please fix it at Tencent Cloud DNS",
-  "tunnel.dnsRecheck": "Re-check",
-  "tunnel.dnsChecking": "Checking…",
-  "tunnel.dnsFailed": "DNS check failed (network or resolver error); please retry later",
-  "tunnel.dnsOkTunnel": "DNS resolution aligned with the tunnel channel",
-  "tunnel.dnsOkDirect": "DNS resolution restored for direct access",
-
   // Domain heartbeat (spec 005)
   "heartbeat.dotOk": "Reachable",
   "heartbeat.dotFail": "Unreachable",
@@ -220,7 +154,7 @@ export const en = {
   "settings.heartbeatDesc":
     "Probes the domain every minute; shows a red marker in the address area after 2 consecutive failures, cleared automatically on recovery",
 
-  // Channel checkup (spec 004/005 knowledge reuse)
+  // Channel checkup + DNS checks (spec 004/005 knowledge reuse; mesh-only since spec 008)
   "tunnel.checkup": "Channel checkup",
   "tunnel.checkupRun": "Run checkup",
   "tunnel.checkupRunning": "Checking…",
@@ -228,29 +162,17 @@ export const en = {
   "tunnel.check.fail": "Problem",
   "tunnel.check.dns": "DNS alignment",
   "tunnel.check.netCategory": "Network category (443 allowed)",
-  "tunnel.check.netNaTunnel": "N/A in tunnel mode: traffic is outbound + loopback, category does not apply",
-  "tunnel.check.netPublicWarn": "Public network present; 443 may be blocked",
-  "tunnel.check.tunnel": "Tunnel client",
-  "tunnel.check.tunnelOff": "Inactive (direct mode)",
   "tunnel.check.caddy": "Local HTTPS service (caddy:443)",
   "tunnel.check.upstream": "Upstream service (:3001)",
   "tunnel.check.domain": "Domain end-to-end (local view)",
   "tunnel.checkupDnsHint": "Not aligned; see the DNS guide above",
-  "tunnel.ddnsOffInTunnel": "Stopped in tunnel mode (channels are mutually exclusive; DNS is managed by the tunnel)",
-  "tunnel.ddnsOffInMesh": "Stopped in mesh mode (channels are mutually exclusive; DNS belongs to the mesh channel)",
-  "tunnel.restart": "Restart tunnel",
-  "tunnel.restarted": "Tunnel restarted (local DNS cache flushed); re-logging in",
+  "tunnel.dnsRecheck": "Re-check",
+  "tunnel.dnsChecking": "Checking…",
+  "tunnel.dnsFailed": "DNS check failed (network or resolver error); please retry later",
 
-  // Mesh channel (spec 007)
-  "tunnel.channelMesh": "Mesh (EasyTier)",
-  "tunnel.switchToMesh": "Switch to mesh",
-  "tunnel.confirmTitleMesh": "Switch to the mesh channel?",
-  "tunnel.confirmStepsMesh":
-    "This app will: stop frpc and ddns-go hosting (the three channels are mutually exclusive) and make sure the EasyTier mesh service is running. The DNS A record will point to the virtual IP {ip} (the guide appears here after switching). Visitor devices must join the same mesh network.",
+  // Mesh DNS guidance (spec 007; the only channel since spec 008)
   "tunnel.dnsGuideMesh":
     "DNS pending: at Tencent Cloud DNS, add an A record for ai.jackqi.cn pointing to the virtual IP: {target} (public resolvers may take up to one TTL, ~10 minutes)",
-  "tunnel.dnsGuideFromMesh":
-    "DNS pending: the domain still points to the mesh virtual IP {ip}. The current channel does not need that record — delete or fix it at Tencent Cloud DNS (under direct, ddns-go maintains the correct value automatically)",
   "tunnel.dnsMismatchA":
     "A record mismatch: currently {actual}; the mesh channel expects {target} (the virtual IP). Please fix it at Tencent Cloud DNS",
   "tunnel.dnsCnameLeftMesh":
@@ -258,7 +180,10 @@ export const en = {
   "tunnel.check.mesh": "Mesh service / peers",
   "tunnel.check.netNaMesh": "N/A in mesh mode: visitors arrive via the virtual network, no physical inbound",
 
-  // Mesh status area (spec 007; detail carries Rust-side stable codes)
+  // Mesh status area (spec 007 + 008 T15 main-view MeshCard; detail carries Rust-side stable codes)
+  "mesh.cardTitle": "Mesh Channel (EasyTier)",
+  "mesh.virtualIpLabel": "Virtual IP",
+  "mesh.peersOnlineLabel": "Members online",
   "mesh.statusLabel": "Mesh status",
   "mesh.state.online": "Online",
   "mesh.state.connecting": "Connecting",
@@ -266,9 +191,9 @@ export const en = {
   "mesh.state.notConfigured": "Not configured",
   "mesh.state.inactive": "Inactive",
   "mesh.code.secret_missing":
-    "Mesh secret not written: run the secret script under Settings → Mesh (effective immediately, no restart)",
-  "mesh.code.service_missing": "Mesh service not installed: install it under Settings → Mesh (admin)",
-  "mesh.code.service_stopped": "Mesh service stopped: click the button on the right to apply config and restart (admin)",
+    "Mesh secret not written: run the secret script (effective immediately, no restart)",
+  "mesh.code.service_missing": "Mesh service not installed: click \"Install / refresh service\" (admin)",
+  "mesh.code.service_stopped": "Mesh service stopped: click \"Apply config & restart service\" to restore (admin)",
   "mesh.code.service_disabled": "Mesh service start type disabled: reinstall the service to restore",
   "mesh.code.rpc_unreachable": "Mesh process running but its status API not ready (just started or errored); refreshes shortly",
   "mesh.peersLabel": "Member devices",
@@ -276,34 +201,12 @@ export const en = {
   "mesh.noPeers": "No other members online yet: install the EasyTier client on member devices and join the same network",
   "mesh.apply": "Apply config & restart service (admin)",
   "mesh.applying": "Dispatching…",
-  "mesh.applied": "Mesh config applied; service restarting (status refreshes within seconds after UAC approval)",
-
-  // Legacy channel disabling (spec 007 AC5/AC6)
-  "channel.disabled.title": "Disable legacy channels (direct/tunnel)",
-  "channel.disabled.desc":
-    "Once disabled, the client is never launched/autostarted and the channel cannot be switched to (re-enabling = switching back on the Main view, with a security confirm). Disable only after the mesh runs stably.",
-  "channel.disabled.tunnelName": "Tunnel (SakuraFrp)",
-  "channel.disabled.directName": "Direct (DDNS)",
-  "channel.disabled.activeNow": "Active",
-  "channel.disabled.idleBadge": "Idle",
-  "channel.disabled.disabledBadge": "Disabled",
-  "channel.disabled.activeHint": "The active channel cannot be disabled: switch to another channel on Main first",
-  "channel.disabled.reenableHint": "Disabled: switch back to it under Main → Access Channel to re-enable",
-  "channel.disabled.reenableRisk":
-    "Note: this channel was previously disabled — re-enabling restores its public exposure surface. If you disabled it for security reasons, make sure you understand the risk before continuing.",
-  "channel.disabled.disableTunnel": "Disable tunnel",
-  "channel.disabled.disableDirect": "Disable direct",
-  "channel.disabled.confirmTunnel":
-    "Disable tunnel: frpc is never launched/autostarted; the tunnel config is kept, but re-enabling needs another confirmation. SAKURA_FRP_KEY stays in the stack .env — clearing it afterwards is recommended (button below).",
-  "channel.disabled.confirmDirect":
-    "Disable direct: ddns-go is never launched/autostarted; the A record is no longer maintained automatically.",
-  "channel.disabled.deleteA": "Also delete the DNS A record (ai.jackqi.cn)",
-  "channel.disabled.doneTunnel": "Tunnel channel disabled",
-  "channel.disabled.doneDirect": "Direct channel disabled",
-  "channel.disabled.clearKeyHint":
-    "Tunnel disabled: consider clearing SAKURA_FRP_KEY from the stack .env (confirm in the popped-up window)",
-  "channel.disabled.clearKeyBtn": "Clear SakuraFrp key…",
-  "channel.disabled.clearKeyDone": "Clear command executed; confirm the result in the popped-up window",
+  "mesh.secretBtn": "Write mesh secret…",
+  "mesh.installBtn": "Install / refresh service",
+  "mesh.syncDnsBtn": "Sync DNS: A record → virtual IP",
+  "mesh.syncDnsHint":
+    "Sync = delete leftover CNAMEs + point the A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
+  "mesh.syncDnsDone": "DNS synced ({n} record operations)",
 
   // Setup wizard (spec 006)
   "wizard.notice": "Setup is not finished on this PC: follow the wizard to unlock LAN/domain access.",
@@ -327,21 +230,15 @@ export const en = {
   "wizard.domainSave": "Save domain",
   "wizard.basis.desc": "Installs the CloudCLI service and opens firewall port 3001 (admin). When done, your LAN becomes usable.",
   "wizard.basis.run": "Install now (admin)",
-  "wizard.tencent.desc": "Shared by direct & tunnel: both trusted certificates and DNS records rely on the Tencent Cloud key. Do these three steps once.",
+  "wizard.tencent.desc": "Both trusted certificates and DNS record maintenance (mesh A-record sync) rely on the Tencent Cloud key. Do these three steps once.",
   "wizard.tencent.step1": "Open the Tencent Cloud CAM console and create a key:",
   "wizard.tencent.step2": "Recommended: create a sub-user granted QcloudDNSPodFullAccess only, then create keys for it",
   "wizard.tencent.step3": "In the console \"DNSPod\", make sure your domain has a DNS zone (e.g. ai.jackqi.cn)",
   "wizard.tencent.keyBtn": "Enter access keys (hidden input)",
-  "wizard.https.desc": "Downloads Caddy (with the cert plugin) and ddns-go, generates configs and opens 443. The certificate is issued automatically once Caddy starts (about 1-2 minutes, no inbound 80/443 needed).",
+  "wizard.https.desc": "Downloads Caddy (with the cert plugin), generates configs and opens 443. The certificate is issued automatically once Caddy starts (about 1-2 minutes, no inbound 80/443 needed).",
   "wizard.https.run": "Install HTTPS stack (admin)",
   "wizard.channel.desc":
-    "Pick an access channel (mutually exclusive; switchable anytime on the Main view). Mesh opens no inbound ports to the public internet — best security; direct publishes this PC's egress IP to public DNS — largest exposure surface.",
-  "wizard.channel.direct": "Direct (DDNS)",
-  "wizard.channel.directDesc":
-    "Domain resolves to this PC's egress IP; the public internet can probe this PC directly (largest exposure surface). Visitors must also reach this PC directly (not feasible on cellular hotspots / some home broadband). For security-sensitive use, prefer mesh.",
-  "wizard.channel.mesh": "Mesh (EasyTier, recommended)",
-  "wizard.channel.meshDesc":
-    "Access via an EasyTier virtual network: no inbound ports opened to the public internet; visitor devices join the same network (network name + secret) and arrive via the virtual network. Without the secret, intrusion is practically impossible.",
+    "Set up EasyTier mesh access: no inbound ports opened to the public internet; visitor devices join the same virtual network and arrive via it. Complete the steps below in order (daily maintenance afterwards lives in the \"Mesh Channel\" card on Main).",
   "wizard.channel.meshSecretBtn": "① Write mesh secret (hidden input)",
   "wizard.channel.meshSecretHint":
     "The secret decides who can join your virtual network: click the button above and type it in the popped-up console; the script writes it straight to the stack directory (never through the app, never logged)",
@@ -376,15 +273,12 @@ export const en = {
   "wizard.channel.meshDnsHint":
     "Automatically points the ai.jackqi.cn A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
   "wizard.channel.meshDnsDone": "DNS synced ({n} record operations)",
-  "wizard.channel.tunnelDeprecated":
-    "This wizard previously picked the tunnel channel: the tunnel entry has been removed from the wizard (security reasons — relayed via a third-party node). Existing tunnel config is unaffected — keep using it under Main → Access Channel, or disable it in Settings. Switching to mesh is recommended.",
-  "wizard.channel.ddnsBtn": "Configure & start ddns-go (maintains the A record)",
   "wizard.finalize.desc": "Finish: review your goals (autostart is toggled in Settings).",
   "wizard.summary.lan": "LAN access",
   "wizard.summary.domain": "Domain access",
   "wizard.finalize.done": "Finish — back to Main",
   "wizard.finalize.meshHint":
-    "Mesh setup complete. If you no longer use the legacy channels (direct/tunnel), disable them under Settings → Disable legacy channels to shrink the public exposure surface.",
+    "Mesh setup complete. The legacy channels (direct/tunnel) are retired — if this PC still has leftover components, run uninstall-legacy.ps1 from the stack directory's bin folder to clean them up (frpc/ddns-go and leftover DNS records) and shrink the public exposure surface.",
   // Wizard detail codes → copy
   "wizard.code.ok": "Verified",
   "wizard.code.legacy_ok": "Verified (legacy acme.sh certificate chain still serving; not migrated to the plugin style — works fine, migration is optional)",
@@ -400,15 +294,6 @@ export const en = {
   "wizard.code.missing_ddnsgo": "ddns-go.exe missing (re-run the install above)",
   "wizard.code.missing_caddyfile": "Caddyfile missing or not plugin-style (re-run the install to generate)",
   "wizard.code.not_running": "Components in place but not running: click \"Start All\" on Main, then verify here",
-  "wizard.code.missing_yaml": "ddns-go not configured yet (click the button above to generate)",
-  "wizard.code.missing_key": "SakuraFrp access key not entered yet",
-  "wizard.code.tunnel_unset": "Fill in the Tunnel ID and node domain, then save",
-  "wizard.code.branch_unset": "Pick an access channel first",
-  "wizard.code.record_mismatch": "A record does not match the egress IP (ddns-go corrects it within minutes; verify again later)",
-  "wizard.code.warn_private_range": "Egress IP is in a private/CGNAT range: direct access very likely unreachable — consider the tunnel channel",
-  "wizard.code.warn_ipv6": "Egress probe returned IPv6: direct reachability depends on the visitor's network — test from an external device",
-  "wizard.code.warn_no_public_ip": "Egress IP probe failed: direct reachability unknown — test from an external device or use the tunnel",
-  "wizard.code.warn_no_a_record": "No active A record for the subdomain yet: ddns-go creates it within minutes; verify again later",
   "wizard.code.missing_secret": "Mesh secret not written (click button ① above and type it in the console)",
   "wizard.code.missing_service": "Mesh service not installed (click button ② above; admin required)",
   "wizard.code.service_stopped": "Mesh service stopped: click \"Apply config & restart service\" to restore",

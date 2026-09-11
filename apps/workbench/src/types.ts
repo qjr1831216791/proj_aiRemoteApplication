@@ -1,7 +1,7 @@
 /** 与 Rust 侧 schema 对齐的前端类型（plan §4 / §5.1） */
 
-/** 组件标识（serde 字符串） */
-export type ComponentId = "cloudcli" | "caddy" | "ddnsgo";
+/** 组件标识（serde 字符串；ddnsgo 已随直连通道退役——spec 008） */
+export type ComponentId = "cloudcli" | "caddy";
 
 /** 组件五态（kebab-case，plan §4） */
 export type ComponentState = "stopped" | "starting" | "running" | "port-held" | "failed";
@@ -18,15 +18,9 @@ export interface ComponentStatus {
 export type LanguageSetting = "auto" | "zh" | "en";
 export type ExitAction = "keep" | "stop";
 
-/** 访问通道（spec 004 + 007）：direct = DDNS 直连，tunnel = SakuraFrp 穿透，
- * mesh = EasyTier 私有组网（007 新增，新装机默认推荐） */
-export type AccessChannel = "direct" | "tunnel" | "mesh";
-
-/** 穿透配置（非敏感部分；访问密钥只存栈目录 .env，永不进入本结构） */
-export interface TunnelConfig {
-  tunnelId: string;
-  nodeDomain: string;
-}
+/** 访问通道（spec 008 二元化）：组网单通道——EasyTier 私有组网。
+ * 直连/穿透已退役；旧设置文件的 direct/tunnel 值由 Rust 加载迁移为 mesh */
+export type AccessChannel = "mesh";
 
 /** 组网配置（非敏感部分，spec 007 AC11；密钥只存栈目录 network-secret 文件，
  * 永不进入本结构/设置文件/命令行/日志——AC8） */
@@ -48,13 +42,7 @@ export interface Settings {
   openPageOnStart: boolean;
   scriptsDirOverride: string | null;
   accessChannel: AccessChannel;
-  tunnel: TunnelConfig | null;
-  tunnelEnabled: boolean;
   mesh: MeshConfig;
-  /** 穿透通道已停用（spec 007 AC5：停用后 frpc 不被拉起，重新启用须安全警示确认） */
-  tunnelDisabled: boolean;
-  /** 直连通道已停用（spec 007 AC6） */
-  directDisabled: boolean;
   domainHeartbeat: boolean;
   stackDir: string;
 }
@@ -68,35 +56,14 @@ export interface SettingsPatch {
   exitAction?: ExitAction;
   openPageOnStart?: boolean;
   accessChannel?: AccessChannel;
-  tunnel?: TunnelConfig;
-  tunnelEnabled?: boolean;
   mesh?: MeshConfig;
-  tunnelDisabled?: boolean;
-  directDisabled?: boolean;
   domainHeartbeat?: boolean;
   stackDir?: string;
 }
 
-/** 隧道运行状态（tunnel://status 载荷；tag="state" camelCase） */
-export type TunnelStateKind =
-  | "notConfigured"
-  | "disabled"
-  | "inactive"
-  | "starting"
-  | "online"
-  | "offline";
-
-export interface TunnelStatus {
-  state: TunnelStateKind;
-  detail?: string;
-  since: number;
-}
-
-/** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase；mesh 态新增
- * alignedMesh/mismatchedA——spec 007 体检重定义：A 记录 = 虚拟 IP） */
+/** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase；spec 008
+ * 组网单通道：A 记录 = 虚拟 IP 为唯一对齐态，残留 CNAME 判旁路暴露面） */
 export type DnsAlignment =
-  | { kind: "alignedTunnel" }
-  | { kind: "alignedDirect" }
   | { kind: "alignedMesh" }
   | { kind: "mismatchedCname"; actual: string }
   | { kind: "mismatchedA"; actual: string }
@@ -171,27 +138,22 @@ export interface AccessUrls {
   domain: string;
 }
 
-/** open_external 目标类别 */
+/** open_external 目标类别（ddns_admin 已随直连通道退役——spec 008） */
 export type ExternalKind =
   | "workbench"
   | "local"
   | "lan"
   | "domain"
-  | "ddns_admin"
   | "easytier_releases";
 
-/** run_tool 工具类别 */
+/** run_tool 工具类别（ddns/frp 四类已随直连/穿透通道退役——spec 008） */
 export type ToolKind =
   | "install_server"
   | "install_https"
   | "enable_https"
   | "install_client"
-  | "reset_ddns_password"
-  | "set_frp_key"
   | "set_tencent_key"
-  | "config_ddnsgo"
-  | "set_mesh_secret"
-  | "clear_frp_key";
+  | "set_mesh_secret";
 
 /** run_tool 可选项（update/mirror 仅 install_server；domain 供安装/配置类透传，spec 006） */
 export interface ToolOpts {
@@ -215,11 +177,11 @@ export interface StageStatus {
   detail?: string | null;
 }
 
-/** 向导全量状态（wizard://changed 事件与各 wizard_* 命令的载荷） */
+/** 向导全量状态（wizard://changed 事件与各 wizard_* 命令的载荷；
+ * branch 字段已随通道单化退役——spec 008，旧状态文件同名键被 Rust serde 忽略） */
 export interface WizardState {
   version: number;
   stages: StageStatus[];
-  branch: AccessChannel | null;
   domain: string;
   done: boolean;
 }

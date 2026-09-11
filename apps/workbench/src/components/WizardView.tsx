@@ -1,11 +1,12 @@
 /**
- * 装机向导视图（spec 006 §4.1 + 007 T13 通道分支重组）。
+ * 装机向导视图（spec 006 §4.1 + 008 通道单化：组网为唯一通道分支）。
  * - 左侧竖向阶段清单（四态 chip）+ 右侧当前阶段面板；已完成阶段可点击回看（AC2）
  * - 外部办理统一模式：文字步骤 + [打开××] + [我已完成，开始校验]（校验 = wizard_detect）
  * - 凭证零 APP 化：密钥输入拉起控制台脚本（run_tool），UI 只呈现结果码（宪法 §3）
- * - 分支选择写 Settings.access_channel（收敛复用 004 守护，AC9）；
- *   007 AC12 起分支卡 = 组网（推荐）+ 直连两张，穿透入口移除——存量
- *   branch="tunnel" 的向导呈迁移提示不回退（Rust detect 的 tunnel 分支保留）
+ * - 通道阶段 = 组网装服务/成员入网/应用配置/同步 DNS 的装机序列（首装路径）；
+ *   装机后的日常维护入口已下沉主看板 MeshCard（spec 008 T15）。
+ *   直连/穿透分支与向导 branch 字段已随通道退役删除——旧状态文件同名键
+ *   被 Rust serde 忽略（spec 008）
  * - detail 稳定码 → i18n 呈现；失败只伤单阶段 + 重试（AC12）
  */
 
@@ -257,112 +258,69 @@ export function WizardView(props: WizardViewProps) {
         return (
           <>
             <p class="wizard__desc">{t("wizard.channel.desc", lang)}</p>
-            <div class="wizard__cards">
-              <button
-                class={`card wizard__choice${state.branch === "mesh" ? " wizard__choice--on" : ""}`}
-                onClick={() => dispatch("branch", () => api.wizardSetBranch("mesh"), false)}
-              >
-                <strong>{t("wizard.channel.mesh", lang)}</strong>
-                <span>{t("wizard.channel.meshDesc", lang)}</span>
-              </button>
-              <button
-                class={`card wizard__choice${state.branch === "direct" ? " wizard__choice--on" : ""}`}
-                onClick={() => dispatch("branch", () => api.wizardSetBranch("direct"), false)}
-              >
-                <strong>{t("wizard.channel.direct", lang)}</strong>
-                <span>{t("wizard.channel.directDesc", lang)}</span>
-              </button>
+            <button
+              class="btn btn--primary"
+              disabled={busy !== null}
+              onClick={() =>
+                dispatch(
+                  "meshSecret",
+                  () => api.runTool("set_mesh_secret", { update: false, mirror: false, domain: null }),
+                  true,
+                )
+              }
+            >
+              {t("wizard.channel.meshSecretBtn", lang)}
+            </button>
+            <p class="muted">{t("wizard.channel.meshSecretHint", lang)}</p>
+            <button
+              class="btn"
+              disabled={busy !== null}
+              onClick={() => dispatch("meshInstall", () => api.meshInstallService(), true)}
+            >
+              {t("wizard.channel.meshInstallBtn", lang)}
+            </button>
+            <p class="muted">{t("wizard.channel.meshServiceHint", lang)}</p>
+            <p class="wizard__desc">
+              {t("wizard.channel.meshPeerGuide", lang).replace(
+                "{name}",
+                settings?.mesh.networkName ?? "",
+              )}
+            </p>
+            <button
+              class="btn"
+              disabled={busy !== null}
+              onClick={() =>
+                void api.openExternal("easytier_releases").catch((e) =>
+                  onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"),
+                )
+              }
+            >
+              {t("wizard.channel.meshDownloadBtn", lang)}
+            </button>
+            <div class="wizard__row">
+              <code class="wizard__url">{settings?.mesh.networkName}</code>
+              <CopyButton
+                text={settings?.mesh.networkName ?? ""}
+                lang={lang}
+                onToast={onToast}
+              />
+              <span class="muted">{settings?.mesh.virtualIp}</span>
             </div>
-            {state.branch === "mesh" ? (
-              <>
-                <button
-                  class="btn btn--primary"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    dispatch(
-                      "meshSecret",
-                      () => api.runTool("set_mesh_secret", { update: false, mirror: false, domain: null }),
-                      true,
-                    )
-                  }
-                >
-                  {t("wizard.channel.meshSecretBtn", lang)}
-                </button>
-                <p class="muted">{t("wizard.channel.meshSecretHint", lang)}</p>
-                <button
-                  class="btn"
-                  disabled={busy !== null}
-                  onClick={() => dispatch("meshInstall", () => api.meshInstallService(), true)}
-                >
-                  {t("wizard.channel.meshInstallBtn", lang)}
-                </button>
-                <p class="muted">{t("wizard.channel.meshServiceHint", lang)}</p>
-                <p class="wizard__desc">
-                  {t("wizard.channel.meshPeerGuide", lang).replace(
-                    "{name}",
-                    settings?.mesh.networkName ?? "",
-                  )}
-                </p>
-                <button
-                  class="btn"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    void api.openExternal("easytier_releases").catch((e) =>
-                      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"),
-                    )
-                  }
-                >
-                  {t("wizard.channel.meshDownloadBtn", lang)}
-                </button>
-                <div class="wizard__row">
-                  <code class="wizard__url">{settings?.mesh.networkName}</code>
-                  <CopyButton
-                    text={settings?.mesh.networkName ?? ""}
-                    lang={lang}
-                    onToast={onToast}
-                  />
-                  <span class="muted">{settings?.mesh.virtualIp}</span>
-                </div>
-                <button
-                  class="btn btn--sm"
-                  disabled={busy !== null}
-                  onClick={() => dispatch("meshApply", () => api.meshApplyConfig(), false)}
-                >
-                  {t("wizard.channel.meshApplyBtn", lang)}
-                </button>
-                <button
-                  class="btn"
-                  disabled={busy !== null}
-                  onClick={() => void syncMeshDns()}
-                >
-                  {busy === "meshDns" ? t("tunnel.dnsChecking", lang) : t("wizard.channel.meshDnsBtn", lang)}
-                </button>
-                <p class="muted">{t("wizard.channel.meshDnsHint", lang)}</p>
-              </>
-            ) : null}
-            {state.branch === "direct" ? (
-              <>
-                <button
-                  class="btn btn--primary"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    dispatch(
-                      "ddns",
-                      () => api.runTool("config_ddnsgo", { update: false, mirror: false, domain: state.domain }),
-                      true,
-                    )
-                  }
-                >
-                  {t("wizard.channel.ddnsBtn", lang)}
-                </button>
-                {s.detail?.startsWith("warn_") || s.detail === "record_mismatch" ? (
-                  <p class="notice notice--warn">{t(`wizard.code.${s.detail}` as DictKey, lang)}</p>
-                ) : null}
-              </>
-            ) : null}
-            {state.branch === "tunnel" ? (
-              <p class="notice notice--warn">{t("wizard.channel.tunnelDeprecated", lang)}</p>
-            ) : null}
+            <button
+              class="btn btn--sm"
+              disabled={busy !== null}
+              onClick={() => dispatch("meshApply", () => api.meshApplyConfig(), false)}
+            >
+              {t("wizard.channel.meshApplyBtn", lang)}
+            </button>
+            <button
+              class="btn"
+              disabled={busy !== null}
+              onClick={() => void syncMeshDns()}
+            >
+              {busy === "meshDns" ? t("tunnel.dnsChecking", lang) : t("wizard.channel.meshDnsBtn", lang)}
+            </button>
+            <p class="muted">{t("wizard.channel.meshDnsHint", lang)}</p>
             <Detail s={s} />
             <CheckButton />
           </>
@@ -383,9 +341,7 @@ export function WizardView(props: WizardViewProps) {
                 </span>
               </li>
             </ul>
-            {state.branch === "mesh" ? (
-              <p class="muted">{t("wizard.finalize.meshHint", lang)}</p>
-            ) : null}
+            <p class="muted">{t("wizard.finalize.meshHint", lang)}</p>
             <button
               class="btn btn--primary"
               disabled={busy !== null}
