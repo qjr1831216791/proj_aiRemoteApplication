@@ -155,12 +155,12 @@ export const zh = {
   "settings.meshSaved": "组网配置已保存（应用配置并重启服务后生效）",
   "settings.meshSecretHint":
     "组网密钥不经程序输入框：点右侧按钮在弹出的控制台输入，脚本直写栈目录 network-secret 文件（不回显、不落日志、不进设置文件）",
-  "settings.meshSecretBtn": "写入组网密钥…",
+  "settings.meshSecretBtn": "写入密钥…",
   "settings.meshSecretDispatched": "密钥设置窗口已打开，请在弹出的控制台中输入",
   "settings.meshServiceHint": "服务管理（以下操作均需管理员授权）：",
   "settings.meshInstallBtn": "安装/刷新服务",
   "settings.meshInstallDone": "组网服务安装已派发（UAC 通过后数秒内状态自动刷新）",
-  "settings.meshApplyBtn": "应用配置并重启服务",
+  "settings.meshApplyBtn": "应用并重启",
   "settings.meshApplyDone": "组网配置应用已派发（UAC 通过后数秒内状态自动刷新）",
   "settings.meshUninstallBtn": "卸载服务",
   "settings.meshUninstallDone": "组网服务卸载已派发",
@@ -370,7 +370,7 @@ export const zh = {
   "mesh.diag.domain_chain.ok": "域名解析与 443 访问链路正常",
   "mesh.diag.domain_chain.bad":
     "域名链路异常：resolve_failed=域名未设置或解析失败；resolved=解析值≠本机虚拟 IP（到装机向导点「同步 DNS」）；tcp443_unreachable=虚拟 IP 443 不可达（查服务与防火墙）",
-  "wizard.channel.meshApplyBtn": "应用配置并重启服务（管理员）",
+  "wizard.channel.meshApplyBtn": "应用并重启（管理员）",
   "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
   "wizard.channel.meshDnsHint":
     "把 ai.jackqi.cn 的 A 记录自动同步为虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",

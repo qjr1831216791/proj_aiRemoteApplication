@@ -156,12 +156,12 @@ export const en = {
   "settings.meshSaved": "Mesh configuration saved (applies after \"Apply config & restart service\")",
   "settings.meshSecretHint":
     "The mesh secret never goes through an app input: click the button on the right and type it in the popped-up console; the script writes it straight into the network-secret file in the stack directory (hidden input, never logged, never in the settings file)",
-  "settings.meshSecretBtn": "Write mesh secret…",
+  "settings.meshSecretBtn": "Write secret…",
   "settings.meshSecretDispatched": "Secret setup window opened; please type it in the console",
   "settings.meshServiceHint": "Service management (all actions below need admin approval):",
   "settings.meshInstallBtn": "Install / refresh service",
   "settings.meshInstallDone": "Mesh service install dispatched (status refreshes within seconds after UAC approval)",
-  "settings.meshApplyBtn": "Apply config & restart service",
+  "settings.meshApplyBtn": "Apply & restart",
   "settings.meshApplyDone": "Mesh config apply dispatched (status refreshes within seconds after UAC approval)",
   "settings.meshUninstallBtn": "Uninstall service",
   "settings.meshUninstallDone": "Mesh service uninstall dispatched",
@@ -371,7 +371,7 @@ export const en = {
   "mesh.diag.domain_chain.ok": "Domain resolution and 443 chain healthy",
   "mesh.diag.domain_chain.bad":
     "Domain chain broken: resolve_failed = domain unset or resolution failed; resolved = resolved IP ≠ virtual IP (click \"Sync DNS\" in the wizard); tcp443_unreachable = virtual IP 443 unreachable (check service and firewall)",
-  "wizard.channel.meshApplyBtn": "Apply config & restart service (admin)",
+  "wizard.channel.meshApplyBtn": "Apply & restart (admin)",
   "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
   "wizard.channel.meshDnsHint":
     "Automatically points the ai.jackqi.cn A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
