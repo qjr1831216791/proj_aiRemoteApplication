@@ -46,8 +46,9 @@
 
 1. 前置自检：组网服务在线（工作台组网卡四态为在线/连接中）、`D:\Software\cloudcli-https\.env` 已有腾讯密钥
 2. 以管理员 PowerShell 执行随包 `uninstall-legacy.ps1`
-   - 预期：台账全 Done/Skipped、退出码 0；`tasklist` 无 frpc/ddns-go、ddns-go 自启任务已注销、退役文件已删、`.env` 的 `SAKURA_FRP_KEY` 行移除且其余行保留（TENCENT_* 完好）
 3. 执行台账摘要回填 specs/008 的 acceptance-manual（AC10/AC11 备注区）
+
+**已执行（2026-09-11）**：核验通过——四类残留全清（进程无/自启任务已注销/四个退役文件已删/`SAKURA_FRP_KEY` 赋值行已移除且 TENCENT_* 完好）；附带确认 EasyTierMesh Running、3001/443 监听与 TUN 虚拟 IP 正常（现役零误伤）。详见 specs/008 acceptance-manual 签收依据后注。
 
 ## 3. 验收汇总（待回填）
 
@@ -55,6 +56,6 @@
 |----|------|------|
 | AC1~AC4 | 待 T3 | 自动化已绿，真机复核 GUI 呈现 |
 | AC5~AC7 | ✅ | T8 三态自测 |
-| AC8 | 待 T9 | 真机执行 |
+| AC8 | ✅ | 2026-09-11 真机执行 + 机检核验（spec 008 同日回填） |
 | AC9/AC10 | 待 T6 | 代码就绪，App 对照 |
 | AC11 | ✅ | 单测反序列化断言 |

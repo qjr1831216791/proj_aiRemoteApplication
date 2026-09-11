@@ -25,10 +25,10 @@ lib test 编译的 4 条 never-used/read 告警：
 
 处理：确认零消费后删除（或测试内收敛）；纯清理不改变行为，免 spec。
 
-## P3（运营事项，非代码）：真机旧通道残留清理未执行
+## P3（运营事项，非代码）：真机旧通道残留清理 ~~未执行~~ **已执行（2026-09-11，spec 009 T9）**
 
 - 008 的 AC10/AC11（真机卸载）按需求方签收免实测，`uninstall-legacy.ps1` 随包保留为可选动作。
-- 真机磁盘现状：栈目录仍有 frpc / ddns-go 文件与 `.env` 的 `SAKURA_FRP_KEY` 行。
+- ~~真机磁盘现状：栈目录仍有 frpc / ddns-go 文件与 `.env` 的 `SAKURA_FRP_KEY` 行。~~ 已清除（核验记录见 specs/008 acceptance-manual 签收依据后注；EasyTierMesh/3001/443 零误伤）。
 - 建议：下个维护窗口在真机执行一次（脚本幂等；内置组网服务在线 + 腾讯凭证存在双闸门，缺凭证时拒删 ddns-go.yaml 并指引 `set-tencent-key.ps1`），执行结果回填 specs/008 的 acceptance-manual。
 
 ## P4（流程改进建议）：发版版本号校验自动化
