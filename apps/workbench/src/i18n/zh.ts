@@ -348,8 +348,28 @@ export const zh = {
   "wizard.channel.meshServiceHint":
     "服务以 Windows 服务形态常驻（登录自启）；未安装或需修复时点此按钮",
   "wizard.channel.meshPeerGuide":
-    "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端，加入网络「{name}」（密钥与本机写入的相同），即可经虚拟网络访问本机",
+    "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端（上方按钮可直达）。配置：网络名称「{name}」、密钥与本机相同、对端同本机节点列表；虚拟 IP 手动填静态地址——第一台成员填 10.126.126.2、之后逐台递增（勿用「自动获取」：本机为静态配置形态，网内无 DHCP 分配；勿填 10.126.126.1，那是本机）；建议填写主机名（如 phone）便于辨认。入网成功的标志：App 设备列表出现 ai-remote-workbench——仅显示「已连接服务器」不算入网。完成后即可经虚拟网络访问本机",
   "wizard.channel.meshDownloadBtn": "打开 EasyTier 下载页（GitHub Releases）",
+  "mesh.diag.desc": "组网诊断：服务、密钥、节点可达性、成员、本机网卡、域名链路六项检查（成员访问异常时自查断点）",
+  "mesh.diag.runBtn": "运行诊断",
+  "mesh.diag.running": "诊断中…（逐对端探测，最长约数秒）",
+  "mesh.diag.summaryOk": "组网链路正常",
+  "mesh.diag.summaryBad": "存在 {n} 项未通过，见 ✗ 项的修复指引",
+  "mesh.diag.service.ok": "组网服务运行中",
+  "mesh.diag.service.bad": "组网服务未运行：未安装点「安装/修复服务」；已停止点「应用配置并重启服务」",
+  "mesh.diag.secret.ok": "组网密钥已写入",
+  "mesh.diag.secret.bad": "组网密钥未写入：点上方「写入组网密钥」运行脚本，完成后应用配置",
+  "mesh.diag.peer_reachable.ok": "对端节点全部可达",
+  "mesh.diag.peer_reachable.bad":
+    "有对端节点不可达（refused=端口无服务，或被当前网络拦截——可用手机热点对照实测；timeout=连接超时疑似被拦。均建议换网络后重试）",
+  "mesh.diag.members.ok": "成员设备已在线",
+  "mesh.diag.members.bad":
+    "成员未就绪：no_member=尚无成员加入（成员设备未连上）；no_addr=成员未获得虚拟 IP——成员端把虚拟 IP 改为手动静态地址（第一台 10.126.126.2，勿用自动获取）",
+  "mesh.diag.local_nic.ok": "本机虚拟网卡已就位",
+  "mesh.diag.local_nic.bad": "本机虚拟网卡未持有虚拟 IP：点「应用配置并重启服务」后重试",
+  "mesh.diag.domain_chain.ok": "域名解析与 443 访问链路正常",
+  "mesh.diag.domain_chain.bad":
+    "域名链路异常：resolve_failed=域名未设置或解析失败；resolved=解析值≠本机虚拟 IP（到装机向导点「同步 DNS」）；tcp443_unreachable=虚拟 IP 443 不可达（查服务与防火墙）",
   "wizard.channel.meshApplyBtn": "应用配置并重启服务（管理员）",
   "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
   "wizard.channel.meshDnsHint":

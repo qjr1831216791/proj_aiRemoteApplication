@@ -137,6 +137,14 @@ export interface MeshStatus {
   peers: MeshPeer[];
 }
 
+/** 组网诊断单项（007 T16/AC13：code → `mesh.diag.<code>.ok|bad` 双语文案；
+ * detail 为数据摘要（host:port=状态 / 计数 / 解析值），不含密钥） */
+export interface MeshDiagItem {
+  code: "service" | "secret" | "peer_reachable" | "members" | "local_nic" | "domain_chain";
+  ok: boolean;
+  detail?: string;
+}
+
 /** 域名心跳快照（domain://health 载荷；healthy 已含 2 次防抖，spec 005 AC6） */
 export type HealthKind = "ok" | "dns" | "connect" | "tls" | "timeout" | "status";
 

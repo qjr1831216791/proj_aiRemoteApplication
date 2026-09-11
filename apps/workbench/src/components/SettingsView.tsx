@@ -15,10 +15,11 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { api, copyText } from "../api";
-import { t, type Lang } from "../i18n";
+import { t, type DictKey, type Lang } from "../i18n";
 import type {
   ExitAction,
   LanguageSetting,
+  MeshDiagItem,
   Settings,
   SettingsPatch,
 } from "../types";
@@ -155,6 +156,9 @@ export function SettingsView(props: SettingsViewProps) {
   const [meshPeersText, setMeshPeersText] = useState(settings.mesh.peers.join("\n"));
   // 组网动作在途（安装/应用/卸载共用；UAC 派发为异步返回）
   const [meshBusy, setMeshBusy] = useState(false);
+  // 组网诊断结果（007 T16/AC13；null = 尚未运行）
+  const [diag, setDiag] = useState<MeshDiagItem[] | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
 
   /** 组网配置保存（AC11）：前端预检（与 Rust validate_mesh_config 同形宽松，
    * 最终裁决在 mesh_apply_config）→ 持久化 */
@@ -255,6 +259,19 @@ export function SettingsView(props: SettingsViewProps) {
       .runTool("set_mesh_secret", { update: false, mirror: false })
       .then(() => onToast(t("settings.meshSecretDispatched", lang), "info"))
       .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
+  };
+
+  /** 组网诊断（007 T16/AC13）：六项只读探测（服务/密钥/对端可达/成员/本机
+   * 网卡/域名链路），Rust 侧 spawn_blocking，逐对端 3s 超时可能耗时数秒 */
+  const runDiagnostics = async () => {
+    setDiagBusy(true);
+    try {
+      setDiag(await api.meshDiagnostics());
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setDiagBusy(false);
+    }
   };
 
   /** 清除 SakuraFrp 访问密钥（停用穿透收尾，AC5）：拉起 clear-frp-key.ps1 */
@@ -426,6 +443,40 @@ export function SettingsView(props: SettingsViewProps) {
             {t("settings.meshUninstallBtn", lang)}
           </button>
         </div>
+        {/* 组网诊断（007 T16/AC13）：六项只读探测，成员访问异常时自查断点 */}
+        <div class="settings__row">
+          <div class="settings__row-text">
+            <span class="settings__label">{t("mesh.diag.desc", lang)}</span>
+          </div>
+          <button class="btn btn--sm" disabled={diagBusy} onClick={() => void runDiagnostics()}>
+            {diagBusy ? t("mesh.diag.running", lang) : t("mesh.diag.runBtn", lang)}
+          </button>
+        </div>
+        {diag ? (
+          <div class="settings__rows">
+            {(() => {
+              const failed = diag.filter((d) => !d.ok).length;
+              return failed === 0 ? (
+                <p class="notice notice--ok">{t("mesh.diag.summaryOk", lang)}</p>
+              ) : (
+                <p class="notice notice--warn">
+                  {t("mesh.diag.summaryBad", lang).replace("{n}", String(failed))}
+                </p>
+              );
+            })()}
+            {diag.map((d) => (
+              <div class="settings__row" key={d.code}>
+                <div class="settings__row-text">
+                  <span class="settings__label">
+                    {d.ok ? "✓" : "✗"}{" "}
+                    {t(`mesh.diag.${d.code}.${d.ok ? "ok" : "bad"}` as DictKey, lang)}
+                  </span>
+                  {d.detail ? <span class="muted">{d.detail}</span> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       {/* 旧通道停用（spec 007 AC5/AC6）：非现役方可停用；停用穿透后引导清访问密钥 */}

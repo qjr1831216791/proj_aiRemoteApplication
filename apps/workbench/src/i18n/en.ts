@@ -349,8 +349,28 @@ export const en = {
   "wizard.channel.meshServiceHint":
     "The service runs as a Windows service (starts at logon); click this if not installed yet or needs repair",
   "wizard.channel.meshPeerGuide":
-    "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases, join network \"{name}\" (the same secret you wrote here), then reach this PC via the virtual network",
+    "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases (button above). Configure: network name \"{name}\", the same secret as here, peers as listed above; set the virtual IP MANUALLY to a static address — first member 10.126.126.2, then increment (do NOT use auto/DHCP: this host uses a static config and the network has no DHCP; do NOT use 10.126.126.1, that's this PC); a hostname (e.g. phone) is recommended. You're joined only when the device list shows ai-remote-workbench — \"connected to server\" alone doesn't count. Then reach this PC via the virtual network",
   "wizard.channel.meshDownloadBtn": "Open EasyTier download page (GitHub Releases)",
+  "mesh.diag.desc": "Mesh diagnostics: six checks — service, secret, peer reachability, members, local NIC, domain chain (self-troubleshoot when members can't reach this PC)",
+  "mesh.diag.runBtn": "Run diagnostics",
+  "mesh.diag.running": "Diagnosing… (probing each peer, may take a few seconds)",
+  "mesh.diag.summaryOk": "Mesh chain is healthy",
+  "mesh.diag.summaryBad": "{n} check(s) failed — see ✗ items for fixes",
+  "mesh.diag.service.ok": "Mesh service is running",
+  "mesh.diag.service.bad": "Mesh service not running: click \"Install/repair service\" if not installed, or \"Apply config & restart service\" if stopped",
+  "mesh.diag.secret.ok": "Mesh secret is present",
+  "mesh.diag.secret.bad": "Mesh secret not written: click \"Write mesh secret\" above to run the script, then apply config",
+  "mesh.diag.peer_reachable.ok": "All peer nodes reachable",
+  "mesh.diag.peer_reachable.bad":
+    "Some peers unreachable (refused = no service on that port, or blocked by the current network — try a phone hotspot to compare; timeout = likely blocked. Switching networks is recommended)",
+  "mesh.diag.members.ok": "Member devices online",
+  "mesh.diag.members.bad":
+    "Members not ready: no_member = no member has joined; no_addr = a member has no virtual IP — set the member's virtual IP manually (first member 10.126.126.2, not auto/DHCP)",
+  "mesh.diag.local_nic.ok": "Local virtual NIC in place",
+  "mesh.diag.local_nic.bad": "Local virtual NIC doesn't hold the virtual IP: click \"Apply config & restart service\", then retry",
+  "mesh.diag.domain_chain.ok": "Domain resolution and 443 chain healthy",
+  "mesh.diag.domain_chain.bad":
+    "Domain chain broken: resolve_failed = domain unset or resolution failed; resolved = resolved IP ≠ virtual IP (click \"Sync DNS\" in the wizard); tcp443_unreachable = virtual IP 443 unreachable (check service and firewall)",
   "wizard.channel.meshApplyBtn": "Apply config & restart service (admin)",
   "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
   "wizard.channel.meshDnsHint":

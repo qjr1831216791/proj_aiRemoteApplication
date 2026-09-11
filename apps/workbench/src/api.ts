@@ -11,6 +11,7 @@ import type {
   DomainHealth,
   ExternalKind,
   LanguageSetting,
+  MeshDiagItem,
   MeshStatus,
   NetStatus,
   NetCategory,
@@ -72,6 +73,8 @@ export const api = {
   meshUninstallService: () => invoke<void>("mesh_uninstall_service"),
   /** 同步 DNS 到组网通道（AC13）：CNAME 全删 + A upsert 虚拟 IP；返回记录操作数 */
   meshSyncDns: () => invoke<number>("mesh_sync_dns"),
+  /** 组网诊断（007 T16/AC13）：六项只读探测，可能耗时数秒（逐对端 3s 超时） */
+  meshDiagnostics: () => invoke<MeshDiagItem[]>("mesh_diagnostics"),
   /** 停用旧通道（007 AC5/AC6）：前置非现役校验在 Rust 侧；返回更新后设置 */
   disableLegacyChannel: (target: "tunnel" | "direct", deleteA: boolean) =>
     invoke<Settings>("disable_legacy_channel", { target, deleteA }),

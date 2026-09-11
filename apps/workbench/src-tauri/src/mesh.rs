@@ -585,6 +585,196 @@ pub fn stop_service_silent() -> Result<bool, String> {
     Ok(stop_exit_code_is_quiet(code))
 }
 
+// ── 组网诊断（T16，AC13；plan §5.1 契约）──────────────────────────────────
+//
+// T14 真机联调产出：用户排障需要工具化的自查入口。实测断点类型——网络拦截
+// 节点端口（refused/timeout）、成员未获虚拟 IP（宿主机静态形态下网内无
+// DHCP）、服务未装/停止、DNS 未对齐。六项独立不阻断；detail 为数据摘要
+// （host:port=状态 / 计数 / 解析值），构造上不读密钥内容（AC8）。
+
+/// 诊断单项结论（前端 `mesh.diag.<code>.ok|bad` 双语文案 + detail 摘要小字）
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagItem {
+    /// 稳定码：service / secret / peer_reachable / members / local_nic /
+    /// domain_chain（顺序即 [`DIAG_CODES`]）
+    pub code: &'static str,
+    pub ok: bool,
+    /// 数据摘要（不含密钥——AC8；None = 无补充，序列化时省略）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// 六项稳定码（顺序 = 诊断与前端渲染顺序；单测锁定与各 judge 产物一致）
+pub const DIAG_CODES: [&str; 6] = [
+    "service",
+    "secret",
+    "peer_reachable",
+    "members",
+    "local_nic",
+    "domain_chain",
+];
+
+/// 对端 URI → (host, port)（诊断探测用；scheme 剥离、去路径，无端口默认
+/// [`MESH_LISTEN_PORT`]）
+fn peer_host_port(uri: &str) -> Option<(String, u16)> {
+    let (_, rest) = uri.split_once("://")?;
+    let host_port = rest.split('/').next()?;
+    let (host, port) = match host_port.rsplit_once(':') {
+        Some((h, p)) => (h, p.parse::<u16>().ok()?),
+        None => (host_port, MESH_LISTEN_PORT),
+    };
+    (!host.is_empty()).then(|| (host.to_string(), port))
+}
+
+/// TCP 连接错误分类（refused=端口无服务或被网络拦截；timeout=疑似被拦——
+/// T14 实测企业 WiFi 以 RST 拒绝出网，两者文案都给换网对照建议）
+fn classify_connect(err: &std::io::Error) -> &'static str {
+    match err.kind() {
+        std::io::ErrorKind::ConnectionRefused => "refused",
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => "timeout",
+        _ => "error",
+    }
+}
+
+/// 单条 TCP 连通探测（3s 超时；域名解析失败归 `resolve`，多地址任一连通即过）
+fn probe_tcp(host: &str, port: u16) -> Result<(), &'static str> {
+    use std::net::ToSocketAddrs;
+
+    let addrs: Vec<_> = (host, port)
+        .to_socket_addrs()
+        .map_err(|_| "resolve")?
+        .collect();
+    let mut last = "error";
+    for addr in addrs {
+        match std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(3)) {
+            Ok(_) => return Ok(()),
+            Err(e) => last = classify_connect(&e),
+        }
+    }
+    Err(last)
+}
+
+/// ①服务态判定（running/startPending 算通过——SCM 拉起中宽限；
+/// detail = 服务态 camelCase 稳定值）
+fn service_judge(state: MeshServiceState) -> DiagItem {
+    let ok = matches!(state, MeshServiceState::Running | MeshServiceState::StartPending);
+    let detail = serde_json::to_string(&state)
+        .ok()
+        .map(|s| s.trim_matches('"').to_string());
+    DiagItem { code: "service", ok, detail }
+}
+
+/// ②密钥就绪判定（只测存在性，不读内容——AC8）
+fn secret_judge(present: bool) -> DiagItem {
+    DiagItem { code: "secret", ok: present, detail: None }
+}
+
+/// ③对端可达聚合（results = host, port, 状态码；空列表视为配置未就绪）
+fn peers_judge(results: &[(String, u16, &'static str)]) -> DiagItem {
+    if results.is_empty() {
+        return DiagItem { code: "peer_reachable", ok: false, detail: Some("no_peers".into()) };
+    }
+    let ok = results.iter().all(|(_, _, r)| *r == "ok");
+    let detail = results
+        .iter()
+        .map(|(h, p, r)| format!("{h}:{p}={r}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    DiagItem { code: "peer_reachable", ok, detail: Some(detail) }
+}
+
+/// ④成员清单聚合（非本机成员；**无虚拟 IP 的成员 = 未完成地址分配**——
+/// T14 实锤的 DHCP 形态问题，指引成员端改手动静态 IP）
+fn members_judge(peers: &[PeerBrief]) -> DiagItem {
+    let remote: Vec<&PeerBrief> = peers.iter().filter(|p| !p.is_local).collect();
+    if remote.is_empty() {
+        return DiagItem { code: "members", ok: false, detail: Some("no_member".into()) };
+    }
+    let no_addr = remote.iter().filter(|p| p.ipv4.is_none()).count();
+    let detail = Some(format!("members={} no_addr={}", remote.len(), no_addr));
+    DiagItem { code: "members", ok: no_addr == 0, detail }
+}
+
+/// ⑤本机虚拟网卡判定（虚拟 IP 已配置在本机网卡上）
+fn local_nic_judge(addrs: &[Ipv4Addr], virtual_ip: &str) -> DiagItem {
+    let ok = virtual_ip
+        .parse::<Ipv4Addr>()
+        .map(|ip| addrs.contains(&ip))
+        .unwrap_or(false);
+    DiagItem { code: "local_nic", ok, detail: None }
+}
+
+/// ⑥域名链路判定（纯函数：resolved = 本机视角公网解析的 v4 值，
+/// tcp443 = 虚拟 IP:443 实测连通）
+fn domain_chain_judge(resolved: Option<Ipv4Addr>, tcp443: bool, expect: Ipv4Addr) -> DiagItem {
+    let detail = match resolved {
+        None => Some("resolve_failed".to_string()),
+        Some(ip) if ip != expect => Some(format!("resolved={ip}")),
+        Some(_) if !tcp443 => Some("tcp443_unreachable".into()),
+        Some(_) => Some(expect.to_string()),
+    };
+    DiagItem { code: "domain_chain", ok: resolved == Some(expect) && tcp443, detail }
+}
+
+/// ③的探测段：逐条 peers TCP connect（URI 解析失败的条目标 invalid）
+fn diag_peers(peers: &[String]) -> DiagItem {
+    let results = peers
+        .iter()
+        .map(|uri| match peer_host_port(uri) {
+            Some((h, p)) => {
+                let r = match probe_tcp(&h, p) {
+                    Ok(()) => "ok",
+                    Err(code) => code,
+                };
+                (h, p, r)
+            }
+            None => (uri.clone(), 0, "invalid"),
+        })
+        .collect::<Vec<_>>();
+    peers_judge(&results)
+}
+
+/// ⑥的探测段：域名解析（首个 v4）+ 虚拟 IP:443 直连实测（不经域名——
+/// 解析错时仍能区分「DNS 没对齐」与「服务/防火墙不通」）
+fn diag_domain_chain(domain: &str, virtual_ip: &str) -> DiagItem {
+    use std::net::ToSocketAddrs;
+
+    let expect = match virtual_ip.parse::<Ipv4Addr>() {
+        Ok(ip) => ip,
+        Err(_) => return domain_chain_judge(None, false, Ipv4Addr::UNSPECIFIED),
+    };
+    if domain.trim().is_empty() {
+        return domain_chain_judge(None, false, expect);
+    }
+    let resolved: Option<Ipv4Addr> = format!("{domain}:443")
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut addrs| {
+            addrs.find_map(|a| match a.ip() {
+                std::net::IpAddr::V4(v4) => Some(v4),
+                _ => None,
+            })
+        });
+    let tcp443 = probe_tcp(virtual_ip, 443).is_ok();
+    domain_chain_judge(resolved, tcp443, expect)
+}
+
+/// 组网诊断内核（AC13 六项，[`DIAG_CODES`] 顺序；各项独立不阻断）。探测含
+/// 子进程与网络 IO（逐对端 3s 超时），命令层以 spawn_blocking 调用。
+/// `domain` 传完整域名（未设置传空串——⑥按解析失败口径报）。
+pub fn run_diagnostics(cfg: &MeshConfig, stack_dir: &str, domain: &str) -> Vec<DiagItem> {
+    let ops = WindowsMeshOps::new(None, stack_dir.to_string());
+    vec![
+        service_judge(ops.service_state()),
+        secret_judge(read_network_secret(stack_dir).is_some()),
+        diag_peers(&cfg.peers),
+        members_judge(&ops.query_peers().unwrap_or_default()),
+        local_nic_judge(&local_ipv4_addrs(), &cfg.virtual_ip),
+        diag_domain_chain(domain, &cfg.virtual_ip),
+    ]
+}
+
 /// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
 /// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
 /// 写 config.toml → `--check-config` 办后校验。返回 (config 路径, core exe)。
@@ -1473,5 +1663,143 @@ mod tests {
         );
         assert!(quoted.contains(r"-StackDir 'D:\jack''s'"), "{quoted}");
         assert!(quoted.contains("-Lang en"), "{quoted}");
+    }
+
+    // ── T16：组网诊断（纯函数判定 + URI 解析 + 序列化形态；探测 IO 不进单测）─
+
+    /// 对端 URI 解析：scheme 剥离、去路径、无端口默认 11010、坏形拒绝
+    #[test]
+    fn peer_host_port_parses_schemes_and_defaults() {
+        assert_eq!(
+            peer_host_port("tcp://sh.vomiku.com:7910"),
+            Some(("sh.vomiku.com".into(), 7910))
+        );
+        assert_eq!(
+            peer_host_port("udp://backup.example.com"),
+            Some(("backup.example.com".into(), MESH_LISTEN_PORT)),
+            "无端口默认 11010"
+        );
+        assert_eq!(
+            peer_host_port("tcp://1.2.3.4:11010/"),
+            Some(("1.2.3.4".into(), 11010)),
+            "带路径尾斜杠不破坏 host:port"
+        );
+        assert_eq!(peer_host_port("no_scheme"), None);
+        assert_eq!(peer_host_port("tcp://:7910"), None, "空 host 拒绝");
+        assert_eq!(peer_host_port("tcp://host:notaport"), None, "坏端口拒绝");
+    }
+
+    /// 连接错误分类（refused/timeout 两类各给换网对照建议——T14 实测拦截形态）
+    #[test]
+    fn connect_error_classified() {
+        use std::io::ErrorKind;
+        assert_eq!(
+            classify_connect(&std::io::Error::from(ErrorKind::ConnectionRefused)),
+            "refused"
+        );
+        assert_eq!(classify_connect(&std::io::Error::from(ErrorKind::TimedOut)), "timeout");
+        assert_eq!(classify_connect(&std::io::Error::from(ErrorKind::WouldBlock)), "timeout");
+        assert_eq!(
+            classify_connect(&std::io::Error::from(ErrorKind::PermissionDenied)),
+            "error"
+        );
+    }
+
+    /// DiagItem 序列化：camelCase 字段、None detail 省略
+    #[test]
+    fn diag_items_serialize_and_skip_empty_detail() {
+        let with = DiagItem { code: "service", ok: true, detail: Some("running".into()) };
+        let without = DiagItem { code: "secret", ok: false, detail: None };
+        let j1 = serde_json::to_string(&with).unwrap();
+        let j2 = serde_json::to_string(&without).unwrap();
+        assert!(j1.contains("\"code\":\"service\""), "{j1}");
+        assert!(j1.contains("\"ok\":true") && j1.contains("\"detail\":\"running\""), "{j1}");
+        assert!(!j2.contains("detail"), "None detail 应省略：{j2}");
+    }
+
+    /// 六项判定（各 judge 纯函数覆盖通过/失败分支；码集合与 DIAG_CODES 一致）
+    #[test]
+    fn diag_judges_cover_six_codes() {
+        // ①服务：running/startPending 宽限通过，其余失败；detail = 稳定态值
+        assert!(service_judge(MeshServiceState::Running).ok);
+        assert!(service_judge(MeshServiceState::StartPending).ok);
+        assert_eq!(service_judge(MeshServiceState::Running).detail.as_deref(), Some("running"));
+        assert!(!service_judge(MeshServiceState::NotFound).ok);
+        assert!(!service_judge(MeshServiceState::Disabled).ok);
+        // ②密钥
+        assert!(secret_judge(true).ok);
+        assert!(!secret_judge(false).ok);
+        // ③对端聚合：全通 / 有失败（detail 逐条）/ 空列表
+        let r = peers_judge(&[
+            ("a.com".into(), 7910, "ok"),
+            ("b.com".into(), 11010, "refused"),
+        ]);
+        assert!(!r.ok);
+        assert!(r.detail.as_deref().unwrap().contains("b.com:11010=refused"));
+        assert!(peers_judge(&[("a.com".into(), 1, "ok")]).ok);
+        assert_eq!(peers_judge(&[]).detail.as_deref(), Some("no_peers"));
+        // ④成员：无成员 / 有成员带地址 / 有成员缺地址（T14 DHCP 形态实锤）
+        let remote_ok = PeerBrief {
+            hostname: "phone".into(),
+            ipv4: Some("10.126.126.2".into()),
+            latency_ms: Some(5.7),
+            loss_rate: Some(0.0),
+            is_local: false,
+        };
+        let remote_no_addr = PeerBrief {
+            hostname: "phone".into(),
+            ipv4: None,
+            latency_ms: None,
+            loss_rate: None,
+            is_local: false,
+        };
+        assert_eq!(members_judge(&[]).detail.as_deref(), Some("no_member"));
+        assert!(members_judge(&[remote_ok]).ok);
+        let m = members_judge(&[remote_no_addr]);
+        assert!(!m.ok, "成员无虚拟 IP 应失败（no_addr）");
+        assert!(m.detail.as_deref().unwrap().contains("no_addr=1"));
+        // ⑤本机网卡
+        let addrs = [
+            "10.126.126.1".parse::<Ipv4Addr>().unwrap(),
+            "192.168.3.13".parse().unwrap(),
+        ];
+        assert!(local_nic_judge(&addrs, "10.126.126.1").ok);
+        assert!(!local_nic_judge(&addrs, "10.126.126.99").ok);
+        // ⑥域名链路：对齐+443 通 / 解析不等 / 443 不通 / 解析失败
+        let expect: Ipv4Addr = "10.126.126.1".parse().unwrap();
+        assert!(domain_chain_judge(Some(expect), true, expect).ok);
+        assert!(!domain_chain_judge(Some("1.2.3.4".parse().unwrap()), true, expect).ok);
+        assert!(!domain_chain_judge(Some(expect), false, expect).ok);
+        assert!(!domain_chain_judge(None, true, expect).ok);
+        // 码集合与顺序锁定
+        let items = [
+            service_judge(MeshServiceState::Running),
+            secret_judge(true),
+            peers_judge(&[("a".into(), 1, "ok")]),
+            members_judge(&[]),
+            local_nic_judge(&[], "10.126.126.1"),
+            domain_chain_judge(Some(expect), true, expect),
+        ];
+        let codes: Vec<_> = items.iter().map(|i| i.code).collect();
+        assert_eq!(codes, DIAG_CODES);
+    }
+
+    /// AC8 口径：诊断结果不回显密钥（各 judge 产物对密钥值穿底断言，
+    /// 沿 bin_path 测试口径）
+    #[test]
+    fn diag_details_never_contain_secret() {
+        let marker = "s3cret-value";
+        let items = [
+            service_judge(MeshServiceState::Stopped),
+            secret_judge(false),
+            peers_judge(&[("sh.vomiku.com".into(), 7910, "timeout")]),
+            members_judge(&[]),
+            local_nic_judge(&[], "10.126.126.1"),
+            domain_chain_judge(None, false, "10.126.126.1".parse().unwrap()),
+        ];
+        for i in items {
+            let s = serde_json::to_string(&i).unwrap();
+            assert!(!s.contains(marker), "诊断结果不得含密钥值：{s}");
+        }
     }
 }

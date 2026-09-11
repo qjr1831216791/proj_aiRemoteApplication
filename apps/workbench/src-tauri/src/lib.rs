@@ -111,6 +111,7 @@ pub fn run() {
             commands::mesh_sync_dns,
             commands::disable_legacy_channel,
             commands::clear_frp_key,
+            commands::mesh_diagnostics,
             // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启 + frpc 分发保障
             commands::open_stack_dir,
             commands::check_domain_health_now,

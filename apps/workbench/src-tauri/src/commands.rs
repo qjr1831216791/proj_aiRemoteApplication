@@ -637,6 +637,22 @@ pub async fn clear_frp_key(
     .map_err(|code| lang::shell_error_text(code, lang))
 }
 
+/// 组网诊断（T16，AC13）：六项只读探测——服务态/密钥就绪/逐条对端 TCP 可达/
+/// 成员清单（无虚拟 IP 标记 no_addr）/本机虚拟网卡/域名解析+443 链路。
+/// 探测含子进程与网络 IO（逐对端 3s 超时），spawn_blocking 执行不堵 UI；
+/// 结果为数据摘要，不含密钥（AC8）。
+#[tauri::command]
+pub async fn mesh_diagnostics(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<Vec<crate::mesh::DiagItem>, String> {
+    let snapshot = settings.current();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::mesh::run_diagnostics(&snapshot.mesh, &snapshot.stack_dir, crate::consts::DOMAIN)
+    })
+    .await
+    .map_err(|e| format!("诊断任务失败：{e}"))
+}
+
 /// 穿透启用/停用（AC11）：非穿透通道下仅改开关（守护循环按通道×开关收敛，
 /// 不在此处拉起/停止，避免与守护竞争）
 #[tauri::command]
