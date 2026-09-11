@@ -20,11 +20,11 @@ export type ExitAction = "keep" | "stop";
 
 /** 访问通道（spec 008 二元化）：组网单通道——EasyTier 私有组网。
  * 直连/穿透已退役；旧设置文件的 direct/tunnel 值由 Rust 加载迁移为 mesh */
-export type AccessChannel = "mesh";
+type AccessChannel = "mesh";
 
 /** 组网配置（非敏感部分，spec 007 AC11；密钥只存栈目录 network-secret 文件，
  * 永不进入本结构/设置文件/命令行/日志——AC8） */
-export interface MeshConfig {
+interface MeshConfig {
   networkName: string;
   virtualIp: string;
   virtualCidr: string;
@@ -73,7 +73,7 @@ export type DnsAlignment =
 // ── 组网通道（spec 007）─────────────────────────────────────────────────────
 
 /** 组网服务态（sc query 状态码 + sc qc 启动类型合成；camelCase） */
-export type MeshServiceState =
+type MeshServiceState =
   | "notFound"
   | "running"
   | "startPending"
@@ -84,7 +84,7 @@ export type MeshServiceState =
 export type MeshStateKind = "online" | "connecting" | "offline" | "notConfigured" | "inactive";
 
 /** 组网成员摘要（RPC 输出天然无密钥——AC8/AC4） */
-export interface MeshPeer {
+interface MeshPeer {
   hostname: string;
   ipv4?: string;
   /** 延迟毫秒（本机/未测为空） */
@@ -113,7 +113,7 @@ export interface MeshDiagItem {
 }
 
 /** 域名心跳快照（domain://health 载荷；healthy 已含 2 次防抖，spec 005 AC6） */
-export type HealthKind = "ok" | "dns" | "connect" | "tls" | "timeout" | "status";
+type HealthKind = "ok" | "dns" | "connect" | "tls" | "timeout" | "status";
 
 export interface DomainHealth {
   healthy: boolean;
@@ -196,7 +196,7 @@ export interface ScriptsAvailability {
 export type NetCategory = "public" | "private" | "domain" | "unknown";
 
 /** 一条活动网络 */
-export interface NetworkEntry {
+interface NetworkEntry {
   name: string;
   ifIndex: number;
   category: NetCategory;

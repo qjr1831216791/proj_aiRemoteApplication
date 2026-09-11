@@ -89,6 +89,7 @@ const MESH_BIN_FILES: [&str; 5] = [
 /// 可行性依据（v2.6.4 源码级取证）：core 的 main 无条件先走
 /// `service_dispatcher::start`——被 SCM 拉起即进 win_service_main（从进程
 /// 命令行解析 `-c` 参数）；控制台启动报 ERROR 0x427 被吞、继续走 CLI。
+#[cfg(test)] // 生产不经此函数（binPath 由脚本自建）；仅单测编译锁形态契约
 pub fn service_bin_path(stack_dir: &str) -> String {
     let et = Path::new(stack_dir).join(MESH_DIR);
     let q = |p: PathBuf| format!("\"{}\"", p.display());
@@ -606,6 +607,7 @@ pub struct DiagItem {
 }
 
 /// 六项稳定码（顺序 = 诊断与前端渲染顺序；单测锁定与各 judge 产物一致）
+#[cfg(test)] // 诊断内核以字面量产出各码；此表仅单测编译锁顺序契约
 pub const DIAG_CODES: [&str; 6] = [
     "service",
     "secret",

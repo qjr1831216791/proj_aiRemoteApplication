@@ -215,11 +215,6 @@ impl NetMonitor {
         }
     }
 
-    /// 当前缓存状态（不发探测；None = 尚无成功探测）
-    pub fn current(&self) -> Option<NetStatus> {
-        self.last.lock().expect("网络状态锁中毒").clone()
-    }
-
     /// 启动轮询线程（随进程生命周期；句柄语义与组件轮询器一致）
     pub fn spawn_poller(&self) -> std::thread::JoinHandle<()> {
         let me = self.clone();
@@ -405,9 +400,10 @@ mod tests {
         assert_eq!(sink.emissions.lock().unwrap().len(), 1, "状态未变不发事件");
         assert_eq!(m.refresh().unwrap().alert, false, "切到专用网络（AC2 收敛）");
         assert_eq!(sink.emissions.lock().unwrap().len(), 2, "变化才发声");
-        assert_eq!(m.refresh().unwrap().alert, false, "探测失败保持上次状态（AC4）");
+        let held = m.refresh().unwrap();
+        assert_eq!(held.alert, false, "探测失败保持上次状态（AC4）");
         assert_eq!(sink.emissions.lock().unwrap().len(), 2, "失败不发声");
-        assert_eq!(m.current().unwrap().networks[0].name, "home");
+        assert_eq!(held.networks[0].name, "home", "失败后缓存仍为上次完整状态");
     }
 
     #[test]

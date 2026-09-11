@@ -38,6 +38,8 @@ powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 
 产出双形态产物落 `release/`（已 .gitignore）：`AI-Remote-Workbench_<版本>_x64-setup.exe`（NSIS 安装器，离线可装）与 `AI-Remote-Workbench_<版本>_x64.zip`（便携版，解压即用）；sprint0 脚本以内置副本随包分发，覆盖安装升级保留设置。未签名分发可能触发 SmartScreen，选择"仍要运行"（引导见便携包内 README.txt）。
 
+**远程访问方案**（v0.4.0 起，spec [007](specs/007-mesh-access/spec.md) / [008](specs/008-legacy-channel-removal/spec.md)）：收敛为**局域网 IP 直访**（`http://192.168.x.x:3001`）与 **EasyTier 组网**（成员设备经 `https://ai.jackqi.cn` 访问，域名指向组网虚拟 IP，零公网暴露）双方案；旧穿透（frp/SakuraFrp）与直连（ddns-go）通道已退役，老装机残留可按工作台提示运行内置的 `uninstall-legacy.ps1` 清理。
+
 ## 目录结构
 
 以 [CLAUDE.md](CLAUDE.md) 的"目录结构"一节为唯一来源，此处不重复维护。

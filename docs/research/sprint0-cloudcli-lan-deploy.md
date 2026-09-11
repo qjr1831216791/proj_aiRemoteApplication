@@ -10,7 +10,7 @@
 
 ## 快速路径：脚本化安装（推荐）
 
-部署文档中可自动化的部分已脚本化，位于 `tools/sprint0/`（**新手直接看 [tools/sprint0/README.md](../../../tools/sprint0/README.md) 的上路引导**，本文是细节底册）：
+部署文档中可自动化的部分已脚本化，位于 `tools/sprint0/`（**新手直接看 [tools/sprint0/README.md](../../tools/sprint0/README.md) 的上路引导**，本文是细节底册）：
 2026-09-08 起日常入口是双击 **`tools/sprint0/start-here.bat`** 总控菜单（启动/停止/状态/安装/HTTPS/自启开关全在菜单里），脚本本体收纳于 `tools/sprint0/bin/`：
 
 | 脚本 | 跑在哪 | 覆盖的手工章节 | 用法 |

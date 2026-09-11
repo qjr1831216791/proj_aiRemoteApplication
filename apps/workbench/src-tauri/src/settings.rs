@@ -189,23 +189,6 @@ pub enum LoadOutcome {
     Repaired { settings: Settings, backup_path: PathBuf },
 }
 
-impl LoadOutcome {
-    /// 无论哪种分支，取生效的设置
-    pub fn settings(self) -> Settings {
-        match self {
-            LoadOutcome::Missing(s) | LoadOutcome::Loaded(s) | LoadOutcome::Repaired { settings: s, .. } => s,
-        }
-    }
-
-    /// 损坏分支的留档路径（其余为 None）
-    pub fn repair_backup(&self) -> Option<&Path> {
-        match self {
-            LoadOutcome::Repaired { backup_path, .. } => Some(backup_path),
-            _ => None,
-        }
-    }
-}
-
 /// 实际设置文件路径（%APPDATA%\ai-remote-workbench\settings.json）
 pub fn settings_path() -> PathBuf {
     let base = std::env::var_os("APPDATA")

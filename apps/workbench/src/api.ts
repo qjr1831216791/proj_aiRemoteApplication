@@ -36,7 +36,6 @@ export const api = {
   startAll: () => invoke<void>("start_all"),
   stopAll: () => invoke<void>("stop_all"),
   startOne: (id: ComponentId) => invoke<void>("start_one", { id }),
-  stopOne: (id: ComponentId) => invoke<void>("stop_one", { id }),
 
   openExternal: (kind: ExternalKind) => invoke<void>("open_external", { kind }),
   runTool: (kind: ToolKind, opts: ToolOpts) => invoke<void>("run_tool", { kind, opts }),

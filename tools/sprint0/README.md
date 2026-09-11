@@ -4,7 +4,7 @@
 >
 > 背景：这是 [remote-solutions.md](../../docs/research/remote-solutions.md) 调研决策（D0 先试用）的落地工具；
 > 完整部署文档：[sprint0-cloudcli-lan-deploy.md](../../docs/research/sprint0-cloudcli-lan-deploy.md)（遇事不决看它的 §6 排障表）。
-> 适用范围：**局域网**（所有设备连同一个 WiFi/路由器）；`https://ai.jackqi.cn` 走域名证书，公网版后续另出。
+> 适用范围：**局域网直访**（所有设备连同一个 WiFi/路由器，`http://192.168.x.x:3001`）与 **EasyTier 组网**（跨网遥控：成员设备加入同一网络后经 `https://ai.jackqi.cn` 访问，spec 007/008）——宿主机不向公网暴露任何入站端口。
 
 ---
 
@@ -47,7 +47,7 @@
 2. **记下结尾打印的"客户端访问地址"**，形如 `http://192.168.x.x:3001`（这就是给其他设备用的）。
 3. **浏览器打开 `http://localhost:3001` → 设置 → 开启需要的工具**（默认全禁用是它的安全设计；建议先开文件浏览/编辑 + Git）。
 
-**HTTPS 版（推荐，手机可装成 App）**：需要一个已实名域名（当前 `ai.jackqi.cn`）。依次：双击 `bin\install-https.bat`（下载 Caddy、生成 Caddyfile、跑环境配置）→ 按脚本结尾提示写入腾讯云密钥（`set-tencent-key.ps1`）→ 菜单 1（启动整栈）→ 手机访问 `https://ai.jackqi.cn`。原理与排障见[部署文档 §9（HTTPS/域名版）](../../docs/research/sprint0-cloudcli-lan-deploy.md)。
+**HTTPS 版（推荐，手机可装成 App）**：需要一个已实名域名（当前 `ai.jackqi.cn`）。依次：双击 `bin\install-https.bat`（下载 Caddy、生成 Caddyfile、跑环境配置）→ 按脚本结尾提示写入腾讯云密钥（`set-tencent-key.ps1`）→ 菜单 1（启动整栈）→ 手机加入组网后访问 `https://ai.jackqi.cn`（域名 A 记录指向组网虚拟 IP，非成员打不开是有意的安全设计）。原理与排障见[部署文档 §9（HTTPS/域名版）](../../docs/research/sprint0-cloudcli-lan-deploy.md)。
 
 **开机常驻（可选但推荐）**——双击 `bin\autostart-on.bat` 开启，`bin\autostart-off.bat` 关闭：
 
@@ -59,14 +59,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 ## 客户端上路（2 步）
 
 1. 把整个 `sprint0/` 文件夹拷到客户端电脑，**双击 `bin\install-client.bat`**：
-   - 首次运行会提示输入服务端地址（推荐直接填 `https://ai.jackqi.cn`），输入回车即可；
+   - 首次运行会提示输入服务端地址（组网成员填 `https://ai.jackqi.cn`；纯局域网填 `http://192.168.x.x:3001`），输入回车即可；
    - 连接成功后自动记住（存于脚本同目录 `.last-server-url`），之后每次双击**直接回车**确认；
    - 想预填固定地址：右键编辑 `bin\install-client.bat`，顶部 `set "SERVER_URL=https://ai.jackqi.cn"`。
 2. 脚本会：验证服务端可达（不通会按顺序告诉你查什么）→ 桌面生成"AI 远程工作台"快捷方式 → 自动打开浏览器。
 
 ## 手机上路（0 步）
 
-同 WiFi 下浏览器打开 **`https://ai.jackqi.cn`**（推荐，证书可信且可"添加到主屏幕"装成独立 App）；没有域名环境时用 `http://192.168.x.x:3001` 兜底。
+- **局域网**：同 WiFi 浏览器打开 `http://192.168.x.x:3001`（服务端 install-server 结尾打印的地址）。
+- **跨网**：手机安装 EasyTier 客户端并加入组网（同网络名/密钥；工作台装机向导的组网分支有成员指引）后打开 **`https://ai.jackqi.cn`**——证书可信，可"添加到主屏幕"装成独立 App。
 
 ## 文件清单（谁在哪台机器用）
 
@@ -90,11 +91,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 | `start-server.bat` / `.ps1` | 服务端 | 手动启动服务（双击；打印本机/移动端地址；已在运行则直接开浏览器） |
 | `stop-server.bat` / `.ps1` | 服务端 | 停止后台服务（双击；前台窗口直接 Ctrl+C 即可） |
 | `run-server-hidden.ps1` | 服务端 | 后台静默启动（自启任务/hook 内部调用，一般不直接碰；地址记入日志） |
+| `run-caddy-hidden.ps1` | 服务端 | Caddy 自启任务的实际拉起脚本：注入栈 `.env` 凭证后前台常驻 run（一般不直接碰，spec 006） |
+| `set-tencent-key.ps1` | 服务端 | 腾讯云密钥写入栈 `.env`（HTTPS 证书签发与组网 A 记录维护共用；输入不回显，spec 006/008） |
 | `setup-autostart.ps1` | 服务端 | **开机自启开关**：启用/移除 CloudCLI + Caddy 两个登录自启（`-Remove` 全关） |
 | `autostart-on.bat` / `autostart-off.bat` | 服务端 | 双击版自启开关：双击 on 启用、双击 off 关闭（免命令行） |
 | `enable-https.bat` / `.ps1` | 服务端 | HTTPS 一次性配置：防火墙 443 + 网络改专用 + hosts 钉定 DNS API 域名（`install-https` 会自动代跑） |
 | `install-https.bat` / `.ps1` | 服务端 | **HTTPS 栈装机**（一次）：下载 caddy.exe（caddyserver.com 插件构建；直连失败用 `-CaddyZip` 指手动下载的文件，升级加 `-Update`）+ 生成 Caddyfile + 跑 enable-https |
-| `uninstall-legacy.ps1` | 服务端 | **旧通道一次性卸载**（spec 008）：清 frp / ddns-go 残留进程、自启任务、文件与 .env 密钥行（前置闸门：007 验收签收后才可在真机执行） |
+| `mesh-service.ps1` | 服务端 | **EasyTier 组网服务管理**（spec 007）：install / uninstall / start / stop / restart / status 六动作（变更动作需管理员，status 只读免提权） |
+| `set-mesh-secret.ps1` | 服务端 | 组网密钥写入 `easytier\network-secret`（spec 007；成员设备加入同一网络时输入相同密钥，输入不回显） |
+| `uninstall-legacy.ps1` | 服务端 | **旧通道一次性卸载**（spec 008）：清 frp / ddns-go 残留进程、自启任务、文件与 .env 密钥行（前置闸门：组网服务 EasyTierMesh 在线——卸掉旧通道前组网是唯一远程兜底；`-Force` 仅供演练） |
 
 ## 常见问题
 

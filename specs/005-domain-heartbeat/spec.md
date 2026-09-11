@@ -1,6 +1,6 @@
 # 005-domain-heartbeat · 需求规格（spec）
 
-> 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
+> 导航：返回 [MOC](../MOC.md)（本 Spec 未另立 plan.md / tasks.md 文档）
 
 - **状态**: done <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 3（需求方两次催办，自 004 实现期提前并入；原排 Sprint 4）

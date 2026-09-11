@@ -24,8 +24,6 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub enum Script {
     /// CloudCLI 拉起（端口已 Listen 时直接 exit 0）
     RunServerHidden,
-    /// CloudCLI 停止
-    StopServer,
     /// 服务自启任务开/关（含 -Remove）
     SetupAutostart,
     /// CloudCLI 安装/重装（交互式，需管理员）
@@ -61,7 +59,6 @@ impl Script {
     pub fn file_name(&self) -> &'static str {
         match self {
             Script::RunServerHidden => "run-server-hidden.ps1",
-            Script::StopServer => "stop-server.ps1",
             Script::SetupAutostart => "setup-autostart.ps1",
             Script::InstallServer => "install-server.ps1",
             Script::InstallHttps => "install-https.ps1",
@@ -75,7 +72,7 @@ impl Script {
 
     pub fn visibility(&self) -> Visibility {
         match self {
-            Script::RunServerHidden | Script::StopServer | Script::SetupAutostart => {
+            Script::RunServerHidden | Script::SetupAutostart => {
                 Visibility::Hidden
             }
             Script::InstallServer | Script::InstallHttps | Script::EnableHttps
@@ -92,7 +89,6 @@ impl Script {
     pub fn timeout(&self) -> Duration {
         match self {
             Script::RunServerHidden => Duration::from_secs(15),
-            Script::StopServer => Duration::from_secs(30),
             Script::SetupAutostart => Duration::from_secs(60),
             Script::InstallServer => Duration::from_secs(900),
             Script::InstallHttps => Duration::from_secs(1800),
@@ -271,14 +267,6 @@ pub fn hidden_script_spec(
 /// run-server-hidden.ps1：CloudCLI 拉起（-Port 显式化）
 pub fn run_server_hidden(dir: &Path, lang: Lang, log_dir: &Path) -> CommandSpec {
     let mut spec = hidden_script_spec(dir, Script::RunServerHidden, lang, log_dir, &[]);
-    spec.args.push("-Port".into());
-    spec.args.push(CLOUDCLI_PORT.to_string());
-    spec
-}
-
-/// stop-server.ps1：CloudCLI 停止
-pub fn stop_server(dir: &Path, lang: Lang, log_dir: &Path) -> CommandSpec {
-    let mut spec = hidden_script_spec(dir, Script::StopServer, lang, log_dir, &[]);
     spec.args.push("-Port".into());
     spec.args.push(CLOUDCLI_PORT.to_string());
     spec
@@ -525,8 +513,6 @@ pub enum ScriptOutcome {
     Unavailable(&'static str),
     /// 其他非零退出码
     Failed(i32),
-    /// 执行超时（进程已被杀）
-    TimedOut,
 }
 
 /// 退出码 → 语义（与 tools/sprint0 实际退出码对齐）
@@ -539,8 +525,6 @@ pub fn interpret_exit(script: Script, code: i32) -> ScriptOutcome {
             Script::RunServerHidden => {
                 ScriptOutcome::Unavailable("cloudcli 不可用（未安装或不在 PATH）")
             }
-            // stop-server.ps1：taskkill 后端口仍有监听
-            Script::StopServer => ScriptOutcome::Unavailable("端口仍被占用（taskkill 后仍有监听）"),
             // setup-autostart.ps1：栈目录缺少 caddy.exe（ddns-go 已随直连通道退役，spec 008）
             Script::SetupAutostart => ScriptOutcome::Unavailable("栈目录缺少 caddy.exe"),
             // 安装/配置类脚本 1 无统一前置语义 → 一般失败（UI 引导看日志）
@@ -751,7 +735,6 @@ mod tests {
         assert_eq!(Script::SetupAutostart.timeout(), Duration::from_secs(60));
         assert_eq!(Script::InstallHttps.visibility(), Visibility::Elevated);
         assert_eq!(Script::InstallClient.visibility(), Visibility::VisibleInteractive);
-        assert_eq!(Script::StopServer.visibility(), Visibility::Hidden);
         assert_eq!(Script::EnableHttps.visibility(), Visibility::Elevated);
     }
 
@@ -798,13 +781,9 @@ mod tests {
     }
 
     #[test]
-    fn stop_server_and_setup_autostart_specs() {
+    fn setup_autostart_specs() {
         let dir = script_dir("build2");
         let logs = dir.join("logs");
-        let stop = stop_server(&dir, Lang::En, &logs);
-        assert!(stop.args.contains(&"-Port".to_string()) && stop.args.contains(&"3001".to_string()));
-        assert!(stop.command_line().contains("-Lang en"), "{}", stop.command_line());
-        assert_eq!(stop.timeout, Duration::from_secs(30));
 
         let enable = setup_autostart(&dir, Lang::Zh, &logs, false, DEFAULT_STACK_DIR);
         assert!(enable.command_line().contains("-StackDir D:\\Software\\cloudcli-https"), "{}", enable.command_line());
@@ -941,8 +920,6 @@ mod tests {
         assert_eq!(interpret_exit(Script::RunServerHidden, 0), Success);
         assert_eq!(interpret_exit(Script::RunServerHidden, 1), Unavailable("cloudcli 不可用（未安装或不在 PATH）"));
         assert_eq!(interpret_exit(Script::RunServerHidden, 2), Failed(2));
-        // stop-server：1=杀完端口仍被占
-        assert_eq!(interpret_exit(Script::StopServer, 1), Unavailable("端口仍被占用（taskkill 后仍有监听）"));
         // setup-autostart：1=栈目录缺 caddy.exe（ddns-go 已退役，spec 008）
         assert_eq!(interpret_exit(Script::SetupAutostart, 1), Unavailable("栈目录缺少 caddy.exe"));
         // 其他脚本 1 归一般失败

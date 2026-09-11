@@ -8,7 +8,7 @@
 //!   置 starting → 就绪轮询（2s 间隔）至 running；60s 未就绪 → failed 并附
 //!   日志尾部（AC1：CloudCLI 为 %TEMP%\cloudcli.log）
 //! - 在途跟踪（`InFlightTracker`）：同组件启动进行中拒绝重复派发；提供
-//!   取消句柄/等待接口（spec §4.4：停止先等待或取消在途启动，T9/T10 消费）
+//!   取消句柄/等待接口（spec §4.4：停止先等待或取消在途启动，stop_one 消费）
 //! - 状态事件：变化时经 `StatusEventSink` 发 `status://changed`
 //!   （ComponentStatus[]，schema 按 plan §4）；轮询器前台 2s 全组件刷新（AC4）
 //!
@@ -26,7 +26,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// 状态事件名（plan §5.1：payload = ComponentStatus[]）
@@ -285,22 +284,6 @@ impl OrchestratorConfig {
     }
 }
 
-/// 轮询器句柄（shutdown 停止后台刷新线程）
-pub struct PollerHandle {
-    stop: Arc<AtomicBool>,
-    join: Option<JoinHandle<()>>,
-}
-
-impl PollerHandle {
-    /// 停止轮询并等待线程退出
-    pub fn shutdown(mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(j) = self.join.take() {
-            let _ = j.join();
-        }
-    }
-}
-
 /// 编排器：启动侧状态机 + 停止管线接入 + 状态轮询 + 事件发射
 /// （Clone 为廉价句柄，全 Arc 字段）
 #[derive(Clone)]
@@ -399,12 +382,14 @@ impl Orchestrator {
         }
     }
 
-    /// 手动取消在途启动（T10 收摊消费的取消句柄；无在途返回 false）
+    /// 手动取消在途启动（测试同步原语：生产停止路径经 stop_one 内联取消/等待）
+    #[cfg(test)]
     pub fn cancel_start(&self, id: ComponentId) -> bool {
         self.tracker.cancel(id)
     }
 
-    /// 等待在途启动结束（T10 收摊消费的等待接口）
+    /// 等待在途启动结束（测试同步原语：生产停止路径经 stop_one 内联取消/等待）
+    #[cfg(test)]
     pub fn wait_start_idle(&self, id: ComponentId, timeout: Duration) -> bool {
         self.tracker.wait_idle(id, timeout)
     }
@@ -433,21 +418,16 @@ impl Orchestrator {
         }
     }
 
-    /// 启动前台轮询线程（2s 周期全组件刷新；句柄 shutdown 停止）
-    pub fn spawn_poller(&self) -> PollerHandle {
+    /// 启动前台轮询线程（2s 周期全组件刷新；线程随进程退出而止）
+    pub fn spawn_poller(&self) {
         let me = self.clone();
-        let stop = Arc::new(AtomicBool::new(false));
-        let flag = stop.clone();
-        let join = std::thread::Builder::new()
+        std::thread::Builder::new()
             .name("wb-status-poller".into())
-            .spawn(move || {
-                while !flag.load(Ordering::Relaxed) {
-                    me.refresh_all();
-                    std::thread::sleep(me.cfg.poll_interval);
-                }
+            .spawn(move || loop {
+                me.refresh_all();
+                std::thread::sleep(me.cfg.poll_interval);
             })
             .expect("轮询线程创建失败");
-        PollerHandle { stop, join: Some(join) }
     }
 
     /// 单组件停止（AC2）：先等待/取消在途启动（spec §4.4 竞态消除），再执行
@@ -746,8 +726,8 @@ fn outcome_detail(outcome: &ScriptOutcome, lang: Lang) -> String {
     match outcome {
         ScriptOutcome::Unavailable(_) => texts.start_failed(&texts.cloudcli_unavailable()),
         ScriptOutcome::Failed(code) => texts.script_failed(*code),
-        // Success/TimedOut 在调用处分派，不会进入此处
-        ScriptOutcome::Success | ScriptOutcome::TimedOut => String::new(),
+        // Success 在调用处分派，不会进入此处
+        ScriptOutcome::Success => String::new(),
     }
 }
 
@@ -1563,7 +1543,7 @@ mod tests {
     }
 
     #[test]
-    fn poller_refreshes_periodically_until_shutdown() {
+    fn poller_refreshes_periodically() {
         let probe = Arc::new(ScriptedProbe::new());
         let exec = Arc::new(MockExecutor::new());
         let mut cfg = test_cfg();
@@ -1579,14 +1559,11 @@ mod tests {
             logs,
         );
 
-        let handle = orch.spawn_poller();
+        // 轮询线程随进程退出而止（无停止句柄，与生产装配一致）；断言周期性刷新
+        orch.spawn_poller();
         std::thread::sleep(Duration::from_millis(150));
-        handle.shutdown();
         // 每周期 2 次 probe（2 组件），150ms@10ms 至少完成多个周期
         assert!(probe.probe_calls() >= 4, "轮询应周期执行：{} 次", probe.probe_calls());
-        let after = probe.probe_calls();
-        std::thread::sleep(Duration::from_millis(40));
-        assert_eq!(probe.probe_calls(), after, "shutdown 后不应再刷新");
     }
 
     #[test]
