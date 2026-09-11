@@ -245,7 +245,7 @@ mod tests {
     fn debounce_threshold_two_failures() {
         // AC6：1 次失败仍是健康（防抖）；连续 2 次才判不健康
         let mut failures = 0;
-        let mut healthy = true;
+        let mut healthy;
         for outcome in ["Ok", "Status", "Connect"] {
             if outcome == "Ok" {
                 failures = 0;

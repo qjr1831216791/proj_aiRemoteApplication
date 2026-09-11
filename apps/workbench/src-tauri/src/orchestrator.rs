@@ -755,11 +755,6 @@ pub(crate) mod test_support {
         pub fn snapshot(&self) -> Vec<String> {
             self.entries.lock().unwrap().clone()
         }
-
-        /// 首个包含 needle 的条目序号（顺序断言用）
-        pub fn position(&self, needle: &str) -> Option<usize> {
-            self.snapshot().iter().position(|e| e.contains(needle))
-        }
     }
 
     /// 可编剧本 mock 探测：启动侧按 id 队列、停止侧按端口队列；
@@ -771,7 +766,6 @@ pub(crate) mod test_support {
         holders: Mutex<HashMap<u16, VecDeque<PortHolders>>>,
         sticky_holders: Mutex<HashMap<u16, PortHolders>>,
         probe_calls: AtomicUsize,
-        port_calls: AtomicUsize,
     }
 
     impl ScriptedProbe {
@@ -783,7 +777,6 @@ pub(crate) mod test_support {
                 holders: Mutex::new(HashMap::new()),
                 sticky_holders: Mutex::new(HashMap::new()),
                 probe_calls: AtomicUsize::new(0),
-                port_calls: AtomicUsize::new(0),
             }
         }
 
@@ -819,10 +812,6 @@ pub(crate) mod test_support {
             self.probe_calls.load(Ordering::SeqCst)
         }
 
-        pub fn port_calls(&self) -> usize {
-            self.port_calls.load(Ordering::SeqCst)
-        }
-
         /// 共享调用日志（与执行器/进程 mock 联合断言顺序）
         pub fn log(&self) -> Arc<CallLog> {
             self.log.clone()
@@ -831,7 +820,6 @@ pub(crate) mod test_support {
 
     impl StatusProbe for ScriptedProbe {
         fn port_holders(&self, port: u16) -> PortHolders {
-            self.port_calls.fetch_add(1, Ordering::SeqCst);
             self.log.record(format!("probe:port={port}"));
             let popped = self
                 .holders
@@ -1117,25 +1105,6 @@ mod tests {
 
     fn state_of(orch: &Orchestrator, id: ComponentId) -> ComponentStatus {
         orch.statuses().into_iter().find(|s| s.id == id).unwrap()
-    }
-
-    /// 轮询等待组件状态满足谓词（消除跨线程事件时序竞态：
-    /// start_one 为线程化，B 组件的首个事件批次可能先于 A 组件置 Starting
-    /// 发出、携带 A 的旧状态；断言 A 的时间线前须先等 A 离开初态）
-    fn wait_for_state(
-        orch: &Orchestrator,
-        id: ComponentId,
-        pred: impl Fn(ComponentState) -> bool,
-        timeout: Duration,
-    ) -> bool {
-        let deadline = std::time::Instant::now() + timeout;
-        while std::time::Instant::now() < deadline {
-            if pred(state_of(orch, id).state) {
-                return true;
-            }
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        false
     }
 
     // ── 常量与 schema ───────────────────────────────────────────────────
