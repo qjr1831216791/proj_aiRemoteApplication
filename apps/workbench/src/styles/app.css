@@ -528,6 +528,31 @@
   }
 }
 
+/* ── 成员入网配置折叠区（spec 009 US4；折叠交互复用 tools__toggle 系）── */
+.mesh-member__title {
+  font-size: var(--fs-md);
+  color: var(--c-text-secondary);
+}
+
+.mesh-member__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 var(--sp-2);
+}
+
+.mesh-member__pre {
+  margin: 0;
+  padding: var(--sp-3);
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
 .tool {
   border: 1px solid var(--c-border);
   border-radius: var(--r-sm);

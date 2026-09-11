@@ -344,6 +344,18 @@ pub async fn mesh_diagnostics(
     .map_err(|e| format!("诊断任务失败：{e}"))
 }
 
+/// 成员入网配置（spec 009 US4/AC9~AC11）：从已保存组网设置渲染 EasyTier 官方
+/// 最小口径 TOML 文本（关键字段带 App 输入项行注释；network_secret 为占位符
+/// + set-mesh-secret.ps1 指引——真实密钥永不进 APP 界面，spec 007 AC8 延续）。
+/// 纯内存拼装无 IO；网络名/对端未配置 → Err 提示先完成组网设置。
+#[tauri::command]
+pub async fn mesh_member_config(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<String, String> {
+    let cfg = settings.current().mesh;
+    crate::mesh::render_member_config(&cfg)
+}
+
 /// DNS 对齐检测（spec 008：组网单通道，AC8：A=虚拟 IP）：权威 NS 上的
 /// CNAME/A 实况 → 对齐结论。残留 CNAME 判旁路暴露面（MismatchedCname），
 /// A 值比对虚拟 IP（judge_dns_mesh 自 tunnel.rs 迁入 dns_api，spec 008 D2）。

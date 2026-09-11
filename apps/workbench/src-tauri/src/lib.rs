@@ -106,6 +106,7 @@ pub fn run() {
             commands::mesh_uninstall_service,
             commands::mesh_sync_dns,
             commands::mesh_diagnostics,
+            commands::mesh_member_config,
             // spec 004/005：栈目录打开 + 域名即时探测（通道体检）
             commands::open_stack_dir,
             commands::check_domain_health_now,

@@ -5,6 +5,8 @@
  *   在线判定在 Rust 侧排除本机项）
  * - 常驻操作（向导组网分支同款能力下沉）：写入组网密钥 / 安装·刷新服务 /
  *   同步 DNS（CNAME 全删 + A → 虚拟 IP）——装机后日常维护不再依赖向导
+ * - 成员入网配置（spec 009 US4）：折叠区展示官方 TOML 对照清单（密钥占位
+ *   符 + 指引文案），移动端 App 逐项输入避免漏项错配
  * - DNS 指引：常态轮询权威检测，对齐即消失；判 A=虚拟 IP，
  *   CNAME 残留按旁路暴露面提示（spec 007 体检口径延续）
  * - 通道体检：DNS / 网络归类（组网不适用）/ 组网客户端 / 本机组件 / 域名全链路
@@ -63,6 +65,23 @@ export function MeshCard(props: MeshCardProps) {
   const [checking, setChecking] = useState(false);
   // 在途动作键（防重复点击：应用/装服务/密钥/同步 DNS）
   const [busy, setBusy] = useState<string | null>(null);
+
+  // 成员入网配置（spec 009 US4）：折叠区，每次展开都重新拉取
+  //（组网设置可能已变，旧缓存无意义；命令纯内存拼装，开销可忽略）
+  const [memberCfgOpen, setMemberCfgOpen] = useState(false);
+  const [memberCfg, setMemberCfg] = useState<string | null>(null);
+  const [memberCfgErr, setMemberCfgErr] = useState<string | null>(null);
+  const openMemberCfg = (open: boolean) => {
+    setMemberCfgOpen(open);
+    if (open) {
+      setMemberCfg(null);
+      setMemberCfgErr(null);
+      api
+        .meshMemberConfig()
+        .then(setMemberCfg)
+        .catch((e) => setMemberCfgErr(String(e)));
+    }
+  };
 
   /** 脚本/命令派发统一收口（沿向导 dispatch 模式） */
   const dispatch = async (key: string, action: () => Promise<unknown>, doneHint = false) => {
@@ -293,6 +312,34 @@ export function MeshCard(props: MeshCardProps) {
         </button>
       </div>
       <p class="muted">{t("mesh.syncDnsHint", lang)}</p>
+
+      {/* 成员入网配置（spec 009 US4）：折叠区默认收起，展开拉取；
+          密钥为占位符 + 指引文案，真实密钥不出现（spec 007 AC8 延续） */}
+      <button
+        class="tools__toggle"
+        aria-expanded={memberCfgOpen}
+        onClick={() => openMemberCfg(!memberCfgOpen)}
+      >
+        <h3 class="card__title mesh-member__title">{t("mesh.memberConfig", lang)}</h3>
+        <span class={`tools__chev${memberCfgOpen ? " tools__chev--open" : ""}`}>▸</span>
+      </button>
+      {memberCfgOpen ? (
+        <div class="tools__body">
+          <p class="muted">{t("mesh.memberConfigHint", lang)}</p>
+          {memberCfgErr ? (
+            <p class="notice notice--warn">{memberCfgErr}</p>
+          ) : memberCfg === null ? (
+            <p class="muted">{t("common.loading", lang)}</p>
+          ) : (
+            <>
+              <div class="mesh-member__actions">
+                <CopyButton text={memberCfg} lang={lang} onToast={onToast} />
+              </div>
+              <pre class="mesh-member__pre">{memberCfg}</pre>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {/* 通道体检（复用 DNS/归类/组网/组件/全链路检查知识） */}
       <div class="checkup__head">

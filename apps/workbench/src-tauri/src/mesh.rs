@@ -864,15 +864,66 @@ fn render_config(cfg: &MeshConfig, secret: &str) -> Result<String, String> {
     toml::to_string_pretty(&doc).map_err(|e| format!("config.toml 渲染失败：{e}"))
 }
 
-/// 渲染入口（AC9 新语义：密钥就绪强制）。network_secret 缺失/为空 → 拒绝渲染
-/// 并给脚本指引；配置字段非法 → 拒绝（AC11 校验）。secret 仅进入返回的文件
-/// 内容（AC8：文件注入、命令行无密钥——binPath 由 T7 构造并断言）。
+/// 渲染入口（AC9 新语义：密钥就绪强制；spec 009 AC1~AC4：网段冲突阻断）。
+/// network_secret 缺失/为空 → 拒绝渲染并给脚本指引；配置字段非法 → 拒绝
+/// （AC11 校验）；虚拟网段与本机物理网卡网段重叠 → 拒绝（spec 009 AC1）。
+/// secret 仅进入返回的文件内容（AC8：文件注入、命令行无密钥——binPath 由
+/// T7 构造并断言）。
+///
+/// 结构性事实（spec 009 AC4）：设置卡与装机向导组网分支的保存/应用入口
+/// 同走 `mesh_apply_config` / `mesh_install_service` → prepare_stack →
+/// 本函数——网段检测在此单点接线，向导不可能绕过（不允许出现第二入口）。
 pub fn render_config_checked(cfg: &MeshConfig, secret: &str) -> Result<String, String> {
+    render_config_checked_with_nics(cfg, secret, &local_ipv4_addrs())
+}
+
+/// 渲染 + 网段冲突检测内核（spec 009 T2 接线）：physical 为本机 IPv4 列表，
+/// 生产侧 [`render_config_checked`] 传 [`local_ipv4_addrs`]，单测注入固定
+/// 列表覆盖 AC1~AC3 三态（plan §6：接线层测试，不依赖宿主机网卡实况）。
+///
+/// 检测时点在 [`validate_mesh_config`] 之后（格式校验先行、网段检测殿后）；
+/// 喂入前剔除 ==virtual_ip 的地址——EasyTier 服务端 TUN 的静态 IP 即
+/// virtual_ip（dhcp=false），不剔除则判据①必然命中自身假冲突（plan §3
+/// 关键决策；不依赖网卡名过滤——TUN 适配器名无 SLA）。
+///
+/// fail-open（AC3）：physical 为空（枚举失败/无活动网卡）不阻断保存，
+/// 跳过原因记日志可观察（不静默吞掉）。
+fn render_config_checked_with_nics(
+    cfg: &MeshConfig,
+    secret: &str,
+    physical: &[Ipv4Addr],
+) -> Result<String, String> {
     let secret = secret.trim();
     if secret.is_empty() {
         return Err("组网密钥未配置：请先运行 set-mesh-secret.ps1 写入密钥（设置区有入口指引）".into());
     }
     validate_mesh_config(cfg)?;
+    // 网段冲突检测（spec 009 AC1：重叠 → 阻断渲染，config 不落盘、服务不重启）
+    if physical.is_empty() {
+        // fail-open：枚举失败/无活动网卡放行保存（不把无网卡环境锁死在设置外），
+        // 跳过这一事实记日志可观察（AC3「不静默吞掉」）
+        log::warn!("网卡信息不可得，跳过网段冲突检测（fail-open，spec 009 AC3）");
+    } else {
+        // validate 已过，virtual_ip 必然可解析（防御性 expect 自证前置不变式）
+        let virtual_ip: Ipv4Addr = cfg
+            .virtual_ip
+            .parse()
+            .expect("validate_mesh_config 已保证 virtual_ip 可解析");
+        let physical_only: Vec<Ipv4Addr> =
+            physical.iter().copied().filter(|&ip| ip != virtual_ip).collect();
+        let conflicts = detect_subnet_conflict(&physical_only, virtual_ip, &cfg.virtual_cidr);
+        if !conflicts.is_empty() {
+            let list = conflicts
+                .iter()
+                .map(|ip| ip.to_string())
+                .collect::<Vec<_>>()
+                .join("、");
+            return Err(format!(
+                "虚拟网段 {} 与本机物理网卡网段重叠（{}），请更换虚拟网段",
+                cfg.virtual_cidr, list
+            ));
+        }
+    }
     render_config(cfg, secret)
 }
 
@@ -882,6 +933,49 @@ pub fn read_network_secret(stack_dir: &str) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let trimmed = content.trim().to_string();
     (!trimmed.is_empty()).then_some(trimmed)
+}
+
+// ── 成员入网配置渲染（spec 009 US4：AC9~AC11）──────────────────────────────
+
+/// 成员入网配置的 network_secret 占位符（真实密钥绝不进本文本/任何 APP 界面
+/// ——spec 007 AC8 延续；spec 009 非目标：不做携带密钥编码的分享链接/二维码）
+const MEMBER_SECRET_PLACEHOLDER: &str = "<你的组网密钥>";
+
+/// 渲染成员入网配置（spec 009 AC9）：EasyTier 官方最小口径 TOML——
+/// `[network_identity]` + `[[peer]]`，从已保存组网设置拼装，每个已配置对端
+/// 一条。手工 `format!` 模板而非 serde 序列化：关键字段须带行注释标注移动端
+/// App 的对应输入项（plan §2）。成员虚拟 IP 不进本文件：本栈服务端为静态
+/// 形态（dhcp=false），成员端按向导指引手动填静态地址。
+///
+/// **network_secret 恒为占位符**：本函数不读也不接收真实密钥（密钥行注释
+/// 指引填入运行 set-mesh-secret.ps1 时设定的值，AC10）。网络名/对端未
+/// 配置 → Err 提示先完成组网设置（AC9 前置）。
+pub fn render_member_config(cfg: &MeshConfig) -> Result<String, String> {
+    let name = cfg.network_name.trim();
+    if name.is_empty() || cfg.peers.is_empty() {
+        return Err("组网设置未完成：请先在设置页完成网络名与对端节点配置，再查看成员入网配置".into());
+    }
+    // TOML 基本串转义（值由用户输入，防引号/反斜杠破坏 TOML 结构）
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    let mut out = String::new();
+    out.push_str("# ===== EasyTier 成员入网配置（对照移动端 App 逐项输入）=====\n");
+    out.push_str("# 成员设备安装 EasyTier 客户端后，按各字段旁的注释在 App 内逐项输入即可入网。\n");
+    out.push_str("[network_identity]\n");
+    out.push_str(&format!(
+        "network_name = \"{}\"  # App 内「网络名称」\n",
+        esc(name)
+    ));
+    out.push_str(&format!(
+        "network_secret = \"{MEMBER_SECRET_PLACEHOLDER}\"  # App 内「网络密码」——填入运行 set-mesh-secret.ps1 时设定的密钥\n"
+    ));
+    for uri in &cfg.peers {
+        out.push_str("\n[[peer]]\n");
+        out.push_str(&format!(
+            "uri = \"{}\"  # App 内「节点」——每个已配置对端一条，任填其一\n",
+            esc(uri)
+        ));
+    }
+    Ok(out)
 }
 
 // ── MeshConfig 校验（AC11：非空/IP/网段/peers URI）─────────────────────────
@@ -1087,11 +1181,16 @@ mod tests {
     }
 
     /// 渲染产物：实测字段形态齐全（hostname/ipv4/dhcp/listeners/[network_identity]/
-    /// [[peer]] 逐条），secret 进入文件内容（AC8：文件注入）
+    /// [[peer]] 逐条），secret 进入文件内容（AC8：文件注入）。
+    /// 网段检测自 spec 009 接线后依赖网卡实况，此处注入固定不冲突列表保确定性
     #[test]
     fn rendered_config_contains_all_fields() {
-        let toml = render_config_checked(&sample_config(), "  s3cret-value  \n")
-            .expect("合法配置应渲染成功");
+        let toml = render_config_checked_with_nics(
+            &sample_config(),
+            "  s3cret-value  \n",
+            &[ip("192.168.3.13")],
+        )
+        .expect("合法配置应渲染成功");
         // secret 前后空白被规整后注入
         assert!(toml.contains("network_secret = \"s3cret-value\""), "{toml}");
         assert!(toml.contains("network_name = \"office-net\""), "{toml}");
@@ -1110,7 +1209,9 @@ mod tests {
     /// AC9 新语义落点；升级路径见 plan §4.3 注释）
     #[test]
     fn rendered_config_has_no_secure_mode_section() {
-        let toml = render_config_checked(&sample_config(), "s3cret").unwrap();
+        let toml =
+            render_config_checked_with_nics(&sample_config(), "s3cret", &[ip("192.168.3.13")])
+                .unwrap();
         assert!(!toml.contains("secure_mode"), "legacy 形态不应含 secure_mode：{toml}");
     }
 
@@ -1200,6 +1301,115 @@ mod tests {
         assert!(detect_subnet_conflict(&[ip("192.168.3.13")], vip, "10.126.126.0/24").is_empty());
     }
 
+    // ── spec 009 T1/T2：网段冲突阻断接线（render_config_checked 三态）─────
+
+    /// AC1：物理 IP 与虚拟网段重叠（段内 / 同私有段前缀）→ 拒绝渲染，
+    /// 错误文案含虚拟网段与冲突 IP（拒绝先于写盘——重载后仍为旧值）
+    #[test]
+    fn checked_render_rejects_overlapping_physical_subnet() {
+        // 判据①命中：物理 IP 落在虚拟 CIDR 内（192.168 不冲突，混排验证筛选）
+        let err = render_config_checked_with_nics(
+            &sample_config(),
+            "s3cret",
+            &[ip("192.168.3.13"), ip("10.126.126.5")],
+        )
+        .expect_err("物理 IP 落在虚拟段内应拒绝");
+        assert!(err.contains("10.126.126.0/24"), "文案应含虚拟网段：{err}");
+        assert!(err.contains("10.126.126.5"), "文案应含冲突 IP：{err}");
+        assert!(err.contains("重叠"), "{err}");
+
+        // 判据②命中：同私有段自然前缀（物理 10.126.x 大网保守近似）
+        let err = render_config_checked_with_nics(&sample_config(), "s3cret", &[ip("10.126.3.5")])
+            .expect_err("同私有段前缀应拒绝");
+        assert!(err.contains("10.126.3.5"), "文案应含冲突 IP：{err}");
+    }
+
+    /// AC2：不重叠 → 渲染成功（现状行为不变，无误报）
+    #[test]
+    fn checked_render_passes_non_overlapping_physical_subnet() {
+        let toml = render_config_checked_with_nics(&sample_config(), "s3cret", &[ip("192.168.3.13")])
+            .expect("不重叠应渲染成功");
+        assert!(toml.contains("network_name = \"office-net\""), "{toml}");
+    }
+
+    /// AC3：网卡信息不可得（枚举失败/无活动网卡 → 空列表）→ 不阻断（fail-open）
+    #[test]
+    fn checked_render_fail_open_on_empty_nic_list() {
+        render_config_checked_with_nics(&sample_config(), "s3cret", &[])
+            .expect("空网卡列表应放行（fail-open，跳过事实记日志）");
+    }
+
+    /// TUN 自身剔除锚定（plan §3 关键决策）：physical 含 ==virtual_ip 的地址
+    /// （EasyTier 服务端 TUN 静态 IP）→ 剔除后不报自身冲突
+    #[test]
+    fn checked_render_excludes_tun_own_address() {
+        // 唯一地址即 TUN 自身 → 剔除后无可比对象 → 不报冲突
+        render_config_checked_with_nics(&sample_config(), "s3cret", &[ip("10.126.126.1")])
+            .expect("TUN 自身地址不构成冲突");
+        // 与真实物理冲突混排：仅报物理方，TUN 自身不进冲突列表
+        let err = render_config_checked_with_nics(
+            &sample_config(),
+            "s3cret",
+            &[ip("10.126.126.1"), ip("10.126.126.7")],
+        )
+        .expect_err("真实物理冲突仍应拒绝");
+        assert!(err.contains("10.126.126.7"), "应报物理冲突方：{err}");
+        assert!(!err.contains("10.126.126.1"), "TUN 自身不得进冲突列表：{err}");
+    }
+
+    // ── spec 009 T4：成员入网配置渲染（AC9~AC11）─────────────────────────
+
+    /// AC11：生成文本 `toml::from_str` 反序列化回读——network_identity/peers
+    /// 与 MeshConfig 字段一致（格式合规不靠肉眼）；占位符非空、密钥行注释
+    /// 指引脚本、关键字段旁标注 App 输入项（AC9/AC10）
+    #[test]
+    fn member_config_roundtrips_fields_with_placeholder_secret() {
+        let text = render_member_config(&sample_config()).expect("已保存设置应能渲染成员配置");
+        // 官方格式的成员口径局部结构（[network_identity] + [[peer]] 数组表）
+        #[derive(serde::Deserialize)]
+        struct Doc {
+            network_identity: Identity,
+            peer: Vec<PeerUri>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Identity {
+            network_name: String,
+            network_secret: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct PeerUri {
+            uri: String,
+        }
+        let doc: Doc = toml::from_str(&text).expect("生成文本应为合法 TOML（AC11 官方格式）");
+        let cfg = sample_config();
+        assert_eq!(doc.network_identity.network_name, cfg.network_name);
+        assert_eq!(
+            doc.peer.iter().map(|p| p.uri.clone()).collect::<Vec<_>>(),
+            cfg.peers,
+            "peers 应全量逐条产出"
+        );
+        // 占位符非空（AC9：真实密钥不出现；占位符本身就是待填指引）
+        assert!(!doc.network_identity.network_secret.trim().is_empty());
+        // 密钥行指引（AC10）：指明填入 set-mesh-secret.ps1 时设定的密钥
+        assert!(text.contains("set-mesh-secret.ps1"), "密钥行应有脚本指引：{text}");
+        // 关键字段旁注释标注 App 输入项（网络名称/网络密码/节点）
+        for kw in ["网络名称", "网络密码", "节点"] {
+            assert!(text.contains(kw), "注释应标注 App 输入项「{kw}」：{text}");
+        }
+    }
+
+    /// 未完成组网设置（网络名空白/对端为空）→ Err 提示先完成设置（AC9 前置）
+    #[test]
+    fn member_config_requires_saved_settings() {
+        let mut cfg = sample_config();
+        cfg.network_name = "  ".into();
+        assert!(render_member_config(&cfg).unwrap_err().contains("组网设置未完成"));
+
+        cfg = sample_config();
+        cfg.peers = vec![];
+        assert!(render_member_config(&cfg).unwrap_err().contains("组网设置未完成"));
+    }
+
     // ── T4：secret 文件读取 ───────────────────────────────────────────────
 
     /// 栈目录 network-secret 读取（AC8 注入路径）；缺失/空 → None
@@ -1227,8 +1437,12 @@ mod tests {
         let dir = std::env::temp_dir().join("et-checkconfig-test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let toml = render_config_checked(&crate::settings::MeshConfig::default(), "it-is-a-secret")
-            .expect("渲染失败");
+        let toml = render_config_checked_with_nics(
+            &crate::settings::MeshConfig::default(),
+            "it-is-a-secret",
+            &[ip("192.168.3.13")],
+        )
+        .expect("渲染失败");
         let cfg_path = dir.join(CONFIG_FILE);
         std::fs::write(&cfg_path, &toml).unwrap();
         let core = Path::new(env!("CARGO_MANIFEST_DIR"))

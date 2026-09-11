@@ -67,6 +67,8 @@ export const api = {
   meshSyncDns: () => invoke<number>("mesh_sync_dns"),
   /** 组网诊断（007 T16/AC13）：六项只读探测，可能耗时数秒（逐对端 3s 超时） */
   meshDiagnostics: () => invoke<MeshDiagItem[]>("mesh_diagnostics"),
+  /** 成员入网配置（009 US4）：官方 TOML 文本（密钥为占位符 + 指引注释，无真实密钥） */
+  meshMemberConfig: () => invoke<string>("mesh_member_config"),
   /** DNS 对齐检测（AC8：A=虚拟 IP 对齐 + 残留 CNAME 判旁路暴露面） */
   checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
   /** 打开栈目录（设置页「栈目录」链接） */
