@@ -207,7 +207,6 @@ mod tests {
             vec![
                 (ComponentId::CloudCli, StopOutcome::Stopped),
                 (ComponentId::Caddy, StopOutcome::Stopped),
-                (ComponentId::DdnsGo, StopOutcome::AlreadyStopped),
             ]
         }
     }
@@ -301,7 +300,7 @@ mod tests {
         let stopper = MockStopper::immediate();
         let report = run_shutdown(stopper.clone(), SHUTDOWN_TOTAL_TIMEOUT);
         assert!(report.completed, "正常路径应完成");
-        assert_eq!(report.outcomes.len(), 3, "三组件各一结论");
+        assert_eq!(report.outcomes.len(), 2, "两组件各一结论");
         assert_eq!(stopper.calls.load(Ordering::SeqCst), 1);
     }
 }

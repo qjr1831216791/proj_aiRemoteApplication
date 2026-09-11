@@ -4,18 +4,18 @@
 //!   前置满足 → Done（自动跳过，AC2）；不满足 → Pending/Failed（AC12 失败隔离）
 //! - 编排哲学：本模块**不派发脚本**——装机类动作由前端复用既有 run_tool
 //!   （可见窗口，UAC 语义沿用 AC19/20），用户完成后回向导点「校验」触发
-//!   wizard_detect 重探测；通道激活复用 004 的 Settings.access_channel 守卫收敛
+//!   wizard_detect 重探测；通道阶段为组网单通道（spec 008：直连/穿透退役，
+//!   branch 字段随之退役，旧状态文件的同名键被 serde 忽略）
 //! - 凭证边界（宪法 §3）：探针只判存在性，凭证值不进本模块/事件/日志
 //! - detail 存稳定码（如 "auth_failed"），双语呈现由前端 i18n 承担
-//! - 纯函数（derive_* / map_tc_error / split_domain / cgnat 系）与 IO 采集隔离，可单测
+//! - 纯函数（derive_* / map_tc_error / split_domain）与 IO 采集隔离，可单测
 
 use crate::consts::DOMAIN;
 use crate::probe::{ComponentId, ProbeState, StatusProbe};
-use crate::settings::{AccessChannel, SettingsState};
+use crate::settings::SettingsState;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
-use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,7 +39,7 @@ pub enum WizardStageId {
     Tencent,
     /// HTTPS 栈：插件版 Caddy + 插件式 Caddyfile + 443（AC6/7；共用）
     Https,
-    /// 通道分支：直连（ddns-go）/ 穿透（frpc）（AC8/9/10）
+    /// 通道阶段：组网（EasyTier）（AC6；直连/穿透已随 spec 008 退役）
     Channel,
     /// 收尾：自启注册 + 目标达成清单（AC11）
     Finalize,
@@ -82,8 +82,6 @@ pub struct StageStatus {
 pub struct WizardState {
     pub version: u32,
     pub stages: Vec<StageStatus>,
-    /// 阶段④分支选择（与 Settings.access_channel 同步写入）
-    pub branch: Option<AccessChannel>,
     /// 访问域名（非敏感；默认 consts::DOMAIN）
     pub domain: String,
     /// 收尾完成（AC11）
@@ -98,7 +96,6 @@ impl Default for WizardState {
                 .iter()
                 .map(|id| StageStatus { id: *id, state: StageState::Pending, detail: None })
                 .collect(),
-            branch: None,
             domain: DOMAIN.to_string(),
             done: false,
         }
@@ -217,33 +214,13 @@ pub fn map_tc_error(err: &str) -> &'static str {
     } else if err.contains("UnauthorizedOperation") || err.contains("PermissionDenied") {
         "permission_denied"
     } else if err.contains("NoRecord") || err.contains("NoDataOfRecord") {
-        // 域名存在但子域暂无记录：ddns-go 启动后会自动创建（AC8 前置成立）
+        // 域名存在但子域暂无记录：A 记录由「同步 DNS」显式建立（spec 008 后
+        // 无自动创建方，前置仍成立）
         "no_records"
     } else if err.contains("InvalidDomain") || err.contains("DomainNotFound") {
         "domain_missing"
     } else {
         "api_error"
-    }
-}
-
-/// 公网出口 IP 分类（AC8 如实警示；只判"直连前提缺失"，不冒充外部可达结论）
-/// None = IP 正常公网段；Some(code) = 警示码
-pub fn cgnat_classify(public_ip: Option<IpAddr>) -> Option<&'static str> {
-    let ip = match public_ip {
-        Some(IpAddr::V4(v4)) => v4,
-        Some(_) => return Some("warn_ipv6"),
-        None => return Some("warn_no_public_ip"),
-    };
-    let o = ip.octets();
-    let privateish = o[0] == 10
-        || (o[0] == 172 && (o[1] & 0xf0) == 16)
-        || (o[0] == 192 && o[1] == 168)
-        || (o[0] == 169 && o[1] == 254)
-        || (o[0] == 100 && (o[1] & 0xc0) == 64); // 100.64/10 运营商 CGNAT
-    if privateish {
-        Some("warn_private_range")
-    } else {
-        None
     }
 }
 
@@ -276,21 +253,18 @@ pub fn derive_tencent(creds_present: bool, api: &TencentApiOutcome) -> (StageSta
     }
 }
 
-/// ③ HTTPS 栈（AC6/7）：caddy + ddns-go 落位 + Caddyfile 存在 + 443 运行。
+/// ③ HTTPS 栈（AC6/7）：caddy 落位 + Caddyfile 存在 + 443 运行（ddns-go
+/// 必要条件已随直连通道退役——spec 008）。
 /// Caddyfile 分插件式/旧式两种：旧式（acme.sh 证书链）+ 运行中 = 旧机已在工作，
 /// 同样判 Done（detail "legacy_ok"，迁移可选）——不把"旧机不迁移"误报为未装机
 pub fn derive_https(
     caddy_exe: bool,
-    ddnsgo_exe: bool,
     caddyfile_present: bool,
     caddyfile_plugin_style: bool,
     caddy_running: bool,
 ) -> (StageState, Option<String>) {
     if !caddy_exe {
         return (StageState::Pending, Some("missing_caddy".into()));
-    }
-    if !ddnsgo_exe {
-        return (StageState::Pending, Some("missing_ddnsgo".into()));
     }
     if !caddyfile_present {
         return (StageState::Pending, Some("missing_caddyfile".into()));
@@ -305,28 +279,7 @@ pub fn derive_https(
     }
 }
 
-/// ④a 直连分支（AC8）：ddns-go 已配置 + 运行；解析对齐情况进 detail 警示码
-pub fn derive_direct(yaml_present: bool, ddnsgo_running: bool) -> (StageState, Option<String>) {
-    if !yaml_present {
-        return (StageState::Pending, Some("missing_yaml".into()));
-    }
-    if ddnsgo_running {
-        (StageState::Done, Some("ok".into()))
-    } else {
-        (StageState::Pending, Some("not_running".into()))
-    }
-}
-
-/// ④b 穿透分支（AC9）：access key + 隧道配置就绪（frpc 在线由看板/004 守护呈现）
-pub fn derive_tunnel(key_present: bool, tunnel_configured: bool) -> (StageState, Option<String>) {
-    match (key_present, tunnel_configured) {
-        (true, true) => (StageState::Done, Some("ok".into())),
-        (false, _) => (StageState::Pending, Some("missing_key".into())),
-        (true, false) => (StageState::Pending, Some("tunnel_unset".into())),
-    }
-}
-
-/// ④c 组网分支（spec 007 AC12/AC13）：密钥就绪 + 服务运行 + 有非本机成员在线。
+/// ④ 组网阶段（spec 007 AC12/AC13；spec 008 后唯一通道）：密钥就绪 + 服务运行 + 有非本机成员在线。
 /// 判定矩阵对齐 judge_mesh_state（mesh.rs）但输出向导阶段态：装机完成的标杆是
 /// 「有成员设备真正连上来」（mesh_wait_peer 不算 Done——用户可能只装了本机端，
 /// 漏配成员设备就收尾会以为装机完成却无人能访问）。
@@ -371,105 +324,30 @@ fn caddyfile_plugin_style(stack_dir: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// 拉取公网出口 IPv4（url 模式同源接口；失败返回 None → 警示码由 cgnat_classify 给出）
-#[cfg(windows)]
-fn fetch_public_ipv4() -> Option<IpAddr> {
-    let resp = ureq::get("https://4.ipw.cn").timeout(std::time::Duration::from_secs(5)).call().ok()?;
-    let text = resp.into_string().ok()?;
-    text.trim().parse().ok()
-}
-
-/// 通道阶段探针输入（真实采集 → 纯推导）
+/// 通道阶段探针（spec 008：组网单通道；原 Direct/Tunnel 臂与 branch 字段
+/// 随直连/穿透退役，旧状态文件的 branch 键被 serde 忽略）。
+/// 密钥 → 服务 → 成员在线逐级判定（derive_mesh 矩阵）；cli 只锚定栈目录
+/// 落位副本（apply/install 已落位；资源 bin 候选归 mesh://status 监视器，
+/// 向导探针不重复装配上下文）
 #[cfg(windows)]
 fn probe_channel_stage(state: &WizardState, settings: &crate::settings::Settings) -> (StageState, Option<String>) {
-    match state.branch {
-        None => (StageState::Pending, Some("branch_unset".into())),
-        Some(AccessChannel::Direct) => {
-            let stack = &settings.stack_dir;
-            let yaml = Path::new(stack).join("ddns-go.yaml");
-            let (st, mut detail) = derive_direct(yaml.is_file(), running_on(ComponentId::DdnsGo, stack));
-            // AC8：解析对齐 + 出口形态如实警示（仅在 ddns-go 运行时才有意义）
-            if st == StageState::Done {
-                detail = direct_detail_with_dns(stack, &state.domain);
-            }
-            (st, detail)
-        }
-        Some(AccessChannel::Tunnel) => {
-            let sakura = std::fs::read_to_string(Path::new(&settings.stack_dir).join(".env"))
-                .map(|c| crate::tunnel::parse_env_value(&c, crate::consts::SAKURA_KEY_VAR).is_some())
-                .unwrap_or(false);
-            derive_tunnel(sakura, settings.tunnel.is_some())
-        }
-        // spec 007 AC12/AC13：密钥 → 服务 → 成员在线逐级判定（derive_mesh 矩阵）。
-        // cli 只锚定栈目录落位副本（apply/install 已落位；资源 bin 候选归
-        // mesh://status 监视器，向导探针不重复装配上下文）
-        Some(AccessChannel::Mesh) => {
-            use crate::mesh::MeshOps;
+    use crate::mesh::MeshOps;
 
-            let stack = &settings.stack_dir;
-            let ops = crate::mesh::WindowsMeshOps::new(None, stack.clone());
-            let secret = crate::mesh::read_network_secret(stack).is_some();
-            let service = ops.service_state();
-            let peers_online = ops
-                .query_peers()
-                .map(|list| list.iter().any(|p| !p.is_local))
-                .unwrap_or(false);
-            let (st, mut detail) = derive_mesh(secret, service, peers_online);
-            // AC13：Done 后附 DNS 对齐（A=虚拟 IP；未对齐 → mesh_dns_pending，
-            // 前端呈现「同步 DNS」按钮——向导分支选择不做编排，A 记录由显式入口建）
-            if st == StageState::Done {
-                detail = mesh_detail_with_dns(stack, &state.domain, &settings.mesh.virtual_ip);
-            }
-            (st, detail)
-        }
+    let stack = &settings.stack_dir;
+    let ops = crate::mesh::WindowsMeshOps::new(None, stack.clone());
+    let secret = crate::mesh::read_network_secret(stack).is_some();
+    let service = ops.service_state();
+    let peers_online = ops
+        .query_peers()
+        .map(|list| list.iter().any(|p| !p.is_local))
+        .unwrap_or(false);
+    let (st, mut detail) = derive_mesh(secret, service, peers_online);
+    // AC13：Done 后附 DNS 对齐（A=虚拟 IP；未对齐 → mesh_dns_pending，
+    // 前端呈现「同步 DNS」按钮——向导不做编排，A 记录由显式入口建）
+    if st == StageState::Done {
+        detail = mesh_detail_with_dns(stack, &state.domain, &settings.mesh.virtual_ip);
     }
-}
-
-/// 直连 detail 附加 DNS 对齐/CGNAT 警示码（"ok" / "warn_xxx" / "record_mismatch"）
-#[cfg(windows)]
-fn direct_detail_with_dns(stack_dir: &str, domain: &str) -> Option<String> {
-    let Some(cred) = crate::dns_api::read_credential(stack_dir) else {
-        return Some("ok".into());
-    };
-    let (root, sub) = split_domain(domain);
-    let Ok(records) = crate::dns_api::signed_request(
-        &cred,
-        "DescribeRecordList",
-        &serde_json::json!({ "Domain": root, "SubDomain": sub, "Offset": 0, "Limit": 100 }),
-        std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
-    ) else {
-        return Some("ok".into()); // 查询失败不阻断装机完成态，可达性归 005 心跳
-    };
-    let a_value = records
-        .pointer("/Response/RecordList")
-        .and_then(|v| v.as_array())
-        .and_then(|list| {
-            list.iter().find(|r| {
-                r.get("Type").and_then(|t| t.as_str()) == Some("A")
-                    && r.get("Status").and_then(|s| s.as_str()) == Some("ENABLE")
-            })
-        })
-        .and_then(|r| r.get("Value").and_then(|v| v.as_str()).map(str::to_owned));
-    let Some(a_value) = a_value else {
-        return Some("warn_no_a_record".into());
-    };
-    let Ok(parsed) = a_value.parse::<IpAddr>() else {
-        return Some("warn_no_a_record".into());
-    };
-    let public = fetch_public_ipv4();
-    if let Some(warn) = cgnat_classify(public) {
-        return Some(warn.into());
-    }
-    if Some(parsed) == public {
-        Some("ok".into())
-    } else {
-        Some("record_mismatch".into())
-    }
-}
-
-#[cfg(windows)]
-fn running_on(id: ComponentId, stack_dir: &str) -> bool {
-    matches!(crate::probe::WindowsProbe.probe(id, stack_dir), ProbeState::Running { .. })
+    (st, detail)
 }
 
 /// 组网 detail 附加 DNS 对齐码（"ok" / "mesh_dns_pending"）：
@@ -541,7 +419,6 @@ pub fn detect(state: &WizardState, settings: &crate::settings::Settings, probe: 
     // ③ HTTPS 栈
     let (st, detail) = derive_https(
         file_present(&format!(r"{stack}\caddy.exe")),
-        file_present(&format!(r"{stack}\ddns-go.exe")),
         Path::new(stack).join("Caddyfile").is_file(),
         caddyfile_plugin_style(stack),
         matches!(probe.probe(ComponentId::Caddy, stack), ProbeState::Running { .. }),
@@ -656,26 +533,6 @@ pub fn wizard_set_domain(
     Ok(saved)
 }
 
-/// 选择通道分支（阶段④；同步写 Settings.access_channel——
-/// frpc 拉起/ddns-go 停托管复用 004 守护收敛，不另起平行机制）
-#[tauri::command]
-pub fn wizard_set_branch(
-    holder: tauri::State<'_, WizardHolder>,
-    settings: tauri::State<'_, SettingsState>,
-    branch: AccessChannel,
-    app: tauri::AppHandle,
-) -> Result<WizardState, String> {
-    settings.patch(&crate::settings::SettingsPatch {
-        access_channel: Some(branch),
-        ..Default::default()
-    })?;
-    let mut next = holder.current();
-    next.branch = Some(branch);
-    let saved = holder.replace(next)?;
-    emit_changed(&app, &saved);
-    Ok(saved)
-}
-
 /// 收尾完成（AC11：done 置位；自启注册由前端复用 set_autostart_* 命令）
 #[tauri::command]
 pub fn wizard_complete(
@@ -702,7 +559,6 @@ fn emit_changed(app: &tauri::AppHandle, state: &WizardState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
 
     #[test]
     fn default_state_has_five_pending_stages() {
@@ -710,7 +566,6 @@ mod tests {
         assert_eq!(s.stages.len(), 5);
         assert!(s.stages.iter().all(|x| x.state == StageState::Pending));
         assert_eq!(s.domain, DOMAIN);
-        assert_eq!(s.branch, None);
         assert!(!s.done);
     }
 
@@ -729,7 +584,6 @@ mod tests {
         let p = std::env::temp_dir().join(format!("wb-wiz-{}-roundtrip.json", std::process::id()));
         let _ = fs::remove_file(&p);
         let mut s = WizardState::default();
-        s.branch = Some(AccessChannel::Tunnel);
         s.domain = "ai.example.com".into();
         set_stage(&mut s, WizardStageId::Basis, StageState::Done, Some("ok".into()));
         save_to(&p, &s).expect("保存失败");
@@ -737,12 +591,12 @@ mod tests {
             LoadOutcome::Loaded(back) => assert_eq!(back, s),
             other => panic!("应为 Loaded，实际 {other:?}"),
         }
-        // 旧/缺字段文件：缺的阶段补 Pending，未知字段忽略
+        // 旧/缺字段文件：缺的阶段补 Pending，未知字段忽略（spec 008 后 branch
+        // 已退役，旧文件的 branch 键静默丢弃，不再构成状态）
         fs::write(&p, r#"{"version":1,"stages":[],"domain":"x.cn","done":false,"branch":"direct"}"#).unwrap();
         match load_from(&p) {
             LoadOutcome::Loaded(s) => {
                 assert_eq!(s.stages.len(), 5, "缺阶段应补齐");
-                assert_eq!(s.branch, Some(AccessChannel::Direct));
             }
             other => panic!("应为 Loaded，实际 {other:?}"),
         }
@@ -775,18 +629,6 @@ mod tests {
     }
 
     #[test]
-    fn cgnat_classification() {
-        // 私网/CGNAT/链路本地段 → 警示；正常公网 → None；v6/取不到 → 警示
-        assert_eq!(cgnat_classify(Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))), Some("warn_private_range"));
-        assert_eq!(cgnat_classify(Some(IpAddr::V4(Ipv4Addr::new(100, 100, 1, 1)))), Some("warn_private_range"), "100.64/10 CGNAT");
-        assert_eq!(cgnat_classify(Some(IpAddr::V4(Ipv4Addr::new(100, 128, 1, 1)))), None, "100.128 不在 100.64/10");
-        assert_eq!(cgnat_classify(Some(IpAddr::V4(Ipv4Addr::new(117, 182, 1, 1)))), None, "公网段");
-        assert_eq!(cgnat_classify(Some(IpAddr::V4(Ipv4Addr::new(169, 254, 3, 4)))), Some("warn_private_range"));
-        assert_eq!(cgnat_classify(Some("::1".parse().unwrap())), Some("warn_ipv6"));
-        assert_eq!(cgnat_classify(None), Some("warn_no_public_ip"));
-    }
-
-    #[test]
     fn stage_derivations() {
         use crate::probe::ProbeState;
         // ① 基础
@@ -799,31 +641,25 @@ mod tests {
         // ② 腾讯云
         assert_eq!(derive_tencent(false, &TencentApiOutcome::Err("x".into())).0, StageState::Pending);
         assert_eq!(derive_tencent(true, &TencentApiOutcome::Ok).0, StageState::Done);
-        assert_eq!(derive_tencent(true, &TencentApiOutcome::NoRecords).0, StageState::Done, "域名存在暂无记录即可过（ddns-go 会建）");
+        assert_eq!(derive_tencent(true, &TencentApiOutcome::NoRecords).0, StageState::Done, "域名存在暂无记录即可过（A 记录由「同步 DNS」显式建）");
         assert_eq!(
             derive_tencent(true, &TencentApiOutcome::Err("AuthFailure.SignatureFailure".into())).1,
             Some("auth_failed".into())
         );
-        // ③ HTTPS 栈（旧式 Caddyfile + 运行中 = 旧机已在工作，同样 Done）
-        assert_eq!(derive_https(false, true, true, true, false).1, Some("missing_caddy".into()));
-        assert_eq!(derive_https(true, false, true, true, false).1, Some("missing_ddnsgo".into()));
-        assert_eq!(derive_https(true, true, false, true, false).1, Some("missing_caddyfile".into()));
-        assert_eq!(derive_https(true, true, true, true, false).1, Some("not_running".into()));
-        assert_eq!(derive_https(true, true, true, true, true).0, StageState::Done);
-        assert_eq!(derive_https(true, true, true, true, true).1, Some("ok".into()));
+        // ③ HTTPS 栈（ddns-go 必要条件已随直连通道退役——spec 008；
+        // 旧式 Caddyfile + 运行中 = 旧机已在工作，同样 Done）
+        assert_eq!(derive_https(false, true, true, false).1, Some("missing_caddy".into()));
+        assert_eq!(derive_https(true, false, true, false).1, Some("missing_caddyfile".into()));
+        assert_eq!(derive_https(true, true, true, false).1, Some("not_running".into()));
+        assert_eq!(derive_https(true, true, true, true).0, StageState::Done);
+        assert_eq!(derive_https(true, true, true, true).1, Some("ok".into()));
         assert_eq!(
-            derive_https(true, true, true, false, true),
+            derive_https(true, true, false, true),
             (StageState::Done, Some("legacy_ok".into())),
             "旧式证书链 + 443 运行中 = 旧机已在工作"
         );
-        // ④ 直连 / 穿透 / 组网（spec 007 T13）
-        assert_eq!(derive_direct(false, false).1, Some("missing_yaml".into()));
-        assert_eq!(derive_direct(true, false).1, Some("not_running".into()));
-        assert_eq!(derive_direct(true, true).0, StageState::Done);
-        assert_eq!(derive_tunnel(false, true).1, Some("missing_key".into()));
-        assert_eq!(derive_tunnel(true, false).1, Some("tunnel_unset".into()));
-        assert_eq!(derive_tunnel(true, true), (StageState::Done, Some("ok".into())));
-        // 组网矩阵：密钥缺失优先于服务态；NotFound/Stopped+Disabled/运行无对端逐级 Pending
+        // ④ 组网（spec 008 后唯一通道；spec 007 T13 矩阵）：
+        // 密钥缺失优先于服务态；NotFound/Stopped+Disabled/运行无对端逐级 Pending
         use crate::mesh::MeshServiceState as Ms;
         assert_eq!(
             derive_mesh(false, Ms::NotFound, false),

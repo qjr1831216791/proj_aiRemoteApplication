@@ -1,15 +1,15 @@
-//! 腾讯云 DNS 记录自动切换（spec 004 AC12/13 语义升级：自动执行 + 手动兜底）。
+//! 腾讯云 DNS 记录调和（spec 008 收敛：组网单通道——A=虚拟 IP）。
 //!
 //! - TC3-HMAC-SHA256 签名调 `dns.tencentcloudapi.com`（2021-03-23）
-//! - 凭证复用机器上已有的腾讯云密钥（ddns-go 正在用同一密钥写解析）：
-//!   栈目录 `.env`（TENCENT_SECRET_ID/KEY）→ `ddns-go.yaml` dnsconf 段回退
-//! - 纯函数（凭证解析 / TC3 签名 / 记录调和 reconcile）与 HTTP 采集隔离；
-//!   TC3 正确性由真机调用验证（签名错则 API 报 AuthFailure）
-//! - 同步失败由调用方降级：不阻断通道切换，检测循环继续显示手动指引
+//! - 凭证单源：栈目录 `.env`（TENCENT_SECRET_ID/KEY，set-tencent-key.ps1 写出；
+//!   Caddy DNS-01 续期同一来源）。原 ddns-go.yaml 回退链随直连通道退役（D3）
+//! - 纯函数（凭证解析 / TC3 签名 / 记录调和 reconcile / DNS 对齐判定）与
+//!   HTTP 采集隔离；TC3 正确性由真机调用验证（签名错则 API 报 AuthFailure）
+//! - 同步失败由调用方降级：不阻断操作，检测循环继续显示手动指引
 
-use crate::consts::FRPC_ENV_FILE;
-use crate::tunnel::parse_env_value;
+use crate::consts::STACK_ENV_FILE;
 use hmac::{Hmac, Mac};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 /// 腾讯云 API 密钥（SecretId/SecretKey；只内存传递，禁止日志）
@@ -19,23 +19,13 @@ pub struct TcCredential {
     pub key: String,
 }
 
-// ── 凭证读取（回退链：.env → ddns-go.yaml）─────────────────────────────────
+// ── 凭证读取（唯一来源：栈目录 .env）────────────────────────────────────────
 
-/// 读取腾讯云凭证（None = 两处都没有 → 调用方跳过自动切换走手动指引）
+/// 读取腾讯云凭证（None = `.env` 未配置 → 调用方跳过自动切换走手动指引）
 pub fn read_credential(stack_dir: &str) -> Option<TcCredential> {
-    let env_path = std::path::PathBuf::from(stack_dir).join(FRPC_ENV_FILE);
-    if let Ok(content) = std::fs::read_to_string(&env_path) {
-        if let Some(cred) = parse_env_creds(&content) {
-            return Some(cred);
-        }
-    }
-    let yaml_path = std::path::PathBuf::from(stack_dir).join("ddns-go.yaml");
-    if let Ok(content) = std::fs::read_to_string(&yaml_path) {
-        if let Some(cred) = parse_yaml_creds(&content) {
-            return Some(cred);
-        }
-    }
-    None
+    let env_path = std::path::PathBuf::from(stack_dir).join(STACK_ENV_FILE);
+    let content = std::fs::read_to_string(&env_path).ok()?;
+    parse_env_creds(&content)
 }
 
 /// 从 `.env` 内容提取 TENCENT_SECRET_ID/KEY
@@ -45,23 +35,29 @@ pub fn parse_env_creds(content: &str) -> Option<TcCredential> {
     Some(TcCredential { id, key })
 }
 
-/// 从 ddns-go.yaml 内容提取 dnsconf 段的 id/secret（凭证已在机器上，
-/// 复用避免让用户重复提供；按行匹配键名，值取首个冒号后内容）
-pub fn parse_yaml_creds(content: &str) -> Option<TcCredential> {
-    let mut id = None;
-    let mut key = None;
+/// 从 `.env` 内容提取 `KEY=VALUE`（忽略注释行/空行；值去首尾空白与成对引号）。
+/// 首行 BOM 剥离（set-tencent-key.ps1 以 UTF-8 BOM 写出，PowerShell 5.1 回读兼容）。
+/// 找不到或值为空返回 None（调用方转为「未配置」引导，不 panic）。
+/// （原居 tunnel.rs，随通道框架解体迁入——spec 008 D2）
+pub fn parse_env_value(content: &str, key: &str) -> Option<String> {
     for line in content.lines() {
-        let trimmed = line.trim();
-        if id.is_none() && trimmed.starts_with("id:") {
-            id = Some(trimmed["id:".len()..].trim().to_string());
-        } else if key.is_none() && trimmed.starts_with("secret:") {
-            key = Some(trimmed["secret:".len()..].trim().to_string());
+        let line = line.trim().trim_start_matches('\u{feff}').trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
         }
+        let Some((k, v)) = line.split_once('=') else { continue };
+        if k.trim() != key {
+            continue;
+        }
+        let v = v.trim();
+        let v = v
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .or_else(|| v.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+            .unwrap_or(v);
+        return if v.is_empty() { None } else { Some(v.to_string()) };
     }
-    // 防误匹配：空值/占位视为缺失
-    let id = id.filter(|s| !s.is_empty())?;
-    let key = key.filter(|s| !s.is_empty())?;
-    Some(TcCredential { id, key })
+    None
 }
 
 // ── TC3-HMAC-SHA256 签名（纯函数）──────────────────────────────────────────
@@ -144,71 +140,22 @@ pub enum RecordOp {
     Delete { record_id: u64 },
 }
 
-/// DNS 目标状态（三通道 + 停用清理的调和输入；spec 007 §3.4）
+/// DNS 目标状态（spec 008 收敛：组网单通道）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DnsTarget {
-    /// 直连：A 激活（值由 ddns-go 维护），CNAME 全停
-    Direct,
-    /// 穿透：CNAME → 节点域名激活，A 全停
-    Tunnel(String),
     /// 组网：A → 虚拟 IP（upsert），CNAME 全删（穿透残留的安全收敛）
     Mesh(String),
 }
 
 /// 调和：把 `sub` 记录集合推向目标状态（纯函数，幂等——已满足则空操作集）。
-/// - `Tunnel`（穿透）：全部 A 暂停；CNAME 值对 → 激活，值错 → 暂停（保记录）
-///   并新建对的；缺失 → 新建
-/// - `Direct`（直连）：全部 CNAME 暂停；A → 激活
-///   （A 记录值由 ddns-go 维护；不存在时也由 ddns-go 启动时自动新建）
-/// - `Mesh`（组网，spec 007 AC6/AC7）：CNAME **全删**（mesh 是安全收敛终态，
-///   残留 CNAME 保留可重启的公网旁路）；A 第一条 upsert 值=虚拟 IP（值对则
-///   仅确保启用），多余 A 暂停，缺失新建
+/// `Mesh`（组网，spec 007 AC6/AC7）：CNAME **全删**（mesh 是安全收敛终态，
+/// 残留 CNAME 保留可重启的公网旁路）；A 第一条 upsert 值=虚拟 IP（值对则
+/// 仅确保启用），多余 A 暂停，缺失新建
 pub fn reconcile(current: &[DnsRecord], target: &DnsTarget) -> Vec<RecordOp> {
     let mut ops = Vec::new();
     let norm = |s: &str| s.trim_end_matches('.').to_ascii_lowercase();
     let is = |r: &DnsRecord, t: &str| r.rtype.eq_ignore_ascii_case(t);
     match target {
-        DnsTarget::Tunnel(target) => {
-            for r in current.iter().filter(|r| is(r, "A")) {
-                if r.enabled {
-                    ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
-                }
-            }
-            let cnames: Vec<&DnsRecord> = current.iter().filter(|r| is(r, "CNAME")).collect();
-            match cnames.iter().copied().find(|r| norm(&r.value) == norm(target)) {
-                Some(r) => {
-                    if !r.enabled {
-                        ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: true });
-                    }
-                    // 其余值不符的 CNAME 暂停（保记录可回溯）
-                    for r in cnames.iter().filter(|r| norm(&r.value) != norm(target)) {
-                        if r.enabled {
-                            ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
-                        }
-                    }
-                }
-                None => {
-                    for r in &cnames {
-                        if r.enabled {
-                            ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
-                        }
-                    }
-                    ops.push(RecordOp::Create { rtype: "CNAME".into(), value: target.clone() });
-                }
-            }
-        }
-        DnsTarget::Direct => {
-            for r in current.iter().filter(|r| is(r, "CNAME")) {
-                if r.enabled {
-                    ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: false });
-                }
-            }
-            for r in current.iter().filter(|r| is(r, "A")) {
-                if !r.enabled {
-                    ops.push(RecordOp::SetStatus { record_id: r.record_id, enable: true });
-                }
-            }
-        }
         DnsTarget::Mesh(vip) => {
             // CNAME 全删（不管值与状态）
             for r in current.iter().filter(|r| is(r, "CNAME")) {
@@ -305,11 +252,6 @@ pub fn utc_date(ts: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-/// 列出子域记录（example/诊断用公开封装；内部走 list_records）
-pub fn list_records_probe(cred: &TcCredential, root: &str, sub: &str) -> Vec<DnsRecord> {
-    list_records(cred, root, sub).unwrap_or_default()
-}
-
 /// 列出子域记录（DescribeRecordList；自动翻页上限 3 页防失控）
 fn list_records(cred: &TcCredential, root: &str, sub: &str) -> Result<Vec<DnsRecord>, String> {
     let mut out = Vec::new();
@@ -388,7 +330,7 @@ fn delete_record(cred: &TcCredential, root: &str, record_id: u64) -> Result<(), 
     .map(|_| ())
 }
 
-// ── 高层切换（switch_channel 消费）─────────────────────────────────────────
+// ── 高层同步（mesh_sync_dns 命令消费）───────────────────────────────────────
 
 /// 应用一个调和操作集（幂等；返回应用条数）
 fn apply_ops(cred: &TcCredential, root: &str, sub: &str, ops: Vec<RecordOp>) -> Result<usize, String> {
@@ -407,47 +349,49 @@ fn apply_ops(cred: &TcCredential, root: &str, sub: &str, ops: Vec<RecordOp>) -> 
     Ok(applied)
 }
 
-/// 切到穿透：A 暂停 + CNAME 激活/新建指向节点域名（幂等）
-pub fn sync_to_tunnel(cred: &TcCredential, root: &str, sub: &str, node_domain: &str) -> Result<usize, String> {
-    let current = list_records(cred, root, sub)?;
-    apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Tunnel(node_domain.to_string())))
-}
-
-/// 切回直连：CNAME 暂停 + A 激活（A 值由 ddns-go 维护/重建）
-pub fn sync_to_direct(cred: &TcCredential, root: &str, sub: &str) -> Result<usize, String> {
-    let current = list_records(cred, root, sub)?;
-    apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Direct))
-}
-
-/// 切到组网（spec 007 AC6/AC7）：CNAME 全删 + A upsert 值=虚拟 IP（幂等）。
-/// 虚拟 IP 是私网段——公网不可路由，达成「公网解析仅指向私网段」（AC7）
+/// 同步到组网（spec 007 AC6/AC7）：CNAME 全删 + A upsert 值=虚拟 IP（幂等）。
+/// 虚拟 IP 是私网段——公网不可路由，达成「公网解析仅指向私网段」（AC7）。
+/// CNAME 残留清理（D6：卸载后兜底）复用本函数的 reconcile 删除语义。
 pub fn sync_to_mesh(cred: &TcCredential, root: &str, sub: &str, virtual_ip: &str) -> Result<usize, String> {
     let current = list_records(cred, root, sub)?;
     apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Mesh(virtual_ip.to_string())))
 }
 
-/// 停用编排的记录清理计划（纯函数）：删除指定类型的**全部**记录（不管值
-/// 与启用态——停用语义是消除暴露面，暂停的记录同样可被重新激活）。
-fn purge_ops(current: &[DnsRecord], rtype: &str) -> Vec<RecordOp> {
-    current
-        .iter()
-        .filter(|r| r.rtype.eq_ignore_ascii_case(rtype))
-        .map(|r| RecordOp::Delete { record_id: r.record_id })
-        .collect()
+// ── DNS 对齐判定（spec 008 自 tunnel.rs 迁入；AC8：A=虚拟 IP）──────────────
+
+/// DNS 对齐结论（指引条显隐的数据源）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum DnsAlignment {
+    /// 无 CNAME 且 A 记录 = 虚拟 IP → 组网通道解析就绪（spec 007 体检重定义）
+    AlignedMesh,
+    /// 存在 CNAME 但目标不符（穿透残留旁路，detail 带实际目标）
+    MismatchedCname { actual: String },
+    /// 存在 A 记录但值 ≠ 虚拟 IP（公网 IP 残留 = 切组网未完成；spec 007）
+    MismatchedA { actual: String },
+    /// 既无 CNAME 也无 A（用户删了记录还没配好新值）
+    NoRecord,
+    /// 查询本身失败（网络/解析器异常），不构成结论
+    QueryFailed,
 }
 
-/// 停用穿透的 CNAME 彻底清理（spec 007 AC5；幂等，A 记录不动——组网/直连
-/// 通道的 A 由各自机制持有）。返回删除条数。
-pub fn purge_cnames(cred: &TcCredential, root: &str, sub: &str) -> Result<usize, String> {
-    let current = list_records(cred, root, sub)?;
-    apply_ops(cred, root, sub, purge_ops(&current, "CNAME"))
-}
-
-/// 停用直连的 A 记录清理（spec 007 AC6 非组网态、用户选择删除；幂等）。
-/// 组网态不调本函数——A=虚拟 IP 由组网持有（disable_actions 编排保证）。
-pub fn purge_a_records(cred: &TcCredential, root: &str, sub: &str) -> Result<usize, String> {
-    let current = list_records(cred, root, sub)?;
-    apply_ops(cred, root, sub, purge_ops(&current, "A"))
+/// 组网态对齐判定（spec 007 体检重定义，plan §5.1：DNS 对齐 → A 记录 = 虚拟 IP）。
+/// 空串视为无记录（PowerShell `[string]$null` 产出 ""，见 commands::run_dns_probe）。
+pub fn judge_dns_mesh(
+    cname_target: Option<&str>,
+    a_value: Option<&str>,
+    virtual_ip: &str,
+) -> DnsAlignment {
+    let cname = cname_target.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(target) = cname {
+        // 组网态不该有 CNAME（切组网时已全删）——残留即旁路暴露面
+        return DnsAlignment::MismatchedCname { actual: target.to_string() };
+    }
+    match a_value.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(v) if v.eq_ignore_ascii_case(virtual_ip.trim()) => DnsAlignment::AlignedMesh,
+        Some(v) => DnsAlignment::MismatchedA { actual: v.to_string() },
+        None => DnsAlignment::NoRecord,
+    }
 }
 
 /// 域名常量派生子域（"ai.jackqi.cn" + "jackqi.cn" → "ai"）
@@ -521,14 +465,21 @@ mod tests {
         assert_eq!(parse_env_creds("TENCENT_SECRET_ID=only"), None, "缺任一即缺失");
     }
 
+    /// parse_env_value（原 tunnel.rs 迁入，spec 008 D2）：BOM/引号/空白容忍
     #[test]
-    fn yaml_creds_parsed_with_indent() {
-        // 真实 ddns-go.yaml 形态：dnsconf.dns.id/secret（缩进 8 空格）
-        let yaml = "dnsconf:\n    - name: \"\"\n      ipv4:\n        enable: true\n      dns:\n        name: tencentcloud\n        id: AKIDyaml\n        secret: secredns\n      ttl: \"\"\n";
-        let cred = parse_yaml_creds(yaml).expect("应有凭证");
-        assert_eq!(cred.id, "AKIDyaml");
-        assert_eq!(cred.key, "secredns");
-        assert_eq!(parse_yaml_creds("user:\n  username: jackqi"), None);
+    fn env_value_parsing_tolerates_bom_quotes_and_spaces() {
+        let env = "SAKURA_FRP_KEY=abc123\nOTHER=x\nEMPTY=\nQUOTED=\"hi there\"\n";
+        assert_eq!(parse_env_value(env, "SAKURA_FRP_KEY").as_deref(), Some("abc123"));
+        assert_eq!(parse_env_value(env, "OTHER").as_deref(), Some("x"));
+        assert_eq!(parse_env_value(env, "EMPTY"), None, "空值视为未配置");
+        assert_eq!(parse_env_value(env, "QUOTED").as_deref(), Some("hi there"));
+        assert_eq!(parse_env_value(env, "MISSING"), None);
+        assert_eq!(parse_env_value("SAKURA_FRP_KEY = spaced ", "SAKURA_FRP_KEY").as_deref(), Some("spaced"));
+        assert_eq!(
+            parse_env_value("\u{feff}# comment\nTENCENT_SECRET_ID=bommed", "TENCENT_SECRET_ID").as_deref(),
+            Some("bommed"),
+            "UTF-8 BOM 剥离（set-tencent-key.ps1 写出形态）"
+        );
     }
 
     #[test]
@@ -542,83 +493,22 @@ mod tests {
         assert!(h.contains("Signature="));
     }
 
+    /// 组网对齐判定（原 tunnel.rs 迁入，spec 008 D2）
     #[test]
-    fn reconcile_tunnel_pauses_a_and_activates_cname() {
-        // 昨晚实测的混挂场景（A 活跃 + CNAME 暂停）→ 暂停 A、激活 CNAME
-        let current = vec![
-            DnsRecord { record_id: 1, rtype: "A".into(), value: "117.182.118.202".into(), enabled: true },
-            DnsRecord { record_id: 2, rtype: "CNAME".into(), value: "frp-can.com.".into(), enabled: false },
-        ];
-        let ops = reconcile(&current, &DnsTarget::Tunnel("frp-can.com".into()));
+    fn judge_dns_mesh_covers_all_outcomes() {
+        use DnsAlignment::*;
+        assert_eq!(judge_dns_mesh(None, Some("10.126.126.1"), "10.126.126.1"), AlignedMesh);
         assert_eq!(
-            ops,
-            vec![
-                RecordOp::SetStatus { record_id: 1, enable: false },
-                RecordOp::SetStatus { record_id: 2, enable: true },
-            ]
-        );
-
-        // 无 CNAME → 建（A 暂停）；值错 → 暂停错的 + 建对的
-        let no_cname = vec![DnsRecord { record_id: 3, rtype: "A".into(), value: "1.2.3.4".into(), enabled: false }];
-        assert_eq!(
-            reconcile(&no_cname, &DnsTarget::Tunnel("frp-can.com".into())),
-            vec![RecordOp::Create { rtype: "CNAME".into(), value: "frp-can.com".into() }],
-            "A 已暂停、无 CNAME → 只建 CNAME"
-        );
-        let wrong = vec![DnsRecord { record_id: 4, rtype: "CNAME".into(), value: "other.com".into(), enabled: true }];
-        assert_eq!(
-            reconcile(&wrong, &DnsTarget::Tunnel("frp-can.com".into())),
-            vec![
-                RecordOp::SetStatus { record_id: 4, enable: false },
-                RecordOp::Create { rtype: "CNAME".into(), value: "frp-can.com".into() },
-            ]
-        );
-        // 已对齐（A 已暂停 + CNAME 活跃值对）→ 幂等空操作
-        let aligned = vec![
-            DnsRecord { record_id: 5, rtype: "A".into(), value: "1.2.3.4".into(), enabled: false },
-            DnsRecord { record_id: 6, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
-        ];
-        assert!(reconcile(&aligned, &DnsTarget::Tunnel("frp-can.com".into())).is_empty());
-    }
-
-    /// 停用清理（spec 007 AC5/AC6）：指定类型全删（含暂停残留），别类型不动
-    #[test]
-    fn purge_ops_deletes_all_of_type_including_disabled() {
-        let current = vec![
-            DnsRecord { record_id: 1, rtype: "A".into(), value: "10.126.126.1".into(), enabled: true },
-            DnsRecord { record_id: 2, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
-            DnsRecord { record_id: 3, rtype: "CNAME".into(), value: "old-node.com".into(), enabled: false },
-        ];
-        assert_eq!(
-            purge_ops(&current, "CNAME"),
-            vec![RecordOp::Delete { record_id: 2 }, RecordOp::Delete { record_id: 3 }],
-            "停穿透：CNAME 全删（活跃+暂停的均可被重新激活，一并消除）"
+            judge_dns_mesh(None, Some("113.87.11.22"), "10.126.126.1"),
+            MismatchedA { actual: "113.87.11.22".into() }
         );
         assert_eq!(
-            purge_ops(&current, "A"),
-            vec![RecordOp::Delete { record_id: 1 }],
-            "停直连（用户选删）：A 全删"
+            judge_dns_mesh(Some("frp-can.com"), Some("10.126.126.1"), "10.126.126.1"),
+            MismatchedCname { actual: "frp-can.com".into() }
         );
-        assert!(purge_ops(&[], "CNAME").is_empty(), "无记录 → 幂等空操作");
-    }
-
-    #[test]
-    fn reconcile_direct_pauses_cname_and_activates_a() {
-        // 切回直连：CNAME 暂停、A 激活（A 值由 ddns-go 维护，不动）
-        let current = vec![
-            DnsRecord { record_id: 5, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
-            DnsRecord { record_id: 6, rtype: "A".into(), value: "1.2.3.4".into(), enabled: false },
-        ];
-        assert_eq!(
-            reconcile(&current, &DnsTarget::Direct),
-            vec![
-                RecordOp::SetStatus { record_id: 5, enable: false },
-                RecordOp::SetStatus { record_id: 6, enable: true },
-            ]
-        );
-        // 无 A 记录：交给 ddns-go 自动新建，调和层不代建
-        let no_a = vec![DnsRecord { record_id: 7, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true }];
-        assert_eq!(reconcile(&no_a, &DnsTarget::Direct), vec![RecordOp::SetStatus { record_id: 7, enable: false }]);
+        assert_eq!(judge_dns_mesh(None, None, "10.126.126.1"), NoRecord);
+        // 空串视为无记录（PowerShell [string]$null 产出 ""）
+        assert_eq!(judge_dns_mesh(Some(""), Some(""), "10.126.126.1"), NoRecord);
     }
 
     /// spec 007 AC6/AC7：切组网 = CNAME 全删（含暂停的残留）+ A upsert 虚拟 IP。

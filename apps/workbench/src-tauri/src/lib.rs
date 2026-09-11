@@ -23,7 +23,6 @@ mod single_instance;
 mod startup;
 mod stop;
 mod tray;
-mod tunnel;
 mod urls;
 mod wizard;
 
@@ -98,31 +97,22 @@ pub fn run() {
             // spec 002：网络环境反馈与归类调整
             commands::get_net_status,
             commands::set_network_category,
-            // spec 004：穿透通道
-            commands::get_tunnel_status,
-            commands::switch_channel,
-            commands::set_tunnel_enabled,
+            // spec 008：通道收敛组网单通道
             commands::check_dns_alignment,
-            // spec 007：组网通道 + 旧通道停用（T9 命令层）
+            // spec 007：组网通道（T9 命令层）
             commands::mesh_status,
             commands::mesh_apply_config,
             commands::mesh_install_service,
             commands::mesh_uninstall_service,
             commands::mesh_sync_dns,
-            commands::disable_legacy_channel,
-            commands::clear_frp_key,
             commands::mesh_diagnostics,
-            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）+ 隧道重启 + frpc 分发保障
+            // spec 004/005：栈目录打开 + 域名即时探测（通道体检）
             commands::open_stack_dir,
             commands::check_domain_health_now,
-            commands::restart_tunnel,
-            commands::get_defender_exclusion_cmd,
-            commands::download_frpc,
             // spec 006：装机向导
             wizard::wizard_get_state,
             wizard::wizard_detect,
             wizard::wizard_set_domain,
-            wizard::wizard_set_branch,
             wizard::wizard_complete,
         ])
         .setup(move |app| {
@@ -202,19 +192,10 @@ pub fn run() {
                 orchestrator::OrchestratorConfig::new(effective_lang, log_dir.clone());
             orch_cfg.scripts_dir = scripts_dir.clone();
             let lang_handle = app.handle().clone();
-            let channel_handle = app.handle().clone();
             let orch = build_orchestrator(app.handle().clone(), orch_cfg)
                 // 语言切换后脚本 -Lang 与状态 detail 即时跟随（AC25）
                 .with_lang_source(std::sync::Arc::new(move || {
                     lang_handle.state::<lang::LanguageState>().current()
-                }))
-                // 通道感知（spec 007 枚举化）：现役通道实时读取——穿透/组网下
-                // start_all 跳过 ddns-go（004 AC8 / 007 §3.2），直连全启
-                .with_channel_source(std::sync::Arc::new(move || {
-                    channel_handle
-                        .state::<settings::SettingsState>()
-                        .current()
-                        .access_channel
                 }));
             app.manage(orch.clone());
             // 前台轮询器（AC4 ≤5s；plan §8 前台 2s）：句柄随 setup 结束丢弃——
@@ -226,37 +207,14 @@ pub fn run() {
             app.manage(net_monitor.clone());
             let _net_poller = net_monitor.spawn_poller();
 
-            // ── 穿透通道（spec 004）：frpc 管理器 + 守护线程 ────────────────
-            // 栈目录为设置快照（用户可配置，重启生效）
+            // ── 栈目录快照（spec 004：用户可配置，重启生效）──────────────────
             let stack_dir = app.state::<settings::SettingsState>().current().stack_dir;
-            // frpc 随包分发（resources/bin），ops 用已解析的脚本目录定位；
-            // 通道源/事件出口接 AppHandle（装配层适配，tunnel.rs 保持无 Tauri 依赖）；
-            // 守护线程每 5s 收敛「期望通道×开关 ↔ frpc 实况」（AC3/8/11），
-            // 并消费心跳快照做会话卡死自愈（心跳 ≥3 次不可达 + frpc 存活 → 重启）
+
+            // ── 心跳共享快照（spec 005）：探测线程写、命令层即时读 ──────────
+            // （隧道守护的会话卡死自愈消费点已随穿透通道退役——spec 008 T6；
+            // 快照本身保留：check_domain_health_now 即时探测仍读它）
             let shared_health: heartbeat::SharedHealth =
                 std::sync::Arc::new(std::sync::Mutex::new(None));
-            let health_handle = app.handle().clone();
-            let shared_for_view = std::sync::Arc::clone(&shared_health);
-            let tunnel_mgr = std::sync::Arc::new(tunnel::TunnelManager::new(
-                std::sync::Arc::new(tunnel::WindowsFrpcOps::new(scripts_dir.clone(), stack_dir.clone())),
-                std::sync::Arc::new(AppChannelSource { app: app.handle().clone() }),
-                std::sync::Arc::new(TauriTunnelEmitter { app: app.handle().clone() }),
-                Some(std::sync::Arc::new(move || {
-                    health_handle
-                        .state::<settings::SettingsState>()
-                        .current()
-                        .domain_heartbeat
-                        .then(|| {
-                            shared_for_view
-                                .lock()
-                                .ok()
-                                .and_then(|slot| slot.as_ref().map(|h| h.failures))
-                        })
-                        .flatten()
-                })),
-            ));
-            app.manage(tunnel_mgr.clone());
-            tunnel_mgr.spawn_guard();
 
             // ── 组网通道（spec 007 T8）：状态观察者（只探询不动手，plan §3.3）──
             // 服务拉起/自愈归 SCM（T7 服务恢复策略），此处周期探询（sc 服务态 +
@@ -349,9 +307,6 @@ pub fn run() {
                 // ADR-0002：三组件独立于程序存活、不挂 kill-on-close Job，
                 // 退出绝不无条件携带服务进程。
                 log::info!("ExitRequested(code={code:?})");
-                // spec 004 AC10：收摊语义覆盖隧道——frpc 与三组件一并退出
-                // （幂等：未运行时 kill 为无操作；state 类型与 manage 一致为 Arc 包裹）
-                app.state::<std::sync::Arc<tunnel::TunnelManager>>().stop();
                 // spec 007：现役 mesh + 收摊意图 → 提权停组网服务（UAC 派发
                 // 不等待：拒绝则服务保持运行，下次开机 SCM delayed-auto 拉回，
                 // 组网可用性不因退出流程被破坏）
@@ -434,36 +389,6 @@ fn build_net_monitor(app: tauri::AppHandle) -> network::NetMonitor {
     {
         let _ = app;
         unreachable!("本项目仅面向 Windows（ADR-0001）")
-    }
-}
-
-/// 通道感知配置源（spec 004）：实时读 SettingsState，供守护线程每轮取期望状态
-struct AppChannelSource {
-    app: tauri::AppHandle,
-}
-
-impl tunnel::ChannelSource for AppChannelSource {
-    fn channel_state(&self) -> (settings::AccessChannel, bool, Option<String>) {
-        let s = self.app.state::<settings::SettingsState>().current();
-        (
-            s.access_channel,
-            s.tunnel_enabled,
-            s.tunnel.as_ref().map(|t| t.tunnel_id.clone()),
-        )
-    }
-}
-
-/// 隧道状态事件出口（`tunnel://status`；载荷 TunnelStatus）
-struct TauriTunnelEmitter {
-    app: tauri::AppHandle,
-}
-
-impl tunnel::TunnelEventSink for TauriTunnelEmitter {
-    fn emit_tunnel_status(&self, status: &tunnel::TunnelStatus) {
-        use tauri::Emitter;
-        if let Err(e) = self.app.emit(tunnel::EVENT_TUNNEL_STATUS, status) {
-            log::error!("发送 {} 失败：{e}", tunnel::EVENT_TUNNEL_STATUS);
-        }
     }
 }
 

@@ -41,7 +41,7 @@ pub fn start_one(orch: tauri::State<'_, Orchestrator>, id: ComponentId) -> Resul
     orch.start_one(id).map_err(|e| e.to_string())
 }
 
-/// 一键停止（AC2）：三组件并行（单组件 10s 预算）；失败组件汇总为 Err 交前端提示。
+/// 一键停止（AC2）：两组件并行（单组件 10s 预算）；失败组件汇总为 Err 交前端提示。
 /// 停止前自动取消/等待在途启动（spec §4.4 竞态消除，见 orchestrator.stop_one）。
 #[tauri::command]
 pub async fn stop_all(
@@ -87,7 +87,8 @@ fn summarize_stop(outcomes: Vec<(ComponentId, StopOutcome)>) -> Result<(), Strin
     }
 }
 
-/// 用默认浏览器打开目标（workbench/local/lan/domain/ddns_admin，AC19）
+/// 用默认浏览器打开目标（workbench/local/lan/domain，AC19；ddns_admin 已随
+/// 直连通道退役——spec 008）
 #[tauri::command]
 pub fn open_external(
     kind: ExternalKind,
@@ -194,188 +195,10 @@ pub async fn set_network_category(
     .map_err(|code| lang::shell_error_text(code, lang))
 }
 
-// ── 穿透通道（spec 004：AC5/6/7/11/12/13 命令层；逻辑在 tunnel/settings）────
+// ── 组网通道（spec 007 T9：plan §5.1 命令层；逻辑在 mesh/dns_api）──────────
 
-use crate::settings::SettingsPatch;
-use crate::tunnel::{
-    judge_dns, switch_actions, DnsAlignment, FrpcOps, SwitchAction, SwitchReject, TunnelManager,
-    TunnelStatus,
-};
-
-/// 隧道状态快照（启动兜底；此后以 `tunnel://status` 事件为准）。
-/// State 泛型须与 lib.rs manage 的类型精确一致（Arc 包裹），
-/// 否则 Tauri 找不到状态（"state not managed"）。
-#[tauri::command]
-pub fn get_tunnel_status(mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>) -> TunnelStatus {
-    mgr.status()
-}
-
-/// 通道切换（AC5/6/7）：前置就绪校验（无副作用拒绝）→ 按状态机动作序执行 →
-/// 持久化。「先起新再停旧」序保证起新失败时旧通道无恙（tunnel.rs 状态机注释）。
-#[tauri::command]
-pub async fn switch_channel(
-    ctx: tauri::State<'_, AutostartContext>,
-    orch: tauri::State<'_, Orchestrator>,
-    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
-    settings: tauri::State<'_, crate::settings::SettingsState>,
-    lang_state: tauri::State<'_, LanguageState>,
-    target: crate::settings::AccessChannel,
-) -> Result<crate::settings::Settings, String> {
-    use crate::tunnel::WindowsFrpcOps;
-
-    let cur = settings.current();
-    // 前置就绪：穿透配置（settings.tunnel）∧ frpc 二进制 ∧ 访问密钥（AC7/AC14）；
-    // 组网 = network_secret 已写入 ∧ 服务已安装（服务存在性 T8 接入，先按密钥判定）
-    let ops = WindowsFrpcOps::new(ctx.scripts_dir.clone(), cur.stack_dir.clone());
-    let tunnel_ready = cur.tunnel.is_some() && ops.exe_exists() && ops.access_key().is_some();
-    let mesh_ready = crate::mesh::read_network_secret(&cur.stack_dir).is_some();
-    let actions =
-        switch_actions(cur.access_channel, target, tunnel_ready, mesh_ready).map_err(|e| match e {
-            SwitchReject::NotConfigured { .. } => {
-                "穿透未就绪：请先在穿透设置中填写隧道 ID 与节点域名，并按指引配置 frpc.exe 与访问密钥"
-                    .to_string()
-            }
-            SwitchReject::MeshNotReady => {
-                "组网未就绪：请先运行 set-mesh-secret.ps1 写入密钥，并安装组网服务（向导或设置区入口）"
-                    .to_string()
-            }
-            SwitchReject::AlreadyOnTarget => "已处于目标通道".to_string(),
-        })?;
-
-    for action in actions {
-        match action {
-            SwitchAction::StartFrpc => mgr.start()?,
-            SwitchAction::StopFrpc => mgr.stop(),
-            // 组网生效（渲染→落位→校验→提权 install/restart）：与 mesh_apply_config
-            // 命令共享内核（plan §3.2 第 3~4 步；密钥缺失已由 switch_actions 前置
-            // 拒绝，此处 prepare_stack 的同判定为双保险）
-            SwitchAction::RestartMeshService => {
-                apply_mesh_effective(&ctx, &settings, lang_state.current()).await?;
-            }
-            // 反向收尾：提权停组网服务（mesh→direct/tunnel，plan §3.2）
-            SwitchAction::StopMeshService => {
-                let Some(dir) = ctx.scripts_dir.clone() else {
-                    return Err(
-                        "脚本目录不可用：无法停组网服务（可手动运行 mesh-service.ps1 -Action stop）"
-                            .into(),
-                    );
-                };
-                let params = crate::mesh::service_action_params(
-                    &dir,
-                    "stop",
-                    &cur.stack_dir,
-                    lang_state.current(),
-                );
-                dispatch_elevated(params).await?;
-            }
-            SwitchAction::StartDdnsGo => {
-                orch.start_one(ComponentId::DdnsGo)
-                    .map_err(|e| format!("ddns-go 启动派发失败：{e}"))?;
-                // 条件恢复 ddns-go 自启托管（仅自启开关开启时重建，判据见
-                // set_ddnsgo_autostart）——切回直连后开机拉起行为跟随用户开关
-                sync_ddnsgo_autostart(&ctx, cur.language, cur.stack_dir.clone(), true).await;
-            }
-            SwitchAction::StopDdnsGo => {
-                stop_ddnsgo_and_unmanage(&ctx, &orch, cur.language, cur.stack_dir.clone()).await?;
-            }
-            SwitchAction::SyncDns(to) => {
-                // DNS 自动切换（AC12/13 升级）：凭证缺失/API 失败仅记录不阻断——
-                // 检测循环会继续显示手动指引（降级闭环）。凭证复用机器上已有的
-                // 腾讯云密钥（.env → ddns-go.yaml），不新增用户输入
-                use crate::consts::{DOMAIN, DOMAIN_ROOT};
-                use crate::dns_api;
-                use crate::settings::AccessChannel as Ac;
-                let Some(cred) = dns_api::read_credential(&cur.stack_dir) else {
-                    log::warn!("DNS 自动切换跳过：未找到腾讯云凭证（.env / ddns-go.yaml），请按指引手动修改解析");
-                    continue;
-                };
-                let sub = dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
-                let node_domain = cur.tunnel.as_ref().map(|t| t.node_domain.clone());
-                let virtual_ip = cur.mesh.virtual_ip.clone();
-                let result = tauri::async_runtime::spawn_blocking(move || match to {
-                    Ac::Tunnel => match node_domain {
-                        Some(nd) => dns_api::sync_to_tunnel(&cred, DOMAIN_ROOT, &sub, &nd),
-                        None => Err("穿透配置缺失，无法同步 CNAME".into()),
-                    },
-                    Ac::Direct => dns_api::sync_to_direct(&cred, DOMAIN_ROOT, &sub),
-                    // spec 007：CNAME 全删 + A upsert 虚拟 IP（AC6/AC7）
-                    Ac::Mesh => dns_api::sync_to_mesh(&cred, DOMAIN_ROOT, &sub, &virtual_ip),
-                })
-                .await;
-                match result {
-                    Ok(Ok(n)) => log::info!("DNS 自动切换完成（{to:?}），应用 {n} 条记录操作"),
-                    Ok(Err(e)) => log::warn!("DNS 自动切换失败（回退手动指引）：{e}"),
-                    Err(e) => log::warn!("DNS 切换线程失败：{e}"),
-                }
-            }
-            SwitchAction::Persist(ch) => {
-                settings
-                    .patch(&SettingsPatch { access_channel: Some(ch), ..Default::default() })
-                    .map_err(|e| format!("通道持久化失败：{e}"))?;
-            }
-        }
-    }
-    Ok(settings.current())
-}
-
-/// 通道切换的 ddns-go 自启托跟进/退（StopDdnsGo/StartDdnsGo 配套，007 §3.2）。
-/// 失败仅告警不阻断切换——自启只影响下次开机行为，不应反手让已完成的通道
-/// 切换报错（进程已停/已起的即时效果不因任务残留回滚）。
-async fn sync_ddnsgo_autostart(
-    ctx: &tauri::State<'_, AutostartContext>,
-    language: crate::settings::LanguageSetting,
-    stack_dir: String,
-    enable: bool,
-) {
-    let Some(scripts_dir) = ctx.scripts_dir.clone() else {
-        log::warn!("脚本目录不可用：跳过 ddns-go 自启托管调整（不阻断切换）");
-        return;
-    };
-    let lang = lang::resolve_setting(language);
-    let log_dir = ctx.log_dir.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        crate::autostart::set_ddnsgo_autostart(
-            &scripts::ProcessExecutor,
-            &scripts_dir,
-            lang,
-            &log_dir,
-            &stack_dir,
-            enable,
-        )
-    })
-    .await;
-    match result {
-        Ok(Ok(())) => log::info!(
-            "ddns-go 自启托管已{}（enable={enable}）",
-            if enable { "恢复" } else { "取消" }
-        ),
-        Ok(Err(e)) => log::warn!("ddns-go 自启托管调整失败（不阻断切换）：{e}"),
-        Err(e) => log::warn!("ddns-go 自启托管线程失败（不阻断切换）：{e}"),
-    }
-}
-
-/// 停 ddns-go 进程并取消自启托管（switch_channel StopDdnsGo 与停用直连共享；
-/// 007 §3.2——开机任务拉起 ddns-go 会把 A 记录写回公网 IP，与穿透 CNAME /
-/// 组网虚拟 IP 的 DNS 调和互踩）。停止未确认 → Err（后续 DNS 动作没有意义）。
-async fn stop_ddnsgo_and_unmanage(
-    ctx: &tauri::State<'_, AutostartContext>,
-    orch: &tauri::State<'_, Orchestrator>,
-    language: crate::settings::LanguageSetting,
-    stack_dir: String,
-) -> Result<(), String> {
-    // 停止管线有 10s 预算 → spawn_blocking 不阻塞 UI 线程（沿 stop_all）
-    let orch2 = orch.inner().clone();
-    let outcome = tauri::async_runtime::spawn_blocking(move || orch2.stop_one(ComponentId::DdnsGo))
-        .await
-        .map_err(|e| format!("停止线程失败：{e}"))?;
-    if !matches!(outcome, StopOutcome::Stopped | StopOutcome::AlreadyStopped) {
-        return Err(format!(
-            "ddns-go 停止未确认（{outcome:?}）：请检查组件状态后重试"
-        ));
-    }
-    sync_ddnsgo_autostart(ctx, language, stack_dir, false).await;
-    Ok(())
-}
+use crate::dns_api::{judge_dns_mesh, DnsAlignment};
+use crate::mesh::MeshStatus;
 
 /// UAC 派发（ShellExecuteW runas）：UAC 弹窗期间可能不返回 → 后台线程执行
 /// 不冻结 UI（run_tool 同纪律）；elevate 已把结果码转为可读文案（5=UAC 被拒）
@@ -384,10 +207,6 @@ async fn dispatch_elevated(params: String) -> Result<(), String> {
         .await
         .map_err(|e| format!("提权派发线程失败：{e}"))?
 }
-
-// ── 组网通道（spec 007 T9：plan §5.1 命令层；逻辑在 mesh/tunnel/dns_api）────
-
-use crate::mesh::MeshStatus;
 
 /// 组网状态快照（启动兜底；此后以 `mesh://status` 事件为准——AC4 四态 + 失败
 /// 摘要 detail 稳定码，构造上不含密钥）
@@ -400,7 +219,6 @@ pub fn mesh_status(
 
 /// 组网配置生效（AC1/AC9）：密钥就绪检查 → 渲染 config.toml → 二进制缺失时
 /// 落位 → `--check-config` 校验 → 按服务实况 UAC 派发 install/restart。
-/// 与 switch_channel 的 RestartMeshService 共享内核（同一生效路径，无双源）。
 #[tauri::command]
 pub async fn mesh_apply_config(
     ctx: tauri::State<'_, AutostartContext>,
@@ -483,11 +301,10 @@ pub async fn mesh_uninstall_service(
     dispatch_elevated(params).await
 }
 
-/// 同步 DNS 到组网通道（spec 007 AC13，T13 新增，见 plan 变更记录 2026-09-11）：
-/// CNAME 全删 + A upsert 虚拟 IP。前置：现役通道为 mesh + 腾讯云凭证存在。
-/// 为什么独立于 switch_channel 的 SyncDns 编排臂：向导分支选择
-/// （wizard_set_branch）只 patch access_channel 不做编排——新装机默认 mesh 时
-/// 切换命令 AlreadyOnTarget 短路，A 记录无人创建，AC13 需要显式入口。
+/// 同步 DNS 到组网通道（spec 007 AC13 / spec 008 组网单通道）：
+/// CNAME 全删 + A upsert 虚拟 IP。前置：腾讯云凭证存在（栈 .env 单源，spec 008）。
+/// 独立入口的缘由：装机向导组网分支只写设置不做 DNS 编排，全新装机时
+/// A 记录无人创建，AC13 需要显式入口兜底。
 #[tauri::command]
 pub async fn mesh_sync_dns(
     settings: tauri::State<'_, crate::settings::SettingsState>,
@@ -511,132 +328,6 @@ pub async fn mesh_sync_dns(
     Ok(count)
 }
 
-/// 停用旧通道（AC5/AC6，plan §5.2）：前置校验非现役（disable_actions 纯函数
-/// 拒绝）→ 停组件 → DNS 清理（凭证缺失降级 warn，前端呈现手动指引）→
-/// 持久化停用标记。返回更新后的 Settings（看板「已停用」态数据源）。
-#[tauri::command]
-pub async fn disable_legacy_channel(
-    ctx: tauri::State<'_, AutostartContext>,
-    orch: tauri::State<'_, Orchestrator>,
-    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
-    settings: tauri::State<'_, crate::settings::SettingsState>,
-    target: String,
-    delete_a: bool,
-) -> Result<crate::settings::Settings, String> {
-    use crate::tunnel::{disable_actions, DisableAction, DisableReject, DisableTarget};
-
-    let target = parse_disable_target(&target)?;
-    let cur = settings.current();
-    let actions =
-        disable_actions(cur.access_channel, target, delete_a).map_err(|e| match e {
-            DisableReject::ChannelActive { target } => match target {
-                DisableTarget::Tunnel => {
-                    "穿透通道现役中：请先切换到组网或直连，再执行停用".to_string()
-                }
-                DisableTarget::Direct => {
-                    "直连通道现役中：请先切换到组网或穿透，再执行停用".to_string()
-                }
-            },
-        })?;
-    for action in actions {
-        match action {
-            DisableAction::StopFrpc => mgr.stop(),
-            DisableAction::StopDdnsGo => {
-                stop_ddnsgo_and_unmanage(&ctx, &orch, cur.language, cur.stack_dir.clone()).await?;
-            }
-            // CNAME 全删（AC5 彻底清理）／A 全删（AC6 非组网态按用户选择）
-            DisableAction::DeleteCname | DisableAction::DeleteA => {
-                purge_dns_records(&cur, matches!(action, DisableAction::DeleteA)).await;
-            }
-            DisableAction::MarkDisabled(t) => {
-                let patch = match t {
-                    DisableTarget::Tunnel => SettingsPatch {
-                        tunnel_disabled: Some(true),
-                        ..Default::default()
-                    },
-                    DisableTarget::Direct => SettingsPatch {
-                        direct_disabled: Some(true),
-                        ..Default::default()
-                    },
-                };
-                settings
-                    .patch(&patch)
-                    .map_err(|e| format!("停用标记持久化失败：{e}"))?;
-            }
-        }
-    }
-    Ok(settings.current())
-}
-
-/// "tunnel"|"direct" → DisableTarget（前端入参解析；非法值 Err）
-fn parse_disable_target(s: &str) -> Result<crate::tunnel::DisableTarget, String> {
-    match s {
-        "tunnel" => Ok(crate::tunnel::DisableTarget::Tunnel),
-        "direct" => Ok(crate::tunnel::DisableTarget::Direct),
-        other => Err(format!("未知停用目标（应为 tunnel/direct）：{other}")),
-    }
-}
-
-/// DNS 清理执行臂（DeleteCname/DeleteA）：腾讯云凭证缺失或 API 失败仅记
-/// warn 不阻断——停用编排主体（停组件 + 标记）已完成，记录残留交由前端
-/// 手动指引闭环（AC5/AC6「失败回退手动指引」004 惯例）
-async fn purge_dns_records(cur: &crate::settings::Settings, delete_a: bool) {
-    use crate::consts::{DOMAIN, DOMAIN_ROOT};
-    let Some(cred) = crate::dns_api::read_credential(&cur.stack_dir) else {
-        log::warn!("DNS 清理跳过：未找到腾讯云凭证（.env / ddns-go.yaml），请按指引手动删除记录");
-        return;
-    };
-    let root = DOMAIN_ROOT.to_string();
-    let sub = crate::dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        if delete_a {
-            crate::dns_api::purge_a_records(&cred, &root, &sub)
-        } else {
-            crate::dns_api::purge_cnames(&cred, &root, &sub)
-        }
-    })
-    .await;
-    match result {
-        Ok(Ok(n)) => log::info!("DNS 清理完成（删除 {n} 条记录）"),
-        Ok(Err(e)) => log::warn!("DNS 清理失败（回退手动指引）：{e}"),
-        Err(e) => log::warn!("DNS 清理线程失败（回退手动指引）：{e}"),
-    }
-}
-
-/// 停用穿透后的密钥清除入口（AC5）：拉起 clear-frp-key.ps1 可见窗（从栈
-/// .env 移除 SAKURA_FRP_KEY 行，其余行保留）。栈目录当前用户可写，无需提权。
-#[tauri::command]
-pub async fn clear_frp_key(
-    ctx: tauri::State<'_, AutostartContext>,
-    lang_state: tauri::State<'_, LanguageState>,
-) -> Result<(), String> {
-    let lang = lang_state.current();
-    let Some(dir) = ctx.scripts_dir.clone() else {
-        // spec §4.5：脚本目录不可用 → 禁用原因透传
-        let reason = ctx
-            .scripts_disabled_reason
-            .clone()
-            .unwrap_or_else(|| lang::detail_texts(lang).scripts_dir_unavailable());
-        return Err(reason);
-    };
-    let stack_dir = ctx
-        .stack_dir
-        .clone()
-        .unwrap_or_else(|| crate::consts::DEFAULT_STACK_DIR.to_string());
-    tauri::async_runtime::spawn_blocking(move || {
-        let params = scripts::visible_script_params(
-            &dir,
-            scripts::Script::ClearFrpKey,
-            lang,
-            &["-StackDir", &format!("'{}'", stack_dir.replace('\'', "''"))],
-        );
-        scripts::open_visible("powershell.exe", &params)
-    })
-    .await
-    .map_err(|e| lang::err_texts(lang).tool_join_failed(&e.to_string()))?
-    .map_err(|code| lang::shell_error_text(code, lang))
-}
-
 /// 组网诊断（T16，AC13）：六项只读探测——服务态/密钥就绪/逐条对端 TCP 可达/
 /// 成员清单（无虚拟 IP 标记 no_addr）/本机虚拟网卡/域名解析+443 链路。
 /// 探测含子进程与网络 IO（逐对端 3s 超时），spawn_blocking 执行不堵 UI；
@@ -653,52 +344,24 @@ pub async fn mesh_diagnostics(
     .map_err(|e| format!("诊断任务失败：{e}"))
 }
 
-/// 穿透启用/停用（AC11）：非穿透通道下仅改开关（守护循环按通道×开关收敛，
-/// 不在此处拉起/停止，避免与守护竞争）
-#[tauri::command]
-pub fn set_tunnel_enabled(
-    settings: tauri::State<'_, crate::settings::SettingsState>,
-    enabled: bool,
-) -> Result<crate::settings::Settings, String> {
-    settings.patch(&SettingsPatch {
-        tunnel_enabled: Some(enabled),
-        ..Default::default()
-    })
-}
-
-/// DNS 对齐检测（AC12/13 + spec 007 体检重定义，通道感知）：权威 NS 上的
-/// CNAME/A 实况 → 对齐结论。穿透判 CNAME→节点域；组网判 A=虚拟 IP；
-/// 直连判有 A 即可（值由 ddns-go 自愈维护，不比对）。
+/// DNS 对齐检测（spec 008：组网单通道，AC8：A=虚拟 IP）：权威 NS 上的
+/// CNAME/A 实况 → 对齐结论。残留 CNAME 判旁路暴露面（MismatchedCname），
+/// A 值比对虚拟 IP（judge_dns_mesh 自 tunnel.rs 迁入 dns_api，spec 008 D2）。
 /// `Err` = 查询本身失败（网络/解析器异常），前端如实显示"检测失败"。
 #[tauri::command]
 pub async fn check_dns_alignment(
     settings: tauri::State<'_, crate::settings::SettingsState>,
 ) -> Result<DnsAlignment, String> {
     use crate::consts::{DOMAIN, DOMAIN_ROOT};
-    use crate::settings::AccessChannel as Ac;
-    let cur = settings.current();
-    let expected = match cur.access_channel {
-        Ac::Tunnel => cur
-            .tunnel
-            .as_ref()
-            .map(|t| t.node_domain.clone())
-            .ok_or("穿透未配置，无需 DNS 对齐检测")?,
-        Ac::Mesh => cur.mesh.virtual_ip.clone(),
-        // 直连不比对 A 值——占位空串（judge_dns 的 CNAME 分支才用期望值）
-        Ac::Direct => String::new(),
-    };
+    let virtual_ip = settings.current().mesh.virtual_ip.clone();
     let probe = tauri::async_runtime::spawn_blocking(move || run_dns_probe(DOMAIN_ROOT, DOMAIN))
         .await
         .map_err(|e| format!("DNS 检测线程失败：{e}"))??;
-    Ok(match cur.access_channel {
-        Ac::Tunnel => judge_dns(probe.cname.as_deref(), probe.has_a, &expected),
-        Ac::Mesh => crate::tunnel::judge_dns_mesh(
-            probe.cname.as_deref(),
-            probe.a_value.as_deref(),
-            &expected,
-        ),
-        Ac::Direct => judge_dns(probe.cname.as_deref(), probe.has_a, &expected),
-    })
+    Ok(judge_dns_mesh(
+        probe.cname.as_deref(),
+        probe.a_value.as_deref(),
+        &virtual_ip,
+    ))
 }
 
 /// Resolve-DnsName 三连查（NS → 权威 CNAME/A）的合成输出
@@ -707,8 +370,8 @@ pub async fn check_dns_alignment(
 struct DnsProbeResult {
     ns: Option<String>,
     cname: Option<String>,
-    has_a: bool,
-    /// 首条 A 记录值（组网态比对虚拟 IP 用；无记录 → null/空）
+    /// 首条 A 记录值（比对虚拟 IP 用；无记录 → null/空；
+    /// 脚本输出的 hasA 字段已无消费方，serde 忽略之）
     a_value: Option<String>,
 }
 
@@ -745,20 +408,7 @@ $aVal=if($aa.Count -gt 0){{[string](@($aa | Select-Object -First 1).IPAddress)}}
     Ok(parsed)
 }
 
-// ── 域名可达性（spec 005）：打开目录 / 即时探测 / 隧道重启 ──────────────────
-
-/// 手动重启隧道（停止 → flushdns → 重新登录；「重启隧道」按钮）
-#[tauri::command]
-pub async fn restart_tunnel(
-    mgr: tauri::State<'_, std::sync::Arc<TunnelManager>>,
-) -> Result<TunnelStatus, String> {
-    let runner = mgr.inner().clone();
-    let reporter = runner.clone();
-    tauri::async_runtime::spawn_blocking(move || runner.restart("手动重启"))
-        .await
-        .map_err(|e| format!("重启线程失败：{e}"))??;
-    Ok(reporter.status())
-}
+// ── 域名可达性（spec 005）：打开目录 / 即时探测 ─────────────────────────────
 
 /// 打开栈目录（穿透设置指引的「栈目录」超链接目标）
 #[tauri::command]
@@ -782,60 +432,6 @@ pub async fn check_domain_health_now(
         .map_err(|e| format!("探测线程失败：{e}"))?;
     monitor.poke();
     Ok(outcome)
-}
-
-// ── frpc 分发保障（spec 004：杀软误报的自助恢复，需求方 2026-09-10）─────────
-
-/// Defender 白名单命令文本（「复制白名单命令」按钮；覆盖 frpc 的两个运行位置：
-/// 资源目录（脚本定位解析，安装/开发态都准确）+ 栈目录）
-#[tauri::command]
-pub fn get_defender_exclusion_cmd(
-    ctx: tauri::State<'_, AutostartContext>,
-) -> String {
-    let res_bin = ctx
-        .scripts_dir
-        .clone()
-        .map(|d| d.join(crate::consts::FRPC_EXE_NAME).to_string_lossy().into_owned())
-        .unwrap_or_else(|| format!("安装目录\\resources\\bin\\{}", crate::consts::FRPC_EXE_NAME));
-    format!(
-        "Add-MpPreference -ExclusionPath '{}\\{}', '{}'",
-        crate::consts::DEFAULT_STACK_DIR,
-        crate::consts::FRPC_EXE_NAME,
-        res_bin
-    )
-}
-
-/// 一键恢复 frpc（「下载 frpc」按钮）：官方 CDN 下载 → SHA256 校验 → 落位栈目录
-/// （WindowsFrpcOps 的栈目录回退保证可用）。校验不符一律放弃写入。
-#[tauri::command]
-pub async fn download_frpc() -> Result<String, String> {
-    use crate::consts::{FRPC_EXE_NAME, DEFAULT_STACK_DIR};
-    use crate::dns_api::sha256_hex;
-    use std::io::Read;
-
-    const URL: &str = "https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe";
-    const EXPECTED: &str = "b705262edad9f0de04b38f342e811e9d97d0beada75edab3f790e105dcfb5234";
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let resp = ureq::get(URL)
-            .timeout(std::time::Duration::from_secs(180))
-            .call()
-            .map_err(|e| format!("下载失败：{e}"))?;
-        let mut bytes = Vec::new();
-        resp.into_reader()
-            .take(64 * 1024 * 1024)
-            .read_to_end(&mut bytes)
-            .map_err(|e| format!("下载读取失败：{e}"))?;
-        if sha256_hex(&bytes) != EXPECTED {
-            return Err("下载文件 SHA256 校验不符，已放弃写入（请检查网络或稍后重试）".into());
-        }
-        let target = std::path::PathBuf::from(DEFAULT_STACK_DIR).join(FRPC_EXE_NAME);
-        std::fs::write(&target, &bytes)
-            .map_err(|e| format!("写入 {DEFAULT_STACK_DIR}\\{FRPC_EXE_NAME} 失败：{e}"))?;
-        Ok(format!("frpc 已恢复到 {DEFAULT_STACK_DIR}\\{FRPC_EXE_NAME}"))
-    })
-    .await
-    .map_err(|e| format!("下载线程失败：{e}"))?
 }
 
 // ── 单元测试（纯逻辑：停止汇总）────────────────────────────────────────────
@@ -862,11 +458,11 @@ mod tests {
         let err = summarize_stop(vec![
             (ComponentId::CloudCli, StopOutcome::Failed("复核未通过".into())),
             (ComponentId::Caddy, StopOutcome::Stopped),
-            (ComponentId::DdnsGo, StopOutcome::TimedOut("超时".into())),
+            (ComponentId::Caddy, StopOutcome::TimedOut("超时".into())),
         ])
         .unwrap_err();
         assert!(err.contains("[cloudcli]") && err.contains("复核未通过"), "{err}");
-        assert!(err.contains("[ddnsgo]") && err.contains("超时"), "{err}");
+        assert!(err.contains("[caddy]") && err.contains("超时"), "{err}");
     }
 
     #[test]
@@ -874,15 +470,5 @@ mod tests {
         // 编译期语义：Orchestrator 可跨线程共享（spawn_blocking 前提）
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Arc<Orchestrator>>();
-    }
-
-    /// 停用目标解析（spec 007 AC5/AC6 前置）：合法两值映射，非法值可读 Err
-    #[test]
-    fn parse_disable_target_accepts_known_values_only() {
-        use crate::tunnel::DisableTarget;
-        assert_eq!(parse_disable_target("tunnel").unwrap(), DisableTarget::Tunnel);
-        assert_eq!(parse_disable_target("direct").unwrap(), DisableTarget::Direct);
-        let err = parse_disable_target("mesh").unwrap_err();
-        assert!(err.contains("tunnel/direct"), "{err}");
     }
 }
