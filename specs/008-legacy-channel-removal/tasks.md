@@ -15,27 +15,27 @@
 
 ## 阶段 2: Rust 基础层（测试先行）
 
-- [ ] T2 `settings.rs` 迁移：`AccessChannel` 单变体 `Mesh` + 自定义 Deserialize 映射（direct/tunnel→Mesh、异常值报错）；删 `TunnelConfig`/`tunnel`/`tunnel_enabled`/`tunnel_disabled`/`direct_disabled` 字段与 Patch 臂；`default_access_channel` 统一 Mesh；迁移五态单测（direct/tunnel/异常值/无字段/字段保留）（验收: AC2；完成标志：单测过、全库编译绿——下游引用随后续任务收敛）
-- [ ] T3 基础常量与组件身份：`consts.rs` 删 FRPC/DDNSGO 常量（`FRPC_ENV_FILE` 改名 `STACK_ENV_FILE` 保留——腾讯凭证仍用）；`probe.rs` 删 `ComponentId::DdnsGo`；`stop.rs` 删 `stop_ddnsgo`；`lang.rs` 删 `refuse_ddnsgo`、`stack_dir_missing` 文案改「缺少 caddy.exe」；`urls.rs` 删 `ExternalKind::DdnsAdmin`；相关测试同步（验收: AC1；完成标志：编译绿）
-- [ ] T4 `orchestrator.rs` 收缩：`COMPONENT_ORDER` 二元化、`channel_source`/`with_channel_source`/`current_channel` 删、`start_all` 的 ddns-go 跳过逻辑删、`stop_one`/`run_start`/`timeout_detail` 的 DdnsGo 臂删、Deserialize 分支删；`lib.rs` 装配点同步；测试改写（`start_all_skips_ddnsgo_*` 删，新增无 ddns-go 断言）（验收: AC3；完成标志：cargo test 绿）
+- [x] T2 `settings.rs` 迁移：`AccessChannel` 单变体 `Mesh` + 自定义 Deserialize 映射（direct/tunnel→Mesh、异常值报错）；删 `TunnelConfig`/`tunnel`/`tunnel_enabled`/`tunnel_disabled`/`direct_disabled` 字段与 Patch 臂；`default_access_channel` 统一 Mesh；迁移五态单测（direct/tunnel/异常值/无字段/字段保留）（验收: AC2；完成标志：单测过、全库编译绿——下游引用随后续任务收敛）✓ 2026-09-11
+- [x] T3 基础常量与组件身份：`consts.rs` 删 FRPC/DDNSGO 常量（`FRPC_ENV_FILE` 改名 `STACK_ENV_FILE` 保留——腾讯凭证仍用）；`probe.rs` 删 `ComponentId::DdnsGo`；`stop.rs` 删 `stop_ddnsgo`；`lang.rs` 删 `refuse_ddnsgo`、`stack_dir_missing` 文案改「缺少 caddy.exe」；`urls.rs` 删 `ExternalKind::DdnsAdmin`；相关测试同步（验收: AC1；完成标志：编译绿）✓ 2026-09-11
+- [x] T4 `orchestrator.rs` 收缩：`COMPONENT_ORDER` 二元化、`channel_source`/`with_channel_source`/`current_channel` 删、`start_all` 的 ddns-go 跳过逻辑删、`stop_one`/`run_start`/`timeout_detail` 的 DdnsGo 臂删、Deserialize 分支删；`lib.rs` 装配点同步；测试改写（`start_all_skips_ddnsgo_*` 删，新增无 ddns-go 断言）（验收: AC3；完成标志：cargo test 绿）✓ 2026-09-11
 
 ## 阶段 3: dns_api 收敛与 tunnel 解体
 
-- [ ] T5 `dns_api.rs` 收敛：删 `parse_yaml_creds` 与 yaml 回退链（D3，凭据单源 .env）；删 `DnsTarget::Direct`/`Tunnel` 与 reconcile 对应臂、`sync_to_direct`/`sync_to_tunnel`、`purge_a_records`；保留 Mesh 臂与 `purge_cnames`、`sha256_hex`；`DnsAlignment` + `judge_dns_mesh` 自 `tunnel.rs` 迁入（含测试迁移）；`read_credential` 缺凭证 warn 文案去 yaml 表述（验收: AC2/AC8；完成标志：单测绿）
-- [ ] T6 `tunnel.rs` 解体：删整文件（FrpcOps/TunnelManager/守护/退避/日志分类/flush_dns/switch_actions/disable_actions/事件 EVENT_TUNNEL_STATUS/TunnelState/TunnelStatus/ChannelSource）；`lib.rs` 删 mod/装配/`spawn_guard`/退出钩子/`AppChannelSource`/`TauriTunnelEmitter`，核 `SharedHealth` 全部消费点（plan R6）；删 `examples/dns_sync_probe.rs`；`mesh.rs` 注释清理（"frpc 先例"表述）（验收: AC1；完成标志：cargo test 全绿，无 tunnel 模块残留引用）
+- [x] T5 `dns_api.rs` 收敛：删 `parse_yaml_creds` 与 yaml 回退链（D3，凭据单源 .env）；删 `DnsTarget::Direct`/`Tunnel` 与 reconcile 对应臂、`sync_to_direct`/`sync_to_tunnel`、`purge_a_records`；保留 Mesh 臂与 `purge_cnames`、`sha256_hex`；`DnsAlignment` + `judge_dns_mesh` 自 `tunnel.rs` 迁入（含测试迁移）；`read_credential` 缺凭证 warn 文案去 yaml 表述（验收: AC2/AC8；完成标志：单测绿）✓ 2026-09-11（偏离：`purge_cnames` 亦删——见文末附注②）
+- [x] T6 `tunnel.rs` 解体：删整文件（FrpcOps/TunnelManager/守护/退避/日志分类/flush_dns/switch_actions/disable_actions/事件 EVENT_TUNNEL_STATUS/TunnelState/TunnelStatus/ChannelSource）；`lib.rs` 删 mod/装配/`spawn_guard`/退出钩子/`AppChannelSource`/`TauriTunnelEmitter`，核 `SharedHealth` 全部消费点（plan R6）；删 `examples/dns_sync_probe.rs`；`mesh.rs` 注释清理（"frpc 先例"表述）（验收: AC1；完成标志：cargo test 全绿，无 tunnel 模块残留引用）✓ 2026-09-11
 
 ## 阶段 4: 命令层与向导
 
-- [ ] T7 `commands.rs` 收缩：删九命令（plan §5 列表）+ 注册表（lib.rs invoke_handler）；`check_dns_alignment` mesh-only；`purge_dns_records`/`parse_disable_target`/`sync_ddnsgo_autostart`/`stop_ddnsgo_and_unmanage` 删；warn 文案与测试同步（验收: AC1/AC8；完成标志：cargo test 绿）
-- [ ] T8 `wizard.rs` 收缩：删 `derive_direct`/`derive_tunnel`/`direct_detail_with_dns`/`cgnat_classify`/`fetch_public_ipv4`/`probe_channel_stage` 的 Direct/Tunnel 臂；`derive_https` 删 `ddns-go.exe` 必要条件；向导 branch 字段退役（旧值忽略）与 `wizard_set_branch` 命令删；测试同步（验收: AC6；完成标志：cargo test 绿）
-- [ ] T9 `scripts.rs` 收缩：删 `Script::{SetFrpKey,ClearFrpKey,ResetDdnsPassword,ConfigDdnsGo}` 与 `ToolKind` 四值、`ddns_go_run()`、file_name/visibility/timeout/tool_plan 各臂；`SetupAutostart` exit-1 文案改；域名透传 `matches!` 收窄至 InstallHttps；测试同步（验收: AC9；完成标志：cargo test 绿）
-- [ ] T10 `autostart.rs` 收缩：删 `DDNSGO_TASK_NAME`/`SERVICE_TASK_NAMES` 收二元/`set_ddnsgo_autostart`/`service_task_remove_spec`（若无其他消费方）；测试同步（验收: AC3；完成标志：cargo test 全绿）
+- [x] T7 `commands.rs` 收缩：删九命令（plan §5 列表）+ 注册表（lib.rs invoke_handler）；`check_dns_alignment` mesh-only；`purge_dns_records`/`parse_disable_target`/`sync_ddnsgo_autostart`/`stop_ddnsgo_and_unmanage` 删；warn 文案与测试同步（验收: AC1/AC8；完成标志：cargo test 绿）✓ 2026-09-11
+- [x] T8 `wizard.rs` 收缩：删 `derive_direct`/`derive_tunnel`/`direct_detail_with_dns`/`cgnat_classify`/`fetch_public_ipv4`/`probe_channel_stage` 的 Direct/Tunnel 臂；`derive_https` 删 `ddns-go.exe` 必要条件；向导 branch 字段退役（旧值忽略）与 `wizard_set_branch` 命令删；测试同步（验收: AC6；完成标志：cargo test 绿）✓ 2026-09-11
+- [x] T9 `scripts.rs` 收缩：删 `Script::{SetFrpKey,ClearFrpKey,ResetDdnsPassword,ConfigDdnsGo}` 与 `ToolKind` 四值、`ddns_go_run()`、file_name/visibility/timeout/tool_plan 各臂；`SetupAutostart` exit-1 文案改；域名透传 `matches!` 收窄至 InstallHttps；测试同步（验收: AC9；完成标志：cargo test 绿）✓ 2026-09-11
+- [x] T10 `autostart.rs` 收缩：删 `DDNSGO_TASK_NAME`/`SERVICE_TASK_NAMES` 收二元/`set_ddnsgo_autostart`/`service_task_remove_spec`（若无其他消费方）；测试同步（验收: AC3；完成标志：cargo test 全绿）✓ 2026-09-11
 
 ## 阶段 5: 脚本与资源（可与阶段 4 并行，文件不相交）
 
-- [ ] T11 资源删除：`resources/bin/` 与 `tools/sprint0/bin/` 删 `set-frp-key.ps1`/`clear-frp-key.ps1`/`config-ddnsgo.ps1`/`reset-ddns-password.ps1`（双份）+ `resources/bin/frpc.exe`；删 `installer-hooks.nsh` 与 `tauri.conf.json` 的 `installerHooks` 引用；`build.ps1` `$ScriptSubset` 删四条 + 产物描述改；`manifest.json` 条目收缩再生成（保持 BOM+LF 形态，007 T7 惯例）（验收: AC1；完成标志：manifest 与目录文件一致）
-- [ ] T12 存量脚本收缩：`setup-autostart.ps1`（双份）删 ddns-go 组件条目与提示；`install-https.ps1`（双份）删 `-DdnsZip`/`Install-StackComponent`/ddns-go 下载落位/步骤 5 拉起/汇总提示，头注释更新（Caddy 构建/Caddyfile/Protect-StackDir 保留）；`tools/sprint0` 的 `autostart-on/off.bat` 注释、`install-https.bat`、`menu.ps1` ddns 菜单项、`README.md` 同步；BOM+CRLF/纯 ASCII（bat）纪律（验收: AC1；完成标志：Parser 校验过）
-- [ ] T13 新建 `uninstall-legacy.ps1`（双份 + $ScriptSubset + manifest 登记）：幂等卸载编排——前置校验（EasyTierMesh 服务在运行；`.env` 腾讯密钥就绪否则按 AC11 拒绝删 yaml 并指引 `set-tencent-key.ps1`）→ 停 frpc/ddns-go 进程 → 注销 `ddns-go Sprint0 autostart` → 删栈目录 `ddns-go.exe`/`ddns-go.yaml`/`frpc.exe`/`frpc-run.log` → `.env` 删 `SAKURA_FRP_KEY` 单行（BOM 保留）→ CNAME 残留检测（Resolve-DnsName，存在则指引工作台「同步 DNS」）→ 汇总报告；`-Lang` 双语、BOM+CRLF、PARSER 校验（验收: AC10/AC11；完成标志：临时目录端到端演练幂等重跑）
+- [x] T11 资源删除：`resources/bin/` 与 `tools/sprint0/bin/` 删 `set-frp-key.ps1`/`clear-frp-key.ps1`/`config-ddnsgo.ps1`/`reset-ddns-password.ps1`（双份）+ `resources/bin/frpc.exe`；删 `installer-hooks.nsh` 与 `tauri.conf.json` 的 `installerHooks` 引用；`build.ps1` `$ScriptSubset` 删四条 + 产物描述改；`manifest.json` 条目收缩再生成（保持 BOM+LF 形态，007 T7 惯例）（验收: AC1；完成标志：manifest 与目录文件一致）✓ 2026-09-11（双副本 sha256 与 manifest 三方核对一致）
+- [x] T12 存量脚本收缩：`setup-autostart.ps1`（双份）删 ddns-go 组件条目与提示；`install-https.ps1`（双份）删 `-DdnsZip`/`Install-StackComponent`/ddns-go 下载落位/步骤 5 拉起/汇总提示，头注释更新（Caddy 构建/Caddyfile/Protect-StackDir 保留）；`tools/sprint0` 的 `autostart-on/off.bat` 注释、`install-https.bat`、`menu.ps1` ddns 菜单项、`README.md` 同步；BOM+CRLF/纯 ASCII（bat）纪律（验收: AC1；完成标志：Parser 校验过）✓ 2026-09-11（Protect-StackDir 保留确认）
+- [x] T13 新建 `uninstall-legacy.ps1`（双份 + $ScriptSubset + manifest 登记）：幂等卸载编排——前置校验（EasyTierMesh 服务在运行；`.env` 腾讯密钥就绪否则按 AC11 拒绝删 yaml 并指引 `set-tencent-key.ps1`）→ 停 frpc/ddns-go 进程 → 注销 `ddns-go Sprint0 autostart` → 删栈目录 `ddns-go.exe`/`ddns-go.yaml`/`frpc.exe`/`frpc-run.log` → `.env` 删 `SAKURA_FRP_KEY` 单行（BOM 保留）→ CNAME 残留检测（Resolve-DnsName，存在则指引工作台「同步 DNS」）→ 汇总报告；`-Lang` 双语、BOM+CRLF、PARSER 校验（验收: AC10/AC11；完成标志：临时目录端到端演练幂等重跑）✓ 2026-09-11（真机执行仍受前置闸门约束，见 T20）
 
 ## 阶段 6: 前端（依赖阶段 2~4 的命令契约定型）
 
@@ -66,3 +66,8 @@
 - 凭据双副本：`.env`（BOM）与 `ddns-go.yaml`（明文）同源不同步，yaml 回退链删（D3）；`set-tencent-key.ps1:11-13` 头注释列三消费方（Caddy/dns_api/ddns-go），T12 改注释。
 - 前端：地址区 lan 行 = `http://<ip>:3001`（`urls.rs:100-102` 实证）——局域网 IP 方案的 UI 呈现载体已存在，008 仅保不建。
 - `Protect-StackDir` 居 `install-https.ps1`，easytier 目录 ACL 依赖它（007 plan §4.2）——T12 收缩脚本时必须保留该函数。
+
+### 实施偏离记录
+
+1. **② `purge_cnames` 一并删除（T5）**：plan §5 原文「保留 Mesh 臂与 `purge_cnames`」，但收敛后 `purge_cnames` 在 Rust 侧的唯一消费方是 `disable_legacy_channel`（T7 删除）与 `purge_dns_records`（T7 删除）；存量 CNAME 的清理由两条更可靠的路径承接——`dns_api::sync_to_mesh`（mesh_sync_dns 命令，建 A 记录的同时删 CNAME）与 `uninstall-legacy.ps1` 的 CNAME 残留检测（指引工作台「同步 DNS」）。保留即为死代码，故删；spec AC8 的「残留 CNAME 判旁路暴露面」由 `judge_dns_mesh` 的 `MismatchedCname` 判定承接，不受影响。
+2. **T1 提交时间线**：T1 文档提交（0c68f1b）在状态 `draft → reviewed` 与实施授权同日完成，依据用户指令「起草，拆分，实施」一次性放行（宪法工作流第 1/2 步的用户确认由该指令合并给出）。
