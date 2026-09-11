@@ -207,7 +207,7 @@ export const en = {
   "mesh.memberConfigHint":
     "After installing the EasyTier client on a phone/PC, enter each field in the app following the comment beside it; for the \"network password\", type the secret you set when running set-mesh-secret.ps1 (the real secret is never shown here)",
   "mesh.memberClientRec":
-    "Recommended third-party Android client: Orbit (native rendering, immune to the official app's WebView layout breakage; verified on HarmonyOS) — download:",
+    "Recommended official EasyTier Android client (grab app-arm64-release.apk from Releases for most devices) — download:",
 
   // Setup wizard (spec 006)
   "wizard.notice": "Setup is not finished on this PC: follow the wizard to unlock LAN/domain access.",

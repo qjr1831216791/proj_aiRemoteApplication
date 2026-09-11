@@ -206,7 +206,7 @@ export const zh = {
   "mesh.memberConfigHint":
     "手机/电脑安装 EasyTier 客户端后，按下方各字段旁的注释在 App 内逐项输入即可入网；「网络密码」填入运行 set-mesh-secret.ps1 时设定的密钥（真实密钥不显示在此处）",
   "mesh.memberClientRec":
-    "Android 端推荐第三方客户端 Orbit（原生渲染，不受官方 App 的 WebView 样式变形影响；实测鸿蒙可用）——下载页：",
+    "Android 端推荐 EasyTier 官方客户端（Releases 内 app-arm64-release.apk 适配主流机型）——下载页：",
 
   // 装机向导（spec 006）
   "wizard.notice": "检测到本机尚未完成装机：按向导走完即可解锁局域网/域名访问。",

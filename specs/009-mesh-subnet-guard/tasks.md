@@ -20,6 +20,7 @@
 - [x] T5 命令与前端：`mesh_member_config` 命令注册 + `api.meshMemberConfig` + MeshCard 设置卡折叠区（pre 展示 + 一键复制 + 密钥指引文案）+ i18n 词条 zh/en 双侧（依赖: T4）（验收: AC9/AC10）
 - [x] T6 真机 App 对照复核：手机 EasyTier App 打开配置对照措辞核对（依赖: T5）（验收: AC9 手工）——App 对照按需求方签收指令确认（2026-09-11），字段正确性由 AC11 单测锁定，签收注记见 acceptance-manual §2
 - [x] T13 指引补强（验收后需求方变更，不改 AC）：折叠区推荐 Android 客户端 Orbit + Releases 下载链接 + i18n zh/en + 链接样式——官方 App 为 WebView 套壳，鸿蒙等国产系统 WebView 陈旧样式变形，需求方真机实测原生渲染客户端可用（依赖: T5）（验收: AC9/AC10 指引呈现；npm run build 复跑绿、zh/en 键集对称）
+- [x] T14 指引回退（验收后需求方变更，不改 AC）：撤销 Orbit 推荐，折叠区仅保留 EasyTier 官方客户端下载指引（官方 Releases + APK 适配说明），i18n zh/en 同步（依赖: T13）（验收: 折叠区文案与链接指向官方 Releases；npm run build 复跑绿、zh/en 键集对称）
 
 ## 阶段 3: 发版校验脚本（US2）
 

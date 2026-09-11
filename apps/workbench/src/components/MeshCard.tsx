@@ -326,13 +326,13 @@ export function MeshCard(props: MeshCardProps) {
       {memberCfgOpen ? (
         <div class="tools__body">
           <p class="muted">{t("mesh.memberConfigHint", lang)}</p>
-          {/* 推荐客户端（spec 009 变更 2026-09-11）：官方 App 为 WebView 套壳，
-              鸿蒙等无 Google Play 系统上样式变形；推荐原生渲染第三方客户端 */}
+          {/* 推荐客户端（spec 009 变更 2026-09-11 T14）：仅推荐 EasyTier 官方客户端；
+              第三方 Orbit 因移动端隧道在系统网络切换/重启后易失效已撤销推荐 */}
           <p class="muted">
             {t("mesh.memberClientRec", lang)}{" "}
             <a
               class="mesh-member__link"
-              href="https://github.com/amelia4angela/orbit-easytier-android/releases"
+              href="https://github.com/EasyTier/EasyTier/releases"
               target="_blank"
               rel="noreferrer"
             >
