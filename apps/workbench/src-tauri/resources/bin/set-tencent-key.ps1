@@ -4,13 +4,13 @@
   Bilingual prompts follow the Windows display language; force with -Lang zh|en.
 
 .DESCRIPTION
-  直连/穿透通道共用的凭证配置入口（spec 006，ADR-0003）。密钥路径：键盘 → 本脚本
+  HTTPS 证书签发与组网 A 记录维护共用的凭证配置入口（spec 006/008，ADR-0003）。
+  密钥路径：键盘 → 本脚本
   → 直接写 D:\Software\cloudcli-https\.env —— 全程不进工作台 APP 内存、不走 IPC、
-  不写任何日志（与 set-frp-key.ps1 同款安全设计，宪法 §3）。
+  不写任何日志（与 set-mesh-secret.ps1 同款安全设计，宪法 §3）。
   消费方：
     - Caddy（tencentcloud DNS 插件）：DNS-01 签发/续期证书（spawn 时经 {env.*} 注入）
-    - ddns-go：A 记录自动跟随公网 IP
-    - 工作台 dns_api：解析记录校验与通道切换
+    - 工作台 dns_api：DNS 对齐检测与组网 A 记录同步
   流程：
     1. 提示密钥获取入口（console.cloud.tencent.com/cam/capi 新建密钥；
        建议建子用户仅授 QcloudDNSPodFullAccess 再为其建密钥）
@@ -109,7 +109,7 @@ if (Test-Path $EnvFile) {
     $header = @(
         '# Environment variables (sensitive credentials; never commit, never log).'
         "# $IdVar / $KeyVar : Tencent Cloud CAM key pair (spec 006 / ADR-0003)."
-        '# Consumed by: Caddy DNS-01 (tencentcloud plugin), ddns-go, workbench dns_api.'
+        '# Consumed by: Caddy DNS-01 (tencentcloud plugin), workbench dns_api (mesh A-record sync).'
         "$IdVar=$id"
         "$KeyVar=$key1"
     )
@@ -126,4 +126,4 @@ if ($null -eq $idLine -or $null -eq $keyLine) {
 }
 $idTail = $id.Substring([Math]::Max(0, $id.Length - 4))
 Write-Ok (T "密钥已写入：$EnvFile（SecretId 末 4 位：****$idTail）" "Keys written to $EnvFile (SecretId last 4 chars: ****$idTail)")
-Write-Info (T '下一步：config-ddnsgo.ps1 配置解析；Caddy 启动后将自动签发证书。' 'Next: run config-ddnsgo.ps1 for DNS records; Caddy will issue the certificate automatically once started.')
+Write-Info (T '下一步：Caddy 启动后将自动签发证书；组网装机时用工作台「同步 DNS」建立 A 记录。' 'Next: Caddy will issue the certificate automatically once started; during mesh setup, use "Sync DNS" in the workbench to create the A record.')

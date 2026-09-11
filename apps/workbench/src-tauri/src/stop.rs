@@ -6,7 +6,6 @@
 //!   故必须先枚举后动手，spec §4.1 为此不直接复用 stop-server.ps1）→ 端口复核
 //! - **Caddy**：`caddy stop`（5s 超时）→ 失败则按 443 找监听进程、校验可执行
 //!   路径为 StackDir 下 caddy.exe 后强杀 → 复核
-//! - **ddns-go**：按可执行路径匹配进程（非进程名）强杀 → 复核
 //!
 //! 单组件 10s 预算：超时记日志 + detail 给手动排查命令，放行不阻塞其余组件
 //! （AC2）。进程操作全部经 `ProcessOps` seam（taskkill/进程枚举也抽象），
@@ -67,8 +66,6 @@ pub enum StopOutcome {
 pub trait ProcessOps: Send + Sync {
     /// pid 的全部后代进程（进程树快照，不含自身；先收集后杀的依据）
     fn descendants(&self, pid: u32) -> Vec<u32>;
-    /// 按可执行完整路径枚举进程（ddns-go 判据；路径大小写不敏感）
-    fn pids_by_exe(&self, exe: &str) -> Vec<u32>;
     /// 强杀单个进程（taskkill /F 语义；目标已退出视为成功，幂等）
     fn kill(&self, pid: u32) -> Result<(), String>;
 }
@@ -106,22 +103,6 @@ impl ProcessOps for SysinfoProcessOps {
         out
     }
 
-    fn pids_by_exe(&self, exe: &str) -> Vec<u32> {
-        use sysinfo::{ProcessesToUpdate, System};
-
-        let mut sys = System::new();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
-        sys.processes()
-            .iter()
-            .filter(|(_, proc)| {
-                proc.exe()
-                    .map(|e| paths_equal(&e.to_string_lossy(), exe))
-                    .unwrap_or(false)
-            })
-            .map(|(pid, _)| pid.as_u32())
-            .collect()
-    }
-
     fn kill(&self, pid: u32) -> Result<(), String> {
         use sysinfo::{Pid, ProcessesToUpdate, System};
 
@@ -140,9 +121,6 @@ impl ProcessOps for SysinfoProcessOps {
 #[cfg(not(windows))]
 impl ProcessOps for SysinfoProcessOps {
     fn descendants(&self, _pid: u32) -> Vec<u32> {
-        Vec::new()
-    }
-    fn pids_by_exe(&self, _exe: &str) -> Vec<u32> {
         Vec::new()
     }
     fn kill(&self, pid: u32) -> Result<(), String> {

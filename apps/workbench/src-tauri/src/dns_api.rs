@@ -70,7 +70,7 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     mac.finalize().into_bytes().to_vec()
 }
 
-/// SHA256 hex(公开:frpc 下载恢复的完整性校验复用)
+/// SHA256 hex（公开：mesh.rs 资源完整性校验复用）
 pub fn sha256_hex(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn env_creds_parsed() {
-        let env = "SAKURA_FRP_KEY=x\nTENCENT_SECRET_ID=AKIDtest\nTENCENT_SECRET_KEY=keytest\n";
+        let env = "SAMPLE_KEY=x\nTENCENT_SECRET_ID=AKIDtest\nTENCENT_SECRET_KEY=keytest\n";
         let cred = parse_env_creds(env).expect("应有凭证");
         assert_eq!(cred.id, "AKIDtest");
         assert_eq!(cred.key, "keytest");
@@ -468,13 +468,13 @@ mod tests {
     /// parse_env_value（原 tunnel.rs 迁入，spec 008 D2）：BOM/引号/空白容忍
     #[test]
     fn env_value_parsing_tolerates_bom_quotes_and_spaces() {
-        let env = "SAKURA_FRP_KEY=abc123\nOTHER=x\nEMPTY=\nQUOTED=\"hi there\"\n";
-        assert_eq!(parse_env_value(env, "SAKURA_FRP_KEY").as_deref(), Some("abc123"));
+        let env = "SAMPLE_KEY=abc123\nOTHER=x\nEMPTY=\nQUOTED=\"hi there\"\n";
+        assert_eq!(parse_env_value(env, "SAMPLE_KEY").as_deref(), Some("abc123"));
         assert_eq!(parse_env_value(env, "OTHER").as_deref(), Some("x"));
         assert_eq!(parse_env_value(env, "EMPTY"), None, "空值视为未配置");
         assert_eq!(parse_env_value(env, "QUOTED").as_deref(), Some("hi there"));
         assert_eq!(parse_env_value(env, "MISSING"), None);
-        assert_eq!(parse_env_value("SAKURA_FRP_KEY = spaced ", "SAKURA_FRP_KEY").as_deref(), Some("spaced"));
+        assert_eq!(parse_env_value("SAMPLE_KEY = spaced ", "SAMPLE_KEY").as_deref(), Some("spaced"));
         assert_eq!(
             parse_env_value("\u{feff}# comment\nTENCENT_SECRET_ID=bommed", "TENCENT_SECRET_ID").as_deref(),
             Some("bommed"),
@@ -503,8 +503,8 @@ mod tests {
             MismatchedA { actual: "113.87.11.22".into() }
         );
         assert_eq!(
-            judge_dns_mesh(Some("frp-can.com"), Some("10.126.126.1"), "10.126.126.1"),
-            MismatchedCname { actual: "frp-can.com".into() }
+            judge_dns_mesh(Some("legacy-cname.example.net"), Some("10.126.126.1"), "10.126.126.1"),
+            MismatchedCname { actual: "legacy-cname.example.net".into() }
         );
         assert_eq!(judge_dns_mesh(None, None, "10.126.126.1"), NoRecord);
         // 空串视为无记录（PowerShell [string]$null 产出 ""）
@@ -518,7 +518,7 @@ mod tests {
     fn reconcile_mesh_deletes_cname_and_upserts_virtual_ip() {
         let current = vec![
             DnsRecord { record_id: 1, rtype: "A".into(), value: "117.182.118.202".into(), enabled: true },
-            DnsRecord { record_id: 2, rtype: "CNAME".into(), value: "frp-can.com".into(), enabled: true },
+            DnsRecord { record_id: 2, rtype: "CNAME".into(), value: "legacy-cname.example.net".into(), enabled: true },
             DnsRecord { record_id: 3, rtype: "CNAME".into(), value: "old-node.com".into(), enabled: false },
         ];
         let ops = reconcile(&current, &DnsTarget::Mesh("10.126.126.1".into()));

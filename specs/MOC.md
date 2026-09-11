@@ -13,7 +13,7 @@
 ### 🟠 实现中（in-progress）
 - [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）
 - [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（legacy 模式，network_secret 派生加密；社区公共节点）替代 frp 零公网暴露 + 停用直连/穿透旧通道（easytier-core 以 Windows 服务承载；**T1~T13 实现完成 2026-09-11，真机验收清单已建待执行** → [acceptance-manual.md](./007-mesh-access/acceptance-manual.md)）
-- [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) — 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发/真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案（域名 HTTPS 链保留）；真机卸载编排 `uninstall-legacy.ps1`（2026-09-11 立项，**T1~T18 代码与文档全落地**——真机卸载与验收待执行，见 T20）
+- [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) — 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发/真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案（域名 HTTPS 链保留）；真机卸载编排 `uninstall-legacy.ps1`（2026-09-11 立项，**T1~T20 代码/文档/回归全落地——真机验收与卸载待前置闸门（007 签收 + O1 闭合）** → [acceptance-manual.md](./008-legacy-channel-removal/acceptance-manual.md)）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）

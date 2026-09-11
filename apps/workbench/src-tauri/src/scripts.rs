@@ -297,7 +297,7 @@ pub fn setup_autostart(dir: &Path, lang: Lang, log_dir: &Path, remove: bool, sta
 
 /// Caddy 原生拉起（plan §5.2：不经 powershell；参数与 setup-autostart.ps1 任务一致）。
 /// 插件式 Caddyfile 的 {env.*} 凭证在 spawn 时注入进程环境（ADR-0003）——
-/// 凭证经 dns_api 回退链（.env → ddns-go.yaml）读取，仅进子进程环境、
+/// 凭证经 dns_api::read_credential 自栈 .env 读取（D3 单源），仅进子进程环境、
 /// 不入 CommandSpec 日志输出（SecretEnv 屏蔽）。
 pub fn caddy_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
     let env = crate::dns_api::read_credential(stack_dir)
@@ -1062,7 +1062,7 @@ mod tests {
     fn caddy_run_injects_tencent_creds_from_env_file() {
         let stack = temp_stack_dir(
             "creds",
-            Some("SAKURA_FRP_KEY=frpkey\nTENCENT_SECRET_ID=AKIDtest1234\nTENCENT_SECRET_KEY=secretkey\n"),
+            Some("SAMPLE_KEY=ignored\nTENCENT_SECRET_ID=AKIDtest1234\nTENCENT_SECRET_KEY=secretkey\n"),
         );
         let spec = caddy_run(&stack.join("logs"), stack.to_str().unwrap());
         assert_eq!(

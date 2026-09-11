@@ -8,7 +8,7 @@
     1. 创建防火墙入站规则 "CloudCLI LAN HTTPS 443"（TCP 443，仅专用网络）
     2. 将所有非域网络配置文件设为"专用"（否则 private 规则不生效）
     3. hosts 钉定 dnspod.tencentcloudapi.com 的 IPv4（本机 IPv6 出口异常时，
-       ddns-go 的 Go 解析器优先走坏掉的 v6 会导致 API 更新失败）
+       API 解析优先走坏掉的 v6 会导致调用失败，钉 v4 兜底）
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File .\enable-https.ps1

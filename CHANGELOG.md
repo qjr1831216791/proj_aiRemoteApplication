@@ -20,7 +20,7 @@ Sprint 4~6（Spec 006 已验收 2026-09-10、Spec 007 实现落地 2026-09-11，
 - 旧设置文件加载自动迁移（ADR-0004）：`accessChannel` 的 `direct`/`tunnel` 值静默映射为 `mesh`，穿透配置与停用标记等伴生字段退役（磁盘残留键被忽略，下次保存自然消失）；装机向导状态文件 `branch` 键同样退役
 - 装机向导「访问通道」阶段塌缩为组网单线步骤（①密钥 ②装服务 ③成员入网 ④应用 ⑤同步 DNS）；「HTTPS 栈」阶段不再安装 ddns-go；收尾页改指引 `uninstall-legacy.ps1` 清理旧通道残留
 - 服务自启链收敛为两任务（CloudCLI/Caddy 计划任务；组网服务由 Windows 服务机制独立自启）；`install-https.ps1` 仅安装 Caddy（tencentcloud 插件），`setup-autostart.ps1` 不再登记 ddns-go
-- 局域网访问成为一等公民：地址区「局域网」行（`http://<LAN-IP>:3001`）与组网域名 HTTPS（A 记录=虚拟 IP，公网不可路由）构成双方案
+- 局域网访问成为一等公民：地址区「局域网」行（`http://<LAN-IP>:3001`）与组网域名 HTTPS（A 记录=虚拟 IP，公网不可路由）构成双方案；网络归类卡告警文案同步点明 3001/443 两条 Private 规则
 
 ### Removed
 - **穿透通道（SakuraFrp/frp）彻底退役（Spec 008）**：`tunnel.rs`（1188 行：frpc 托管/守护自愈/日志实况判定）、切换/停用/重启等九个 IPC 命令、穿透设置卡（隧道 ID/节点域名/密钥脚本/frpc 恢复）、旧通道停用卡、`frpc.exe` 随包分发与 NSIS 安装钩子、`set-frp-key.ps1`/`clear-frp-key.ps1` 全部移除；`SAKURA_FRP_KEY` 环境变量退役

@@ -102,7 +102,7 @@ pub fn service_bin_path(stack_dir: &str) -> String {
 
 /// 栈目录落位（T7，plan §4.2）：随包五文件从资源 bin 复制到
 /// `<stack>/easytier/`，并预建 logs/。复制前后各过一遍哈希校验
-/// （防篡改源 + 防复制损坏，frpc 先例加固）；幂等（覆盖复制）。
+/// （防篡改源 + 防复制损坏）；幂等（覆盖复制）。
 /// config.toml / network-secret 不在此列：前者由渲染器产出（T9
 /// mesh_apply_config），后者由 set-mesh-secret.ps1 交互写入（T10）。
 pub fn stage_easytier_binaries(src_bin: &Path, stack_dir: &str) -> Result<PathBuf, String> {
@@ -239,7 +239,7 @@ pub fn judge_mesh_state(
     }
 }
 
-// ── 进程操作（Windows 采集隔离，可 mock；沿 FrpcOps 惯例）──────────────────
+// ── 进程操作（Windows 采集隔离，可 mock；惯例同 stop.rs 的 ProcessOps seam）──
 
 /// mesh 探询接口（MeshMonitor 依赖注入；两项查询均免提权）
 pub trait MeshOps: Send + Sync {

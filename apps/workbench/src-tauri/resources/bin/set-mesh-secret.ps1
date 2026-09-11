@@ -6,7 +6,7 @@
 .DESCRIPTION
   组网通道（spec 007）的凭证配置入口。密钥路径：键盘 → 本脚本（不回显）
   → 直接写 D:\Software\cloudcli-https\easytier\network-secret —— 全程不进
-  工作台 APP 内存、不走 IPC、不写任何日志（与 set-frp-key.ps1 同款安全设计）。
+  工作台 APP 内存、不走 IPC、不写任何日志（与 set-tencent-key.ps1 同款安全设计）。
   组网密钥由你自定（不是从网站获取的凭证）：成员设备（手机/PC 的 EasyTier
   客户端）加入同一网络时输入相同密钥即可互通。
   流程：

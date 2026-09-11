@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn path_utils() {
         assert_eq!(file_name_of(r"D:\a\b\caddy.exe").as_deref(), Some("caddy.exe"));
-        assert_eq!(file_name_of("D:/a/ddns-go.exe").as_deref(), Some("ddns-go.exe"));
+        assert_eq!(file_name_of("D:/a/easytier-cli.exe").as_deref(), Some("easytier-cli.exe"));
         assert_eq!(file_name_of("bare").as_deref(), Some("bare"));
         assert!(paths_equal(r"D:\A\b.exe", r"d:\a\B.EXE"));
         assert!(!paths_equal(r"D:\A\b.exe", r"D:\A\c.exe"));

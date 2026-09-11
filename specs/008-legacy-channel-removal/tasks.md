@@ -48,14 +48,14 @@
 ## 阶段 7: 文档与回归
 
 - [x] T19 文档收尾：`docs/adr/0004-settings-channel-migration.md`（accessChannel 契约变更与迁移映射）；`specs/003`/`specs/004` 移入 `specs/archive/` 并在 spec.md 头部加取代注记；MOC 流转（008 行、主题导航、003/004 移档）；`CHANGELOG.md` Unreleased（Removed: frp 通道/直连通道与 ddns-go/相关 UI；Changed: 通道收敛组网单通道）；`.env.example` 删 SAKURA_FRP_KEY 段（TENCENT 注释去 ddns-go 表述）；`docs/product.md` 路线图补 008（验收: AC12；完成标志：核对清单过）✓ 2026-09-11（归档目录内相对链接深度统一修正；005 spec 指向 004 的链接改 archive 路径；CHANGELOG 0.3.0 历史条目按惯例不改写）
-- [ ] T20 全量回归 + 手工验收清单：`cargo test` 全绿 + `npm run build` 绿 + `$ScriptSubset`/manifest/resources 三处一致性校验 + 全文检索 frp/ddns-go 残留扫描（白名单：历史 CHANGELOG/调研/specs 归档）；建 `acceptance-manual.md`（AC1~AC12 逐条步骤/预期/实测留白 + 真机卸载编排执行清单，显著标注前置闸门：007 T14 签收 + O1 闭合）（验收: 全部；完成标志：回归绿 + 清单入库）
+- [x] T20 全量回归 + 手工验收清单：`cargo test` 全绿 + `npm run build` 绿 + `$ScriptSubset`/manifest/resources 三处一致性校验 + 全文检索 frp/ddns-go 残留扫描（白名单：历史 CHANGELOG/调研/specs 归档）；建 `acceptance-manual.md`（AC1~AC12 逐条步骤/预期/实测留白 + 真机卸载编排执行清单，显著标注前置闸门：007 T14 签收 + O1 闭合）（验收: 全部；完成标志：回归绿 + 清单入库）✓ 2026-09-11（回归基线 190 passed+3 ignored / build 绿 / 键集 250:250 / 三方哈希一致；扫描揪出并修正一批尾巴——死键 `wizard.code.missing_ddnsgo`、死代码 `pids_by_exe`、Cargo.toml 包描述、`scripts.rs` D3 矛盾注释、`mesh.rs` FrpcOps 残引、`set-tencent-key.ps1` 头注释/标记行/收尾指引、测试夹具 SAKURA_FRP_KEY·frp-can.com 改中性名、`net.alert`/`net.riskPublic` 点明双规则（spec §6 Q5 闭合）——明细见 acceptance-manual 附录 A；修正后 cargo test 复跑全绿）
 
 ## 完成标志（DoD 检查）
 
-- [ ] spec.md 中所有 AC 已逐条验证通过（AC10/AC11 真机项待闸门满足后执行回填）
-- [ ] 自动化测试全部通过（迁移矩阵/编排收缩/DNS 判定回归/manifest 一致性）
-- [ ] 相关文档已更新（spec/plan/tasks/MOC/CHANGELOG/ADR-0004/.env.example/归档）
-- [ ] 本文件全部任务勾选完毕
+- [ ] spec.md 中所有 AC 已逐条验证通过（AC10/AC11 真机项待闸门满足后执行回填；清单见 [acceptance-manual.md](./acceptance-manual.md)）
+- [x] 自动化测试全部通过（迁移矩阵/编排收缩/DNS 判定回归/manifest 一致性——T20 基线 190 passed + 3 ignored）
+- [x] 相关文档已更新（spec/plan/tasks/MOC/CHANGELOG/ADR-0004/.env.example/归档 + acceptance-manual）
+- [x] 本文件全部任务勾选完毕
 
 ---
 

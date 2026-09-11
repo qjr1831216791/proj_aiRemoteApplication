@@ -31,7 +31,7 @@
 | Sprint 2+3（已完成 v0.3.0） | 网络环境反馈（002）· ddns-go 密码重置（003，已随 008 归档）· 内网穿透双通道与通道体检（004，已随 008 归档） | [002](../specs/002-network-profile/spec.md) · [003](../specs/archive/003-ddnsgo-password-reset/spec.md) · [004](../specs/archive/004-tunnel-access/spec.md) |
 | Sprint 4 | 域名心跳检测（005，验收中）· 傻瓜式装机向导（006，2026-09-10 验收 done） | [005](../specs/005-domain-heartbeat/spec.md) · [006](../specs/006-foolproof-install/spec.md) |
 | Sprint 5 | 访问通道安全重构：EasyTier 私有组网替代 frp（零公网暴露），停用直连与穿透旧通道（实现落地 2026-09-11，真机验收待执行） | [007-mesh-access](../specs/007-mesh-access/spec.md) |
-| Sprint 6（实施中） | 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发/真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案（代码与文档全落地 2026-09-11，真机卸载待前置闸门） | [008-legacy-channel-removal](../specs/008-legacy-channel-removal/spec.md) |
+| Sprint 6（实施中） | 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发/真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案（代码/文档/回归全落地 2026-09-11，真机验收与卸载待前置闸门） | [008-legacy-channel-removal](../specs/008-legacy-channel-removal/spec.md) |
 
 ## 非目标（产品级）
 

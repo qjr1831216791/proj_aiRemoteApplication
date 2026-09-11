@@ -554,7 +554,7 @@ impl Orchestrator {
         }
         // 2. 置 starting（AC1：点击启动即进入"启动中"）
         self.set_state_if_active(cancel, id, ComponentState::Starting, None);
-        // 3. 拉起：CloudCLI 走脚本消费 exit code（AC1）；Caddy/ddns-go 原生守卫拉起
+        // 3. 拉起：CloudCLI 走脚本消费 exit code（AC1）；Caddy 原生守卫拉起
         match id {
             ComponentId::CloudCli => {
                 let Some(dir) = self.cfg.scripts_dir.clone() else {
@@ -1003,7 +1003,6 @@ pub(crate) mod test_support {
     pub struct MockProcessOps {
         log: Option<Arc<CallLog>>,
         descendants_map: Mutex<HashMap<u32, Vec<u32>>>,
-        by_exe: Mutex<HashMap<String, Vec<u32>>>,
     }
 
     impl MockProcessOps {
@@ -1011,7 +1010,6 @@ pub(crate) mod test_support {
             Self {
                 log: None,
                 descendants_map: Mutex::new(HashMap::new()),
-                by_exe: Mutex::new(HashMap::new()),
             }
         }
 
@@ -1026,10 +1024,6 @@ pub(crate) mod test_support {
                 .lock()
                 .unwrap()
                 .insert(pid, children.to_vec());
-        }
-
-        pub fn set_by_exe(&self, exe: &str, pids: &[u32]) {
-            self.by_exe.lock().unwrap().insert(exe.to_string(), pids.to_vec());
         }
     }
 
@@ -1046,14 +1040,6 @@ pub(crate) mod test_support {
                 log.record(format!("procs:descendants({pid})->{children:?}"));
             }
             children
-        }
-
-        fn pids_by_exe(&self, exe: &str) -> Vec<u32> {
-            let pids = self.by_exe.lock().unwrap().get(exe).cloned().unwrap_or_default();
-            if let Some(log) = &self.log {
-                log.record(format!("procs:pids_by_exe({exe})->{pids:?}"));
-            }
-            pids
         }
 
         fn kill(&self, pid: u32) -> Result<(), String> {

@@ -1,7 +1,7 @@
 [package]
 name = "ai-remote-workbench"
 version = "0.2.0"
-description = "AI 远程工作台桌面控制台（CloudCLI/Caddy/ddns-go 生命周期控制面）"
+description = "AI 远程工作台桌面控制台（CloudCLI/Caddy/EasyTier 组网生命周期控制面）"
 edition = "2021"
 
 [lib]
