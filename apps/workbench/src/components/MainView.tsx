@@ -309,7 +309,7 @@ function netCatKey(category: NetCategory): DictKey {
 }
 
 /** 耗时格式化：48s / 3m24s / 1h05m（语言无关） */
-export function fmtElapsed(ms: number): string {
+function fmtElapsed(ms: number): string {
   const secs = Math.max(0, Math.floor(ms / 1000));
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);

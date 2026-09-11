@@ -12,8 +12,6 @@ export const en = {
   "nav.settings": "Settings",
 
   // Common
-  "common.start": "Start",
-  "common.stop": "Stop",
   "common.retry": "Retry",
   "common.copy": "Copy",
   "common.copied": "Copied",
@@ -141,8 +139,6 @@ export const en = {
   "settings.meshUninstallDone": "Mesh service uninstall dispatched",
 
   // Domain heartbeat (spec 005)
-  "heartbeat.dotOk": "Reachable",
-  "heartbeat.dotFail": "Unreachable",
   "heartbeat.kind.ok": "OK",
   "heartbeat.kind.dns": "DNS resolution failed",
   "heartbeat.kind.connect": "Connection failed",

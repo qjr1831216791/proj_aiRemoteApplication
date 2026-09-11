@@ -11,8 +11,6 @@ export const zh = {
   "nav.settings": "设置",
 
   // 通用
-  "common.start": "启动",
-  "common.stop": "停止",
   "common.retry": "重试",
   "common.copy": "复制",
   "common.copied": "已复制",
@@ -140,8 +138,6 @@ export const zh = {
   "settings.meshUninstallDone": "组网服务卸载已派发",
 
   // 域名心跳（spec 005）
-  "heartbeat.dotOk": "可达",
-  "heartbeat.dotFail": "不可达",
   "heartbeat.kind.ok": "正常",
   "heartbeat.kind.dns": "DNS 解析失败",
   "heartbeat.kind.connect": "连接失败",

@@ -141,17 +141,6 @@
   margin-bottom: 1px;
 }
 
-/* 链接式按钮（提示文案中的可点击路径） */
-.link-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: var(--c-ok);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 /* 域名心跳状态点（spec 005 地址区红/绿标记） */
 .hb-dot {
   display: inline-block;
@@ -282,16 +271,6 @@
 .btn--sm {
   padding: var(--sp-1) var(--sp-3);
   font-size: var(--fs-sm);
-}
-
-.btn--active {
-  background: var(--c-primary);
-  border-color: var(--c-primary);
-  color: #fff;
-}
-
-.btn--active:hover {
-  color: #fff;
 }
 
 /* ── 主界面：总开关 ──────────────────────────────────────────── */
