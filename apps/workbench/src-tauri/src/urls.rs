@@ -69,7 +69,12 @@ pub enum ExternalKind {
     Domain,
     /// ddns-go 管理页
     DdnsAdmin,
+    /// EasyTier 官方 GitHub Releases（007 成员设备客户端下载入口）
+    EasytierReleases,
 }
+
+/// EasyTier 客户端下载页（成员设备指引；官方仓库 Releases）
+pub const EASYTIER_RELEASES_URL: &str = "https://github.com/EasyTier/EasyTier/releases";
 
 /// 纯映射：kind → 完整 URL（单测覆盖全分支）
 pub fn external_url(kind: ExternalKind, urls: &AccessUrls) -> String {
@@ -78,6 +83,7 @@ pub fn external_url(kind: ExternalKind, urls: &AccessUrls) -> String {
         ExternalKind::Local => urls.local.clone(),
         ExternalKind::Lan => urls.lan.clone(),
         ExternalKind::DdnsAdmin => DDNSGO_UI_URL.to_string(),
+        ExternalKind::EasytierReleases => EASYTIER_RELEASES_URL.to_string(),
     }
 }
 
@@ -120,6 +126,10 @@ mod tests {
         assert_eq!(external_url(ExternalKind::Local, &urls), "http://localhost:3001/");
         assert_eq!(external_url(ExternalKind::Lan, &urls), "http://10.0.0.2:3001/");
         assert_eq!(external_url(ExternalKind::DdnsAdmin, &urls), DDNSGO_UI_URL);
+        assert_eq!(
+            external_url(ExternalKind::EasytierReleases, &urls),
+            "https://github.com/EasyTier/EasyTier/releases"
+        );
     }
 
     #[test]

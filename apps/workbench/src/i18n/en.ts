@@ -312,6 +312,8 @@ export const en = {
   "wizard.check": "Done — verify now",
   "wizard.checking": "Verifying…",
   "wizard.checkHint": "When finished, come back and click \"Done — verify now\"",
+  "wizard.checkPassed": "Check passed: all stages complete",
+  "wizard.checkFailed": "Check not passed",
   "wizard.state.pending": "Pending",
   "wizard.state.done": "Done",
   "wizard.state.failed": "Failed",
@@ -348,6 +350,7 @@ export const en = {
     "The service runs as a Windows service (starts at logon); click this if not installed yet or needs repair",
   "wizard.channel.meshPeerGuide":
     "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases, join network \"{name}\" (the same secret you wrote here), then reach this PC via the virtual network",
+  "wizard.channel.meshDownloadBtn": "Open EasyTier download page (GitHub Releases)",
   "wizard.channel.meshApplyBtn": "Apply config & restart service (admin)",
   "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
   "wizard.channel.meshDnsHint":

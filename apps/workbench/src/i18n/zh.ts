@@ -311,6 +311,8 @@ export const zh = {
   "wizard.check": "我已完成，开始校验",
   "wizard.checking": "校验中…",
   "wizard.checkHint": "完成后回到本窗口，点击「我已完成，开始校验」",
+  "wizard.checkPassed": "校验通过：全部阶段已完成",
+  "wizard.checkFailed": "校验未通过",
   "wizard.state.pending": "待开始",
   "wizard.state.done": "完成",
   "wizard.state.failed": "失败",
@@ -347,6 +349,7 @@ export const zh = {
     "服务以 Windows 服务形态常驻（登录自启）；未安装或需修复时点此按钮",
   "wizard.channel.meshPeerGuide":
     "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端，加入网络「{name}」（密钥与本机写入的相同），即可经虚拟网络访问本机",
+  "wizard.channel.meshDownloadBtn": "打开 EasyTier 下载页（GitHub Releases）",
   "wizard.channel.meshApplyBtn": "应用配置并重启服务（管理员）",
   "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
   "wizard.channel.meshDnsHint":

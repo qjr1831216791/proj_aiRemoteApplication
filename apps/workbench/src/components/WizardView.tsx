@@ -119,12 +119,31 @@ export function WizardView(props: WizardViewProps) {
     }
   };
 
-  const detect = () =>
-    dispatch(
-      "detect",
-      () => api.wizardDetect(),
-      false,
-    );
+  /** 校验（统一收口动作）：重探测后给出明确结论——首个未完成阶段指名 + 原因，
+   * 全过报通过。2026-09-11 需求方反馈：此前点校验只有阶段标记静默变化、
+   * 无成败反馈，「等待成员加入」这类非错误态尤其无从知晓原因 */
+  const detect = async () => {
+    setBusy("detect");
+    try {
+      const s = await api.wizardDetect();
+      const bad = s.stages.find((x) => x.state !== "done" && x.state !== "skipped");
+      if (bad) {
+        const why = bad.detail
+          ? t(`wizard.code.${bad.detail}` as DictKey, lang)
+          : t("wizard.state.pending", lang);
+        onToast(
+          `${t("wizard.checkFailed", lang)}：${t(`wizard.stage.${bad.id}`, lang)}——${why}`,
+          "error",
+        );
+      } else {
+        onToast(t("wizard.checkPassed", lang), "success");
+      }
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   /** 组网 DNS 同步（AC13）：独立入口——向导分支选择不做编排，A=虚拟 IP 的
    * 记录由此创建；返回操作数透出（CNAME 删了几条 + A upsert） */
@@ -142,7 +161,7 @@ export function WizardView(props: WizardViewProps) {
 
   /** 校验按钮（外部办理统一模式的收口动作，AC4/5/9/10） */
   const CheckButton = () => (
-    <button class="btn btn--primary btn--sm" disabled={busy !== null} onClick={detect}>
+    <button class="btn btn--primary btn--sm" disabled={busy !== null} onClick={() => void detect()}>
       {busy === "detect" ? t("wizard.checking", lang) : t("wizard.check", lang)}
     </button>
   );
@@ -284,6 +303,17 @@ export function WizardView(props: WizardViewProps) {
                     settings?.mesh.networkName ?? "",
                   )}
                 </p>
+                <button
+                  class="btn"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void api.openExternal("easytier_releases").catch((e) =>
+                      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"),
+                    )
+                  }
+                >
+                  {t("wizard.channel.meshDownloadBtn", lang)}
+                </button>
                 <div class="wizard__row">
                   <code class="wizard__url">{settings?.mesh.networkName}</code>
                   <CopyButton

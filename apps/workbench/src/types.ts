@@ -164,7 +164,13 @@ export interface AccessUrls {
 }
 
 /** open_external 目标类别 */
-export type ExternalKind = "workbench" | "local" | "lan" | "domain" | "ddns_admin";
+export type ExternalKind =
+  | "workbench"
+  | "local"
+  | "lan"
+  | "domain"
+  | "ddns_admin"
+  | "easytier_releases";
 
 /** run_tool 工具类别 */
 export type ToolKind =
