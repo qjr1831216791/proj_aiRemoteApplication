@@ -4,17 +4,16 @@
   Bilingual prompts follow the Windows display language; force with -Lang zh|en.
 
 .DESCRIPTION
-  管理三个组件的登录自启，全部幂等（已在运行则自动跳过）：
+  管理两个组件的登录自启，全部幂等（已在运行则自动跳过）：
     1. CloudCLI        -> run-server-hidden.ps1（隐藏窗口，端口守卫）
     2. Caddy           -> run-caddy-hidden.ps1（注入 .env 凭证后 caddy run --config
                           Caddyfile；必须长驻 run 而非 start，见组件定义处注释与 §9.5-⑩）
-    3. ddns-go         -> ddns-go.exe（DDNS，ai.jackqi.cn 跟随本机 IP）
 
   用法（开关）：
     启用：powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1
     关闭：powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1 -Remove
 
-  变更范围：仅操作名为 "* Sprint0 autostart" 的三个计划任务，不改其他系统配置。
+  变更范围：仅操作名为 "* Sprint0 autostart" 的两个计划任务，不改其他系统配置。
   关键参数：-ExecutionTimeLimit Zero（取消默认 72h 强杀，服务需常驻）。
 
 .EXAMPLE
@@ -63,13 +62,6 @@ $components = @(
         Arg    = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$caddyRunner`" -StackDir `"$StackDir`""
         Check  = (Join-Path $StackDir 'caddy.exe')
         Why    = (T "缺少 $StackDir\caddy.exe" "Missing $StackDir\caddy.exe")
-    },
-    @{
-        Name   = 'ddns-go Sprint0 autostart'
-        Exe    = 'powershell.exe'
-        Arg    = "-NoProfile -WindowStyle Hidden -Command `"& '$StackDir\ddns-go.exe' -c '$StackDir\ddns-go.yaml' -l :9876 -f 300`""
-        Check  = (Join-Path $StackDir 'ddns-go.exe')
-        Why    = (T "缺少 $StackDir\ddns-go.exe" "Missing $StackDir\ddns-go.exe")
     }
 )
 
@@ -115,4 +107,4 @@ Write-Host ''
 Write-Info (T '生效时机：下次登录自动启动（当前已在运行的进程不受影响）。' 'Takes effect on next logon (currently running processes are untouched).')
 Write-Info (T '立即启动单个组件：Start-ScheduledTask -TaskName "<任务名>"' 'Start one now: Start-ScheduledTask -TaskName "<task name>"')
 Write-Info (T '关闭自启：powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1 -Remove' 'Disable all: powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1 -Remove')
-Write-Info (T '查看日志：%TEMP%\cloudcli.log；ddns-go 界面：http://127.0.0.1:9876' 'Log: %TEMP%\cloudcli.log; ddns-go UI: http://127.0.0.1:9876')
+Write-Info (T '查看日志：%TEMP%\cloudcli.log' 'Log: %TEMP%\cloudcli.log')

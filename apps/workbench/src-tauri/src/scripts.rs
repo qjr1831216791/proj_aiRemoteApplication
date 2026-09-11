@@ -4,14 +4,12 @@
 //!   以哨兵脚本（run-server-hidden.ps1）存在为准；全不可用 → 禁用原因（spec §4.5）
 //! - CommandBuilder：隐藏脚本 = powershell -NoProfile -NonInteractive -File …
 //!   -Lang zh|en + CREATE_NO_WINDOW + stdio→日志 + 每脚本超时（ADR-0001 约定）；
-//!   Caddy/ddns-go 原生命令（不经 powershell，参数与 setup-autostart.ps1 一致）
+//!   Caddy 原生命令（不经 powershell，参数与 setup-autostart.ps1 一致）；
+//!   ddns-go/frp 相关脚本随直连/穿透通道退役（spec 008）
 //! - Elevator：ShellExecuteW runas 提权可见窗口（AC19：结尾手工步骤可读 → -NoExit）
 //! - 退出码 → UI 语义映射（AC20：UAC 拒绝/脚本失败给明确提示，不崩溃）
 
-use crate::consts::{
-    CADDYFILE_PATH, CLOUDCLI_PORT, DDNSGO_CONFIG_PATH, DDNSGO_INTERVAL_SECS,
-    DDNSGO_LISTEN, DEFAULT_STACK_DIR,
-};
+use crate::consts::{CADDYFILE_PATH, CLOUDCLI_PORT};
 use crate::lang::Lang;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -38,14 +36,14 @@ pub enum Script {
     EnableHttps,
     /// 客户端配置（交互式，无需管理员）
     InstallClient,
-    /// ddns-go 管理页密码重置（交互式，无需管理员；spec 003）
-    ResetDdnsPassword,
-    /// SakuraFrp 访问密钥写入 .env（交互式，无需管理员；spec 004）
-    SetFrpKey,
-    /// 腾讯云 CAM 密钥写入 .env（交互式，无需管理员；spec 006）
+    /// 腾讯云 CAM 密钥写入 .env（交互式，无需管理员；spec 006——
+    /// spec 008 后为栈 .env 凭证唯一写入通道）
     SetTencentKey,
-    /// ddns-go 配置生成 + 拉起（可见交互窗，无需管理员；spec 006）
-    ConfigDdnsGo,
+    /// EasyTier 组网服务管理（install/uninstall/start/stop/restart/status；
+    /// 需管理员，变更动作自检提权——spec 007，status 只读免提权）
+    MeshService,
+    /// EasyTier 组网密钥写入 network-secret（交互式，无需管理员；spec 007）
+    SetMeshSecret,
 }
 
 /// 窗口形态（spec §4.3）
@@ -69,10 +67,9 @@ impl Script {
             Script::InstallHttps => "install-https.ps1",
             Script::EnableHttps => "enable-https.ps1",
             Script::InstallClient => "install-client.ps1",
-            Script::ResetDdnsPassword => "reset-ddns-password.ps1",
-            Script::SetFrpKey => "set-frp-key.ps1",
             Script::SetTencentKey => "set-tencent-key.ps1",
-            Script::ConfigDdnsGo => "config-ddnsgo.ps1",
+            Script::MeshService => "mesh-service.ps1",
+            Script::SetMeshSecret => "set-mesh-secret.ps1",
         }
     }
 
@@ -81,14 +78,13 @@ impl Script {
             Script::RunServerHidden | Script::StopServer | Script::SetupAutostart => {
                 Visibility::Hidden
             }
-            Script::InstallServer | Script::InstallHttps | Script::EnableHttps => {
+            Script::InstallServer | Script::InstallHttps | Script::EnableHttps
+            | Script::MeshService => {
                 Visibility::Elevated
             }
-            Script::InstallClient
-            | Script::ResetDdnsPassword
-            | Script::SetFrpKey
-            | Script::SetTencentKey
-            | Script::ConfigDdnsGo => Visibility::VisibleInteractive,
+            Script::InstallClient | Script::SetTencentKey | Script::SetMeshSecret => {
+                Visibility::VisibleInteractive
+            }
         }
     }
 
@@ -102,12 +98,12 @@ impl Script {
             Script::InstallHttps => Duration::from_secs(1800),
             Script::EnableHttps => Duration::from_secs(120),
             Script::InstallClient => Duration::from_secs(600),
-            // 重置流程含 30s 端口就绪轮询；隐藏执行器不消费此值（可见窗 detached）
-            Script::ResetDdnsPassword => Duration::from_secs(300),
             // 交互输入等待无上限，给足余量；隐藏执行器不消费此值（可见窗 detached）
-            Script::SetFrpKey => Duration::from_secs(300),
             Script::SetTencentKey => Duration::from_secs(300),
-            Script::ConfigDdnsGo => Duration::from_secs(120),
+            // 服务动作最快（stop/start 秒级；install 含落位与 Start-Service 预算 60s）
+            Script::MeshService => Duration::from_secs(60),
+            // 交互输入等待无上限，给足余量；隐藏执行器不消费此值（可见窗 detached）
+            Script::SetMeshSecret => Duration::from_secs(300),
         }
     }
 }
@@ -135,7 +131,7 @@ impl ScriptSource {
     }
 }
 
-/// 目录有效性哨兵：三组件编排的最小依赖（spec §4.5）
+/// 目录有效性哨兵：两组件编排的最小依赖（spec §4.5）
 pub const SENTINEL_SCRIPT_FILE: &str = "run-server-hidden.ps1";
 
 /// 解析结果
@@ -301,7 +297,7 @@ pub fn setup_autostart(dir: &Path, lang: Lang, log_dir: &Path, remove: bool, sta
 
 /// Caddy 原生拉起（plan §5.2：不经 powershell；参数与 setup-autostart.ps1 任务一致）。
 /// 插件式 Caddyfile 的 {env.*} 凭证在 spawn 时注入进程环境（ADR-0003）——
-/// 凭证经 dns_api 回退链（.env → ddns-go.yaml）读取，仅进子进程环境、
+/// 凭证经 dns_api::read_credential 自栈 .env 读取（D3 单源），仅进子进程环境、
 /// 不入 CommandSpec 日志输出（SecretEnv 屏蔽）。
 pub fn caddy_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
     let env = crate::dns_api::read_credential(stack_dir)
@@ -322,27 +318,6 @@ pub fn caddy_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
         timeout: Duration::from_secs(15),
         working_dir: Some(PathBuf::from(stack_dir)),
         env,
-    }
-}
-
-/// ddns-go 原生拉起（-c 配置 -l 监听 -f 间隔；与 setup-autostart.ps1 任务一致）
-pub fn ddns_go_run(log_dir: &Path, stack_dir: &str) -> CommandSpec {
-    CommandSpec {
-        program: format!(r"{stack_dir}\ddns-go.exe"),
-        args: vec![
-            "-c".into(),
-            DDNSGO_CONFIG_PATH.into(),
-            "-l".into(),
-            DDNSGO_LISTEN.into(),
-            "-f".into(),
-            DDNSGO_INTERVAL_SECS.to_string(),
-        ],
-        creation_flags: CREATE_NO_WINDOW,
-        stdout_log: Some(log_dir.join("ddns-go.log")),
-        stderr_log: Some(log_dir.join("ddns-go.err.log")),
-        timeout: Duration::from_secs(15),
-        working_dir: Some(PathBuf::from(stack_dir)),
-        env: SecretEnv::default(),
     }
 }
 
@@ -457,14 +432,11 @@ pub enum ToolKind {
     EnableHttps,
     /// 客户端配置（install-client.ps1，可见交互窗）
     InstallClient,
-    /// ddns-go 密码重置（reset-ddns-password.ps1，可见交互窗；spec 003）
-    ResetDdnsPassword,
-    /// SakuraFrp 访问密钥写入 .env（set-frp-key.ps1，可见交互窗；spec 004）
-    SetFrpKey,
     /// 腾讯云 CAM 密钥写入 .env（set-tencent-key.ps1，可见交互窗；spec 006）
     SetTencentKey,
-    /// ddns-go 配置生成 + 拉起（config-ddnsgo.ps1，可见交互窗；spec 006）
-    ConfigDdnsGo,
+    /// EasyTier 组网密钥写入 network-secret（set-mesh-secret.ps1，可见交互窗；
+    /// spec 007 AC8——密钥经交互脚本注入，不进工作台内存）
+    SetMeshSecret,
 }
 
 impl From<ToolKind> for Script {
@@ -474,10 +446,8 @@ impl From<ToolKind> for Script {
             ToolKind::InstallHttps => Script::InstallHttps,
             ToolKind::EnableHttps => Script::EnableHttps,
             ToolKind::InstallClient => Script::InstallClient,
-            ToolKind::ResetDdnsPassword => Script::ResetDdnsPassword,
-            ToolKind::SetFrpKey => Script::SetFrpKey,
             ToolKind::SetTencentKey => Script::SetTencentKey,
-            ToolKind::ConfigDdnsGo => Script::ConfigDdnsGo,
+            ToolKind::SetMeshSecret => Script::SetMeshSecret,
         }
     }
 }
@@ -522,21 +492,17 @@ pub fn tool_plan(
             extra.push("-UseMirror");
         }
     }
-    // 感知栈目录的脚本跟随用户配置（spec 004：装机/密钥/密码重置写入正确位置）
+    // 感知栈目录的脚本跟随用户配置（spec 004：装机/密钥写入正确位置）
     if matches!(
         kind,
-        ToolKind::InstallHttps
-            | ToolKind::ResetDdnsPassword
-            | ToolKind::SetFrpKey
-            | ToolKind::SetTencentKey
-            | ToolKind::ConfigDdnsGo
+        ToolKind::InstallHttps | ToolKind::SetTencentKey | ToolKind::SetMeshSecret
     ) {
         extra.push("-StackDir");
         extra.push(stack_dir);
     }
-    // 域名透传（spec 006：装机向导自定义域名 → Caddyfile / ddns-go.yaml）
+    // 域名透传（spec 006：装机向导自定义域名 → Caddyfile；ddns-go 已退役）
     if let Some(domain) = opts.domain.as_deref() {
-        if matches!(kind, ToolKind::InstallHttps | ToolKind::ConfigDdnsGo) {
+        if matches!(kind, ToolKind::InstallHttps) {
             extra.push("-Domain");
             extra.push(domain);
         }
@@ -575,8 +541,8 @@ pub fn interpret_exit(script: Script, code: i32) -> ScriptOutcome {
             }
             // stop-server.ps1：taskkill 后端口仍有监听
             Script::StopServer => ScriptOutcome::Unavailable("端口仍被占用（taskkill 后仍有监听）"),
-            // setup-autostart.ps1：栈目录缺少 caddy.exe / ddns-go.exe
-            Script::SetupAutostart => ScriptOutcome::Unavailable("栈目录缺少 caddy.exe / ddns-go.exe"),
+            // setup-autostart.ps1：栈目录缺少 caddy.exe（ddns-go 已随直连通道退役，spec 008）
+            Script::SetupAutostart => ScriptOutcome::Unavailable("栈目录缺少 caddy.exe"),
             // 安装/配置类脚本 1 无统一前置语义 → 一般失败（UI 引导看日志）
             _ => ScriptOutcome::Failed(1),
         },
@@ -599,8 +565,7 @@ pub enum ExecOutcome {
 pub trait CommandExecutor: Send + Sync {
     /// 同步执行到退出或超时（stdio 按 spec 落日志）
     fn execute(&self, spec: &CommandSpec) -> ExecOutcome;
-    /// 派发不等待（常驻服务进程：caddy run / ddns-go / run-server-hidden 的
-    /// Start-Process 语义）
+    /// 派发不等待（常驻服务进程：caddy run / run-server-hidden 的 Start-Process 语义）
     fn dispatch(&self, spec: &CommandSpec) -> Result<(), String>;
 }
 
@@ -640,7 +605,7 @@ impl CommandExecutor for ProcessExecutor {
 
     fn dispatch(&self, spec: &CommandSpec) -> Result<(), String> {
         // 派发即返：std Child 句柄直接丢弃不会终止子进程（Windows 无 kill-on-drop），
-        // 常驻服务进程（caddy run / ddns-go）因此存活；日志句柄随子进程生命周期持有
+        // 常驻服务进程（caddy run）因此存活；日志句柄随子进程生命周期持有
         std_command(spec, log_stdio(spec.stdout_log.as_deref()), log_stdio(spec.stderr_log.as_deref()))
             .spawn()
             .map(|_| ())
@@ -691,6 +656,7 @@ fn std_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consts::DEFAULT_STACK_DIR;
     use std::sync::Mutex;
 
     // ── 定位器 ─────────────────────────────────────────────────────────
@@ -861,26 +827,6 @@ mod tests {
         assert_eq!(spec.working_dir.as_deref(), Some(Path::new(DEFAULT_STACK_DIR)));
     }
 
-    #[test]
-    fn native_ddnsgo_spec_matches_autostart_contract() {
-        // setup-autostart.ps1：ddns-go.exe -c '<StackDir>\ddns-go.yaml' -l :9876 -f 300
-        let logs = PathBuf::from(r"D:\any\logs");
-        let spec = ddns_go_run(&logs, DEFAULT_STACK_DIR);
-        assert_eq!(spec.program, r"D:\Software\cloudcli-https\ddns-go.exe");
-        assert_eq!(
-            spec.args,
-            vec![
-                "-c".to_string(),
-                DDNSGO_CONFIG_PATH.to_string(),
-                "-l".to_string(),
-                DDNSGO_LISTEN.to_string(),
-                "-f".to_string(),
-                DDNSGO_INTERVAL_SECS.to_string(),
-            ]
-        );
-        assert_eq!(spec.creation_flags, CREATE_NO_WINDOW);
-    }
-
     // ── 可见/提权参数串 ────────────────────────────────────────────────
 
     #[test]
@@ -959,17 +905,31 @@ mod tests {
     }
 
     #[test]
-    fn tool_plan_reset_ddns_password_is_interactive_visible() {
-        // spec 003：密码重置为用户级操作（无 UAC），经可见交互窗执行
+    fn tool_plan_set_tencent_key_passes_stack_dir() {
+        // spec 008：set-tencent-key 为栈 .env 凭证唯一写入通道，须带 -StackDir
         let dir = script_dir("tool3");
-        let plan = tool_plan(ToolKind::ResetDdnsPassword, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
-        assert_eq!(plan.script, Script::ResetDdnsPassword);
-        assert!(!plan.elevated, "ddns-go 为用户进程，重置无需 UAC");
-        assert_eq!(Script::ResetDdnsPassword.visibility(), Visibility::VisibleInteractive);
-        assert!(plan.params.contains("reset-ddns-password.ps1"), "{}", plan.params);
+        let plan = tool_plan(ToolKind::SetTencentKey, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
+        assert_eq!(plan.script, Script::SetTencentKey);
+        assert!(!plan.elevated, "密钥写入为用户级交互操作，无 UAC");
+        assert!(plan.params.contains("set-tencent-key.ps1"), "{}", plan.params);
+        assert!(plan.params.contains("-StackDir"), "感知栈目录：{}", plan.params);
         assert!(plan.params.contains("-Lang zh"), "-Lang 对齐程序语言：{}", plan.params);
-        assert!(plan.params.contains("-NoExit"), "窗口结束后保留可读：{}", plan.params);
         assert!(!plan.params.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive：{}", plan.params);
+    }
+
+    /// spec 008：已退役工具种类不得再被前端唤起（serde 反序列化拒绝）
+    #[test]
+    fn retired_tool_kinds_fail_deserialization() {
+        for gone in ["reset_ddns_password", "set_frp_key", "config_ddns_go", "clear_frp_key"] {
+            assert!(
+                serde_json::from_str::<ToolKind>(&format!("\"{gone}\"")).is_err(),
+                "退役种类 {gone} 应被拒绝"
+            );
+        }
+        assert_eq!(
+            serde_json::from_str::<ToolKind>("\"set_tencent_key\"").unwrap(),
+            ToolKind::SetTencentKey
+        );
     }
 
     // ── 退出码语义 ─────────────────────────────────────────────────────
@@ -983,8 +943,8 @@ mod tests {
         assert_eq!(interpret_exit(Script::RunServerHidden, 2), Failed(2));
         // stop-server：1=杀完端口仍被占
         assert_eq!(interpret_exit(Script::StopServer, 1), Unavailable("端口仍被占用（taskkill 后仍有监听）"));
-        // setup-autostart：1=栈目录缺 caddy.exe/ddns-go.exe
-        assert_eq!(interpret_exit(Script::SetupAutostart, 1), Unavailable("栈目录缺少 caddy.exe / ddns-go.exe"));
+        // setup-autostart：1=栈目录缺 caddy.exe（ddns-go 已退役，spec 008）
+        assert_eq!(interpret_exit(Script::SetupAutostart, 1), Unavailable("栈目录缺少 caddy.exe"));
         // 其他脚本 1 归一般失败
         assert_eq!(interpret_exit(Script::InstallHttps, 1), Failed(1));
     }
@@ -1102,7 +1062,7 @@ mod tests {
     fn caddy_run_injects_tencent_creds_from_env_file() {
         let stack = temp_stack_dir(
             "creds",
-            Some("SAKURA_FRP_KEY=frpkey\nTENCENT_SECRET_ID=AKIDtest1234\nTENCENT_SECRET_KEY=secretkey\n"),
+            Some("SAMPLE_KEY=ignored\nTENCENT_SECRET_ID=AKIDtest1234\nTENCENT_SECRET_KEY=secretkey\n"),
         );
         let spec = caddy_run(&stack.join("logs"), stack.to_str().unwrap());
         assert_eq!(

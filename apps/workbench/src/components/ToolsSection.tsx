@@ -1,6 +1,7 @@
 /**
- * 运维工具区（spec 006 AC13 瘦身：装机首配归装机向导，本区仅保留运维项）。
- * - 折叠区（默认收起）：升级 CloudCLI/客户端配置/ddns-go 密码重置/ddns-go 管理页
+ * 运维工具区（spec 006 AC13 瘦身 + spec 008 收敛：仅保留存活通道的运维项）。
+ * - 折叠区（默认收起）：升级 CloudCLI / 客户端配置
+ * - ddns-go 密码重置/管理页已随直连通道退役删除（spec 008）
  * - 脚本缺失 → 对应按钮禁用 + ScriptLocator 禁用原因透传（spec §4.5）
  * - 派发失败/UAC 拒绝 → run_tool 返回 Err，toast 明确提示不崩溃（AC20）
  */
@@ -49,20 +50,6 @@ export function ToolsSection(props: ToolsSectionProps) {
       desc: "tools.installClientDesc",
       needsScripts: true,
       run: () => runTool("install_client", false),
-    },
-    {
-      id: "reset_ddns_password",
-      label: "tools.resetDdnsPassword",
-      desc: "tools.resetDdnsPasswordDesc",
-      needsScripts: true,
-      run: () => runTool("reset_ddns_password", false),
-    },
-    {
-      id: "ddns_admin",
-      label: "tools.openDdnsAdmin",
-      desc: "tools.openDdnsAdminDesc",
-      needsScripts: false,
-      run: () => api.openExternal("ddns_admin"),
     },
   ];
 

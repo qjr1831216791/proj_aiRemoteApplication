@@ -9,17 +9,15 @@
 //! 结构：`classify` 为纯函数（单测核心）；`StatusProbe` trait 隔离 Windows
 //! API 采集层（netstat2 + sysinfo），mock/真实实现可替换。
 
-use crate::consts::{
-    CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT, DDNSGO_PORT, DEFAULT_STACK_DIR,
-};
+use crate::consts::{CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT};
 use std::net::IpAddr;
 
-/// 组件标识（与前端 plan §4 TS 类型 "cloudcli" | "caddy" | "ddnsgo" 对齐）
+/// 组件标识（与前端 plan §4 TS 类型 "cloudcli" | "caddy" 对齐；
+/// ddnsgo 已随直连通道退役——spec 008）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComponentId {
     CloudCli,
     Caddy,
-    DdnsGo,
 }
 
 impl ComponentId {
@@ -28,7 +26,6 @@ impl ComponentId {
         match self {
             ComponentId::CloudCli => "cloudcli",
             ComponentId::Caddy => "caddy",
-            ComponentId::DdnsGo => "ddnsgo",
         }
     }
 
@@ -37,14 +34,13 @@ impl ComponentId {
         match self {
             ComponentId::CloudCli => CLOUDCLI_PORT,
             ComponentId::Caddy => CADDY_PORT,
-            ComponentId::DdnsGo => DDNSGO_PORT,
         }
     }
 }
 
 /// 监听者身份判据：
 /// - ExeName：按可执行文件名匹配（CloudCLI = npm 全局 node.exe，路径不定）
-/// - ExePath：按完整路径匹配（Caddy/ddns-go 固定居于栈目录，
+/// - ExePath：按完整路径匹配（Caddy 固定居于栈目录，
 ///   与 setup-autostart.ps1 的 Check 判据一致）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Identity {
@@ -82,15 +78,14 @@ pub struct PortHolders {
     pub processes: Vec<ProbeProcess>,
 }
 
-/// 三组件期望身份（集中定义；修改与部署知识同步）。
+/// 组件期望身份（集中定义；修改与部署知识同步）。
 /// `stack_dir` 为用户可配置的栈目录（spec 004：Settings.stack_dir，重启生效）
 pub fn expected_identity(id: ComponentId, stack_dir: &str) -> Identity {
     match id {
         // run-server-hidden.ps1 经 npm 全局拉起 node.exe，安装路径不定 → 按名
         ComponentId::CloudCli => Identity::ExeName(CLOUDCLI_EXE_NAME.into()),
-        // caddy/ddns-go 固定居于栈目录（setup-autostart.ps1 的 Check 判据）
+        // caddy 固定居于栈目录（setup-autostart.ps1 的 Check 判据）
         ComponentId::Caddy => Identity::ExePath(format!(r"{stack_dir}\caddy.exe")),
-        ComponentId::DdnsGo => Identity::ExePath(format!(r"{stack_dir}\ddns-go.exe")),
     }
 }
 
@@ -230,6 +225,7 @@ pub fn paths_equal(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consts::DEFAULT_STACK_DIR;
     use std::net::{IpAddr, Ipv4Addr};
 
     fn addr(a: [u8; 4]) -> IpAddr {
@@ -261,27 +257,21 @@ mod tests {
 
     #[test]
     fn component_ids_ports_and_names() {
-        // plan §4：3001 / 443 / 9876；前端字符串对齐
+        // plan §4：3001 / 443；前端字符串对齐（ddnsgo 随直连通道退役，spec 008）
         assert_eq!(ComponentId::CloudCli.port(), 3001);
         assert_eq!(ComponentId::Caddy.port(), 443);
-        assert_eq!(ComponentId::DdnsGo.port(), 9876);
         assert_eq!(ComponentId::CloudCli.as_str(), "cloudcli");
         assert_eq!(ComponentId::Caddy.as_str(), "caddy");
-        assert_eq!(ComponentId::DdnsGo.as_str(), "ddnsgo");
     }
 
     #[test]
     fn expected_identity_matches_deployment() {
-        // cloudcli = node.exe 按名；caddy/ddns-go = 栈目录全路径（与
+        // cloudcli = node.exe 按名；caddy = 栈目录全路径（与
         // setup-autostart.ps1 的 Check 判据一致）
         assert_eq!(expected_identity(ComponentId::CloudCli, DEFAULT_STACK_DIR), Identity::ExeName("node.exe".into()));
         assert_eq!(
             expected_identity(ComponentId::Caddy, DEFAULT_STACK_DIR),
             Identity::ExePath(r"D:\Software\cloudcli-https\caddy.exe".into())
-        );
-        assert_eq!(
-            expected_identity(ComponentId::DdnsGo, DEFAULT_STACK_DIR),
-            Identity::ExePath(r"D:\Software\cloudcli-https\ddns-go.exe".into())
         );
         // 与 consts 同源（DEFAULT_STACK_DIR 变更时此处兜底提醒）
         assert!(matches!(expected_identity(ComponentId::Caddy, DEFAULT_STACK_DIR), Identity::ExePath(p) if p.starts_with(DEFAULT_STACK_DIR)));
@@ -391,7 +381,7 @@ mod tests {
     #[test]
     fn path_utils() {
         assert_eq!(file_name_of(r"D:\a\b\caddy.exe").as_deref(), Some("caddy.exe"));
-        assert_eq!(file_name_of("D:/a/ddns-go.exe").as_deref(), Some("ddns-go.exe"));
+        assert_eq!(file_name_of("D:/a/easytier-cli.exe").as_deref(), Some("easytier-cli.exe"));
         assert_eq!(file_name_of("bare").as_deref(), Some("bare"));
         assert!(paths_equal(r"D:\A\b.exe", r"d:\a\B.EXE"));
         assert!(!paths_equal(r"D:\A\b.exe", r"D:\A\c.exe"));

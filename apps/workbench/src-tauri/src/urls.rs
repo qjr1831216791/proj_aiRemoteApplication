@@ -5,7 +5,7 @@
 //! - 地址口径与 sprint0 menu.ps1 菜单 3 对齐：
 //!   本机 `http://localhost:3001` / 局域网 `http://<ip>:3001` / 域名 `https://ai.jackqi.cn`。
 
-use crate::consts::{CLOUDCLI_PORT, DDNSGO_UI_URL, WORKBENCH_URL};
+use crate::consts::{CLOUDCLI_PORT, WORKBENCH_URL};
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 
@@ -67,9 +67,12 @@ pub enum ExternalKind {
     Lan,
     /// 域名地址（与 Workbench 同 URL：AC19 地址区「打开」按钮）
     Domain,
-    /// ddns-go 管理页
-    DdnsAdmin,
+    /// EasyTier 官方 GitHub Releases（007 成员设备客户端下载入口）
+    EasytierReleases,
 }
+
+/// EasyTier 客户端下载页（成员设备指引；官方仓库 Releases）
+pub const EASYTIER_RELEASES_URL: &str = "https://github.com/EasyTier/EasyTier/releases";
 
 /// 纯映射：kind → 完整 URL（单测覆盖全分支）
 pub fn external_url(kind: ExternalKind, urls: &AccessUrls) -> String {
@@ -77,7 +80,7 @@ pub fn external_url(kind: ExternalKind, urls: &AccessUrls) -> String {
         ExternalKind::Workbench | ExternalKind::Domain => urls.domain.clone(),
         ExternalKind::Local => urls.local.clone(),
         ExternalKind::Lan => urls.lan.clone(),
-        ExternalKind::DdnsAdmin => DDNSGO_UI_URL.to_string(),
+        ExternalKind::EasytierReleases => EASYTIER_RELEASES_URL.to_string(),
     }
 }
 
@@ -119,19 +122,20 @@ mod tests {
         assert_eq!(external_url(ExternalKind::Domain, &urls), urls.domain);
         assert_eq!(external_url(ExternalKind::Local, &urls), "http://localhost:3001/");
         assert_eq!(external_url(ExternalKind::Lan, &urls), "http://10.0.0.2:3001/");
-        assert_eq!(external_url(ExternalKind::DdnsAdmin, &urls), DDNSGO_UI_URL);
+        assert_eq!(
+            external_url(ExternalKind::EasytierReleases, &urls),
+            "https://github.com/EasyTier/EasyTier/releases"
+        );
     }
 
     #[test]
     fn external_kind_deserializes_snake_case() {
         assert_eq!(
-            serde_json::from_str::<ExternalKind>("\"ddns_admin\"").unwrap(),
-            ExternalKind::DdnsAdmin
-        );
-        assert_eq!(
             serde_json::from_str::<ExternalKind>("\"workbench\"").unwrap(),
             ExternalKind::Workbench
         );
+        // ddns_admin 随 ddns-go 退役（spec 008）：旧前端误传应被拒绝而非静默忽略
+        assert!(serde_json::from_str::<ExternalKind>("\"ddns_admin\"").is_err());
         assert!(serde_json::from_str::<ExternalKind>("\"nope\"").is_err());
     }
 }

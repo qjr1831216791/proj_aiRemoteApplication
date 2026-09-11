@@ -1,8 +1,8 @@
 /**
- * 主界面（T13：AC1/4/6 展示层）。
+ * 主界面（T13：AC1/4/6 展示层；spec 008 二元化）。
  * - 总开关：启动/停止双按钮，进行中禁用防重复；部分失败不显示笼统"启动成功"，
  *   实况由各组件状态卡自述（AC6）
- * - 三组件状态卡：五态色、端口、当前态耗时（since）、失败/port-held 原因、
+ * - 两组件状态卡：五态色、端口、当前态耗时（since）、失败/port-held 原因、
  *   组件级重试（AC6）
  * - 地址区：本机/局域网/域名三行，一键复制 + 打开（AC19 地址区）
  * 状态数据流：status://changed 事件（App 订阅）+ 启动时 get_status 兜底。
@@ -17,16 +17,16 @@ import type {
   ComponentState,
   ComponentStatus,
   DomainHealth,
+  MeshStatus,
   NetCategory,
   NetStatus,
   ScriptsAvailability,
   Settings,
-  TunnelStatus,
   WizardStageId,
 } from "../types";
 import { CopyButton } from "./CopyButton";
+import { MeshCard } from "./MeshCard";
 import { ToolsSection } from "./ToolsSection";
-import { TunnelCard } from "./TunnelCard";
 
 export interface MainViewProps {
   lang: Lang;
@@ -37,14 +37,12 @@ export interface MainViewProps {
   netStatus: NetStatus | null;
   /** 主动刷新网络环境（切换派发成功后加速收敛，免等 15s 轮询） */
   onNetRefresh: () => void;
-  /** 全量设置（spec 004 通道卡数据源；App 持有） */
+  /** 全量设置（组网卡数据源；App 持有） */
   settings: Settings | null;
-  /** 隧道运行状态（spec 004；null = 尚无快照） */
-  tunnelStatus: TunnelStatus | null;
+  /** 组网运行状态（spec 007；null = 尚无快照） */
+  meshStatus: MeshStatus | null;
   /** 域名心跳快照（spec 005；null = 尚无探测结果） */
   domainHealth: DomainHealth | null;
-  /** 设置回写（通道切换/开关成功后 App 层 setSettings） */
-  onSettingsChange: (s: Settings) => void;
   /** 一键停止在途（防重复点击） */
   stopping: boolean;
   /** 装机向导是否已完成（spec 006 AC1：未完成 → 引导条） */
@@ -60,7 +58,7 @@ export interface MainViewProps {
 export function MainView(props: MainViewProps) {
   const {
     lang, statuses, urls, scripts, netStatus, onNetRefresh,
-    settings, tunnelStatus, domainHealth, onSettingsChange,
+    settings, meshStatus, domainHealth,
     stopping, onStartAll, onStopAll, onRetry, onToast,
     wizardDone, onOpenWizard,
   } = props;
@@ -94,7 +92,7 @@ export function MainView(props: MainViewProps) {
 
   const starting = statuses.some((s) => s.state === "starting");
   const anyRunning = statuses.some((s) => s.state === "running");
-  // 三组件全部运行中：启动无事可做，禁用并明示（避免"点了没反应"的静默无操作）
+  // 两组件全部运行中：启动无事可做，禁用并明示（避免"点了没反应"的静默无操作）
   const allRunning = statuses.length > 0 && statuses.every((s) => s.state === "running");
   const busy = starting || stopping;
 
@@ -135,7 +133,7 @@ export function MainView(props: MainViewProps) {
         </p>
       </section>
 
-      {/* 三组件状态卡 */}
+      {/* 两组件状态卡 */}
       <section class="status-grid">
         {statuses.map((s) => (
           <article key={s.id} class={`card status status--${s.state}`}>
@@ -155,9 +153,6 @@ export function MainView(props: MainViewProps) {
               ) : null}
             </p>
             {s.detail ? <p class="status__detail">{s.detail}</p> : null}
-            {s.id === "ddnsgo" && settings?.accessChannel === "tunnel" && s.state === "stopped" ? (
-              <p class="status__detail">{t("tunnel.ddnsOffInTunnel", lang)}</p>
-            ) : null}
             {s.state === "failed" || s.state === "port-held" ? (
               <button class="btn btn--sm" disabled={busy} onClick={() => onRetry(s.id)}>
                 {t("common.retry", lang)}
@@ -238,14 +233,8 @@ export function MainView(props: MainViewProps) {
         )}
       </section>
 
-      {/* 访问通道（spec 004）：直连 ⇄ 穿透切换 + 隧道状态 + DNS 指引 */}
-      <TunnelCard
-        lang={lang}
-        settings={settings}
-        tunnelStatus={tunnelStatus}
-        onToast={onToast}
-        onSettingsChange={onSettingsChange}
-      />
+      {/* 访问通道（spec 008：组网单通道）：组网状态 + 虚拟 IP/成员 + DNS 指引 */}
+      <MeshCard lang={lang} settings={settings} meshStatus={meshStatus} onToast={onToast} />
 
       {/* 地址区 */}
       <section class="card">

@@ -1,8 +1,9 @@
 //! 编排器（T8：启动侧 + 状态轮询；AC1/3/6 逻辑部分，plan §3.2 启动时序）。
 //!
-//! - 组件注册表：三组件固定顺序（cloudcli/caddy/ddnsgo），CloudCLI 走
-//!   `run-server-hidden.ps1`（复用 T7 CommandSpec/退出码语义），Caddy/ddns-go
-//!   原生守卫拉起（dispatch，stdout→日志）
+//! - 组件注册表：两组件固定顺序（cloudcli/caddy；ddnsgo 已随直连通道
+//!   退役——spec 008；easytier-core 由 SCM 服务承载，不进组件表），
+//!   CloudCLI 走 `run-server-hidden.ps1`（复用 T7 CommandSpec/退出码语义），
+//!   Caddy 原生守卫拉起（dispatch，stdout→日志）
 //! - start_all/start_one：守卫检查（probe 已 running → 跳过，AC3 幂等）→
 //!   置 starting → 就绪轮询（2s 间隔）至 running；60s 未就绪 → failed 并附
 //!   日志尾部（AC1：CloudCLI 为 %TEMP%\cloudcli.log）
@@ -16,7 +17,7 @@
 use crate::lang::Lang;
 use crate::probe::{ComponentId, ProbeState, StatusProbe};
 use crate::scripts::{
-    caddy_run, ddns_go_run, interpret_exit, run_server_hidden, CommandExecutor, CommandSpec,
+    caddy_run, interpret_exit, run_server_hidden, CommandExecutor, CommandSpec,
     ExecOutcome, Script, ScriptOutcome,
 };
 use crate::stop::{ProcessOps, StopConfig, StopOutcome};
@@ -39,9 +40,8 @@ pub const IN_FLIGHT_STALE_AFTER: Duration = Duration::from_secs(120);
 /// 失败详情附带的日志尾部行数
 pub const LOG_TAIL_LINES: usize = 30;
 
-/// 三组件注册表（固定顺序 = status 数组顺序）
-pub const COMPONENT_ORDER: [ComponentId; 3] =
-    [ComponentId::CloudCli, ComponentId::Caddy, ComponentId::DdnsGo];
+/// 组件注册表（固定顺序 = status 数组顺序）
+pub const COMPONENT_ORDER: [ComponentId; 2] = [ComponentId::CloudCli, ComponentId::Caddy];
 
 // ── 数据模型（plan §4）──────────────────────────────────────────────────────
 
@@ -82,9 +82,8 @@ impl<'de> Deserialize<'de> for ComponentId {
         match s.as_str() {
             "cloudcli" => Ok(ComponentId::CloudCli),
             "caddy" => Ok(ComponentId::Caddy),
-            "ddnsgo" => Ok(ComponentId::DdnsGo),
             other => Err(serde::de::Error::custom(format!(
-                "未知组件标识：{other}（合法：cloudcli/caddy/ddnsgo）"
+                "未知组件标识：{other}（合法：cloudcli/caddy）"
             ))),
         }
     }
@@ -317,9 +316,6 @@ pub struct Orchestrator {
     /// 实时语言源（T14：语言切换后脚本 -Lang 与状态 detail 即时跟随；
     /// None = 回落 cfg.lang，单测/默认路径）
     lang_source: Option<Arc<dyn Fn() -> Lang + Send + Sync>>,
-    /// 通道感知源（spec 004 AC8：穿透通道下 start_all 跳过 ddns-go——
-    /// 通道互斥，ddns-go 会在 DNS 上与 CNAME 抢写记录；frpc 由隧道守护负责）
-    channel_source: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 
 impl Orchestrator {
@@ -351,7 +347,6 @@ impl Orchestrator {
             statuses: Arc::new(Mutex::new(statuses)),
             tracker: Arc::new(InFlightTracker::default()),
             lang_source: None,
-            channel_source: None,
         }
     }
 
@@ -359,17 +354,6 @@ impl Orchestrator {
     pub fn with_lang_source(mut self, source: Arc<dyn Fn() -> Lang + Send + Sync>) -> Self {
         self.lang_source = Some(source);
         self
-    }
-
-    /// 注入通道感知源（装配层接 SettingsState；返回 true = 当前为穿透通道）
-    pub fn with_channel_source(mut self, source: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
-        self.channel_source = Some(source);
-        self
-    }
-
-    /// 当前是否穿透通道（无通道源 = 直连语义，保持既有行为）
-    fn is_tunnel_channel(&self) -> bool {
-        self.channel_source.as_ref().map(|f| f()).unwrap_or(false)
     }
 
     /// 当前生效语言（语言源实时读取；缺省 cfg.lang）
@@ -405,15 +389,9 @@ impl Orchestrator {
     }
 
     /// 一键启动：逐组件派发（在途组件跳过，幂等重入）。
-    /// 穿透通道下跳过 ddns-go（spec 004 AC8 通道互斥——否则它启动即把 A 记录
-    /// 重新写回，与 CNAME 混挂；2026-09-10 真机实证）。frpc 由隧道守护负责拉起。
+    /// easytier-core 由 SCM 服务承载（不进组件表，007 §3.3 语义不变）。
     pub fn start_all(&self) {
-        let tunnel_mode = self.is_tunnel_channel();
         for id in COMPONENT_ORDER {
-            if tunnel_mode && id == ComponentId::DdnsGo {
-                log::info!("start_all 跳过 ddns-go（穿透通道互斥，spec 004 AC8）");
-                continue;
-            }
             // 单组件失败已隔离为其 failed 态（AC6），此处只吞"在途跳过"
             if let Err(e) = self.start_one(id) {
                 log::info!("start_all 跳过组件 {}：{e}", id.as_str());
@@ -508,14 +486,6 @@ impl Orchestrator {
                 &self.cfg.stack_dir,
                 deadline,
             ),
-            ComponentId::DdnsGo => crate::stop::stop_ddnsgo(
-                self.probe.as_ref(),
-                self.procs.as_ref(),
-                cfg,
-                &texts,
-                &self.cfg.stack_dir,
-                deadline,
-            ),
         };
         match &outcome {
             StopOutcome::AlreadyStopped | StopOutcome::Stopped => {
@@ -531,7 +501,7 @@ impl Orchestrator {
         outcome
     }
 
-    /// 一键停止：三组件并行（plan §3.2 收摊时序；单组件各自 10s 预算互不阻塞）
+    /// 一键停止：两组件并行（plan §3.2 收摊时序；单组件各自 10s 预算互不阻塞）
     pub fn stop_all(&self) -> Vec<(ComponentId, StopOutcome)> {
         let handles: Vec<_> = COMPONENT_ORDER
             .iter()
@@ -584,7 +554,7 @@ impl Orchestrator {
         }
         // 2. 置 starting（AC1：点击启动即进入"启动中"）
         self.set_state_if_active(cancel, id, ComponentState::Starting, None);
-        // 3. 拉起：CloudCLI 走脚本消费 exit code（AC1）；Caddy/ddns-go 原生守卫拉起
+        // 3. 拉起：CloudCLI 走脚本消费 exit code（AC1）；Caddy 原生守卫拉起
         match id {
             ComponentId::CloudCli => {
                 let Some(dir) = self.cfg.scripts_dir.clone() else {
@@ -635,11 +605,6 @@ impl Orchestrator {
                     return;
                 }
             }
-            ComponentId::DdnsGo => {
-                if !self.dispatch_native(cancel, &ddns_go_run(&self.cfg.log_dir, &self.cfg.stack_dir), id) {
-                    return;
-                }
-            }
         }
         // 4. 就绪轮询：poll_interval 间隔至 running；start_timeout 未就绪 → failed（AC1）
         let deadline = Instant::now() + self.cfg.start_timeout;
@@ -678,7 +643,7 @@ impl Orchestrator {
         }
     }
 
-    /// 原生拉起（Caddy/ddns-go）：dispatch 派发即返；失败置 failed
+    /// 原生拉起（Caddy）：dispatch 派发即返；失败置 failed
     fn dispatch_native(&self, cancel: &AtomicBool, spec: &CommandSpec, id: ComponentId) -> bool {
         let texts = crate::lang::detail_texts(self.current_lang());
         match self.executor.dispatch(spec) {
@@ -705,10 +670,6 @@ impl Orchestrator {
             ComponentId::Caddy => vec![
                 self.cfg.log_dir.join("caddy.err.log"),
                 self.cfg.log_dir.join("caddy.log"),
-            ],
-            ComponentId::DdnsGo => vec![
-                self.cfg.log_dir.join("ddns-go.err.log"),
-                self.cfg.log_dir.join("ddns-go.log"),
             ],
         };
         let tails: Vec<String> = paths
@@ -1042,7 +1003,6 @@ pub(crate) mod test_support {
     pub struct MockProcessOps {
         log: Option<Arc<CallLog>>,
         descendants_map: Mutex<HashMap<u32, Vec<u32>>>,
-        by_exe: Mutex<HashMap<String, Vec<u32>>>,
     }
 
     impl MockProcessOps {
@@ -1050,7 +1010,6 @@ pub(crate) mod test_support {
             Self {
                 log: None,
                 descendants_map: Mutex::new(HashMap::new()),
-                by_exe: Mutex::new(HashMap::new()),
             }
         }
 
@@ -1065,10 +1024,6 @@ pub(crate) mod test_support {
                 .lock()
                 .unwrap()
                 .insert(pid, children.to_vec());
-        }
-
-        pub fn set_by_exe(&self, exe: &str, pids: &[u32]) {
-            self.by_exe.lock().unwrap().insert(exe.to_string(), pids.to_vec());
         }
     }
 
@@ -1085,14 +1040,6 @@ pub(crate) mod test_support {
                 log.record(format!("procs:descendants({pid})->{children:?}"));
             }
             children
-        }
-
-        fn pids_by_exe(&self, exe: &str) -> Vec<u32> {
-            let pids = self.by_exe.lock().unwrap().get(exe).cloned().unwrap_or_default();
-            if let Some(log) = &self.log {
-                log.record(format!("procs:pids_by_exe({exe})->{pids:?}"));
-            }
-            pids
         }
 
         fn kill(&self, pid: u32) -> Result<(), String> {
@@ -1263,9 +1210,9 @@ mod tests {
 
         // detail 缺省不序列化；ComponentId 反序列化合法值
         let no_detail = ComponentStatus {
-            id: ComponentId::DdnsGo,
+            id: ComponentId::Caddy,
             state: ComponentState::Stopped,
-            port: 9876,
+            port: 443,
             detail: None,
             since: 0,
         };
@@ -1340,28 +1287,24 @@ mod tests {
     }
 
     #[test]
-    fn start_caddy_and_ddnsgo_dispatch_native_commands() {
-        for (id, program, arg_needle) in [
-            (ComponentId::Caddy, r"D:\Software\cloudcli-https\caddy.exe", "--config"),
-            (ComponentId::DdnsGo, r"D:\Software\cloudcli-https\ddns-go.exe", "-l"),
-        ] {
-            let probe = Arc::new(ScriptedProbe::new());
-            probe.enqueue(id, &[ProbeState::Stopped, running()]);
-            let exec = Arc::new(MockExecutor::new());
-            let (orch, sink, _) = build(probe, exec.clone());
-            orch.start_one(id).unwrap();
-            assert!(orch.wait_start_idle(id, Duration::from_secs(2)));
-            let dispatched = exec.dispatched.lock().unwrap();
-            assert_eq!(dispatched.len(), 1, "{id:?} 应派发一次原生命令");
-            assert_eq!(dispatched[0].program, program);
-            assert!(dispatched[0].args.iter().any(|a| a == arg_needle), "{:?}", dispatched[0].args);
-            assert!(dispatched[0].stdout_log.is_some(), "stdout 应落日志");
-            drop(dispatched);
-            assert_eq!(
-                timeline(&sink, id),
-                vec![ComponentState::Starting, ComponentState::Running]
-            );
-        }
+    fn start_caddy_dispatches_native_command() {
+        let id = ComponentId::Caddy;
+        let probe = Arc::new(ScriptedProbe::new());
+        probe.enqueue(id, &[ProbeState::Stopped, running()]);
+        let exec = Arc::new(MockExecutor::new());
+        let (orch, sink, _) = build(probe, exec.clone());
+        orch.start_one(id).unwrap();
+        assert!(orch.wait_start_idle(id, Duration::from_secs(2)));
+        let dispatched = exec.dispatched.lock().unwrap();
+        assert_eq!(dispatched.len(), 1, "caddy 应派发一次原生命令");
+        assert_eq!(dispatched[0].program, r"D:\Software\cloudcli-https\caddy.exe");
+        assert!(dispatched[0].args.iter().any(|a| a == "--config"), "{:?}", dispatched[0].args);
+        assert!(dispatched[0].stdout_log.is_some(), "stdout 应落日志");
+        drop(dispatched);
+        assert_eq!(
+            timeline(&sink, id),
+            vec![ComponentState::Starting, ComponentState::Running]
+        );
     }
 
     #[test]
@@ -1383,28 +1326,12 @@ mod tests {
         // AC1：60s 未就绪 → failed + 日志尾部（CloudCLI=%TEMP%\cloudcli.log）
         let probe = Arc::new(ScriptedProbe::new());
         probe.pin(ComponentId::CloudCli, ProbeState::Stopped);
-        probe.pin(ComponentId::DdnsGo, ProbeState::Stopped);
         let exec = Arc::new(MockExecutor::new());
         let (orch, sink, logs) = build(probe, exec);
         logs.set(cloudcli_log_path(), "Error: Cannot find module 'cloudcli'");
-        logs.set(
-            PathBuf::from(r"D:\test-logs\ddns-go.err.log"),
-            "panic: config parse failed",
-        );
 
-        // 顺序化消除竞态：先等 CloudCli 离开初态（Starting 已置位）再启动
-        // DdnsGo——否则 DdnsGo 的首个事件批次可能携带 CloudCli 的旧 Stopped，
-        // 令其时间线多出前导 Stopped（线程化 start_one 的固有交错，非行为缺陷）
         orch.start_one(ComponentId::CloudCli).unwrap();
-        assert!(wait_for_state(
-            &orch,
-            ComponentId::CloudCli,
-            |s| s != ComponentState::Stopped,
-            Duration::from_secs(2)
-        ));
-        orch.start_one(ComponentId::DdnsGo).unwrap();
         assert!(orch.wait_start_idle(ComponentId::CloudCli, Duration::from_secs(2)));
-        assert!(orch.wait_start_idle(ComponentId::DdnsGo, Duration::from_secs(2)));
 
         let st = state_of(&orch, ComponentId::CloudCli);
         assert_eq!(st.state, ComponentState::Failed);
@@ -1412,12 +1339,6 @@ mod tests {
         assert!(detail.contains("启动超时"), "{detail}");
         assert!(detail.contains("cloudcli.log"), "应指向 CloudCLI 运行日志：{detail}");
         assert!(detail.contains("Cannot find module"), "应附日志尾部：{detail}");
-
-        let st2 = state_of(&orch, ComponentId::DdnsGo);
-        assert_eq!(st2.state, ComponentState::Failed);
-        let detail2 = st2.detail.unwrap();
-        assert!(detail2.contains("ddns-go.err.log"), "应指向组件日志：{detail2}");
-        assert!(detail2.contains("panic"), "应附日志尾部：{detail2}");
 
         assert_eq!(
             timeline(&sink, ComponentId::CloudCli),
@@ -1557,7 +1478,7 @@ mod tests {
         {
             let emissions = sink.emissions.lock().unwrap();
             assert_eq!(emissions.len(), 1);
-            assert_eq!(emissions[0].len(), 3, "事件载荷应为全组件数组（plan §4）");
+            assert_eq!(emissions[0].len(), 2, "事件载荷应为全组件数组（plan §4；spec 008 二元化）");
         }
         orch.refresh_all();
         assert_eq!(sink.emissions.lock().unwrap().len(), 1, "重复刷新无新事件");
@@ -1661,8 +1582,8 @@ mod tests {
         let handle = orch.spawn_poller();
         std::thread::sleep(Duration::from_millis(150));
         handle.shutdown();
-        // 每周期 3 次 probe（3 组件），150ms@10ms 至少完成多个周期
-        assert!(probe.probe_calls() >= 6, "轮询应周期执行：{} 次", probe.probe_calls());
+        // 每周期 2 次 probe（2 组件），150ms@10ms 至少完成多个周期
+        assert!(probe.probe_calls() >= 4, "轮询应周期执行：{} 次", probe.probe_calls());
         let after = probe.probe_calls();
         std::thread::sleep(Duration::from_millis(40));
         assert_eq!(probe.probe_calls(), after, "shutdown 后不应再刷新");
@@ -1682,12 +1603,22 @@ mod tests {
             assert!(orch.wait_start_idle(id, Duration::from_secs(2)), "{id:?} 应被派发");
         }
         assert_eq!(exec.executed.lock().unwrap().len(), 1, "仅 CloudCLI 走脚本");
-        assert_eq!(exec.dispatched.lock().unwrap().len(), 2, "Caddy/ddns-go 原生派发");
+        assert_eq!(exec.dispatched.lock().unwrap().len(), 1, "仅 Caddy 原生派发");
         // 二次 start_all 幂等（全部结束后重入不报错）
         orch.start_all();
         for id in COMPONENT_ORDER {
             assert!(orch.wait_start_idle(id, Duration::from_secs(2)));
         }
+    }
+
+    #[test]
+    fn registry_contains_no_ddnsgo() {
+        // spec 008 AC3：组件表二元化——状态卡仅 CloudCLI/Caddy，
+        // ddns-go 随直连通道退役，注册表与序列化均不得再现
+        assert_eq!(COMPONENT_ORDER.len(), 2);
+        assert_eq!(COMPONENT_ORDER[0].as_str(), "cloudcli");
+        assert_eq!(COMPONENT_ORDER[1].as_str(), "caddy");
+        assert!(serde_json::from_str::<ComponentId>("\"ddnsgo\"").is_err());
     }
 
     // ── T14：语言源实时覆盖（切换语言后脚本 -Lang 与 detail 即时跟随）────
@@ -1786,17 +1717,15 @@ mod tests {
 
         let outcomes: std::collections::HashMap<ComponentId, StopOutcome> =
             orch.stop_all().into_iter().collect();
-        assert_eq!(outcomes.len(), 3, "全部组件都应得到结论（互不阻塞）");
+        assert_eq!(outcomes.len(), 2, "全部组件都应得到结论（互不阻塞）");
         assert!(matches!(outcomes[&ComponentId::CloudCli], StopOutcome::Failed(_)), "复核失败应上报");
         assert_eq!(outcomes[&ComponentId::Caddy], StopOutcome::AlreadyStopped);
-        assert_eq!(outcomes[&ComponentId::DdnsGo], StopOutcome::AlreadyStopped);
 
         // 状态：失败组件 failed 附原因；其余 stopped
         assert_eq!(state_of(&orch, ComponentId::CloudCli).state, ComponentState::Failed);
         let detail = state_of(&orch, ComponentId::CloudCli).detail.unwrap();
         assert!(detail.contains("复核未通过") && detail.contains("netstat"), "{detail}");
         assert_eq!(state_of(&orch, ComponentId::Caddy).state, ComponentState::Stopped);
-        assert_eq!(state_of(&orch, ComponentId::DdnsGo).state, ComponentState::Stopped);
         assert_eq!(
             timeline(&sink, ComponentId::CloudCli),
             vec![ComponentState::Failed]

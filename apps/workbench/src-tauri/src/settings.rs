@@ -40,24 +40,56 @@ pub enum ExitAction {
     Stop,
 }
 
-/// 访问通道（spec 004 §4.1）：direct = DDNS 直连（默认），tunnel = SakuraFrp 穿透。
-/// 两条通道互斥运行：tunnel 生效时 ddns-go 停止托管，反之亦然（AC5/6/8）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// 访问通道（spec 008 收敛）：mesh = EasyTier 私有组网，唯一通道
+/// （直连/穿透已彻底移除；局域网 IP 直访非"通道"，是 3001 的固有形态）。
+/// 旧值迁移（spec 008 D1/AC2）：加载旧版 settings.json 时
+/// `"direct"`/`"tunnel"` 一律映射为 Mesh，其余字段不受影响；
+/// 未知值报错走既有损坏修复流程（AC24 口径）。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AccessChannel {
-    Direct,
-    Tunnel,
+    #[default]
+    Mesh,
 }
 
-/// 穿透配置的非敏感部分（spec 004 §4.2：access key 属敏感凭证，
-/// 存栈目录 `.env` 的 `SAKURA_FRP_KEY`，永不进入本结构/设置文件/日志）。
+impl<'de> Deserialize<'de> for AccessChannel {
+    fn deserialize<D>(de: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(de)?;
+        match raw.as_str() {
+            "mesh" | "direct" | "tunnel" => Ok(AccessChannel::Mesh),
+            other => Err(serde::de::Error::unknown_variant(other, &["mesh"])),
+        }
+    }
+}
+
+/// 组网配置的非敏感部分（spec 007 plan §4.1）。network_secret 属敏感凭证，
+/// 经脚本写栈目录 `<stack>/easytier/network-secret`，永不进入本结构/设置
+/// 文件/命令行/日志（AC8）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TunnelConfig {
-    /// SakuraFrp 隧道 ID（管理面板隧道列表 ID 列）
-    pub tunnel_id: String,
-    /// 节点域名（DNS CNAME 对齐目标，如 `frp-can.com`；spec 004 AC12）
-    pub node_domain: String,
+#[serde(default, rename_all = "camelCase")]
+pub struct MeshConfig {
+    /// 网络名（EasyTier network_name；成员以此 + network_secret 相认）
+    pub network_name: String,
+    /// 宿主机虚拟 IP（config.toml 顶层 ipv4，dhcp=false 静态持有）
+    pub virtual_ip: String,
+    /// 虚拟网段 CIDR（保存/切换时与物理网卡网段冲突检测的输入）
+    pub virtual_cidr: String,
+    /// 对端节点列表（默认社区节点，可编辑多条——公共节点无 SLA，冗余对冲）
+    pub peers: Vec<String>,
+}
+
+impl Default for MeshConfig {
+    fn default() -> Self {
+        Self {
+            network_name: crate::consts::DEFAULT_MESH_NETWORK_NAME.to_string(),
+            virtual_ip: crate::consts::DEFAULT_MESH_VIRTUAL_IP.to_string(),
+            virtual_cidr: crate::consts::DEFAULT_MESH_VIRTUAL_CIDR.to_string(),
+            peers: crate::consts::DEFAULT_MESH_PEERS.iter().map(|s| s.to_string()).collect(),
+        }
+    }
 }
 
 /// 全量设置（plan §4 schema；camelCase 序列化，未知字段忽略、缺失字段回默认，
@@ -81,12 +113,12 @@ pub struct Settings {
     pub open_page_on_start: bool,
     /// 脚本目录覆盖：None = 未设置（用内置/开发态路径）
     pub scripts_dir_override: Option<String>,
-    /// 访问通道（spec 004）：默认 direct，兼容既有部署零感知
+    /// 访问通道：唯一值 mesh（spec 008 收敛；旧文件缺字段或值为
+    /// direct/tunnel 时同样得到 Mesh——迁移语义见 enum 注释）
+    #[serde(default)]
     pub access_channel: AccessChannel,
-    /// 穿透配置：None = 未配置（AC7 切换入口呈引导态，直连行为不受影响）
-    pub tunnel: Option<TunnelConfig>,
-    /// 穿透模式下是否启用运行（AC11 停用语义；未配置时该值无效果）
-    pub tunnel_enabled: bool,
+    /// 组网配置（spec 007：非敏感部分，AC11 设置区编辑；secret 不在此——AC8）
+    pub mesh: MeshConfig,
     /// 域名心跳检测（spec 005 AC7）：关闭则不发探测，既有标记冻结
     pub domain_heartbeat: bool,
     /// HTTPS 栈部署目录（spec 004：用户可配置；输入安装根自动追加
@@ -105,9 +137,8 @@ impl Default for Settings {
             exit_action: ExitAction::Keep,
             open_page_on_start: false,
             scripts_dir_override: None,
-            access_channel: AccessChannel::Direct,
-            tunnel: None,
-            tunnel_enabled: true,
+            access_channel: AccessChannel::default(),
+            mesh: MeshConfig::default(),
             domain_heartbeat: true,
             stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
         }
@@ -130,12 +161,8 @@ pub struct SettingsPatch {
     /// 故用 deserialize_with 区分：缺省走 default（None），null → Some(None)。
     #[serde(default, deserialize_with = "deserialize_scripts_dir")]
     pub scripts_dir_override: Option<Option<String>>,
-    /// 通道切换（spec 004 AC5/6）：由 switch_channel 命令驱动，此处仅持久化载体
-    pub access_channel: Option<AccessChannel>,
-    /// 穿透配置写入（None 不改）；不支持置空——回退直连保留配置以便再切
-    pub tunnel: Option<TunnelConfig>,
-    /// 穿透启用开关（spec 004 AC11）
-    pub tunnel_enabled: Option<bool>,
+    /// 组网配置写入（spec 007 AC11 设置区编辑保存）
+    pub mesh: Option<MeshConfig>,
     /// 域名心跳开关（spec 005 AC7）
     pub domain_heartbeat: Option<bool>,
     /// 栈目录（spec 004：用户输入安装根，保存时自动规整）
@@ -253,14 +280,8 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     if let Some(v) = patch.scripts_dir_override.clone() {
         merged.scripts_dir_override = v;
     }
-    if let Some(v) = patch.access_channel {
-        merged.access_channel = v;
-    }
-    if let Some(v) = patch.tunnel.clone() {
-        merged.tunnel = Some(v);
-    }
-    if let Some(v) = patch.tunnel_enabled {
-        merged.tunnel_enabled = v;
+    if let Some(v) = patch.mesh.clone() {
+        merged.mesh = v;
     }
     if let Some(v) = patch.domain_heartbeat {
         merged.domain_heartbeat = v;
@@ -385,7 +406,7 @@ mod tests {
         // plan §4：version=1 / language=auto / autostartServices=true /
         // autostartApp=false / linkStartServices=true / exitAction=keep /
         // openPageOnStart=false / scriptsDirOverride=null
-        // spec 004 §4.1：accessChannel=direct / tunnel=null / tunnelEnabled=true
+        // spec 007 §4.1：MeshConfig 全默认；spec 008：单通道 mesh
         let d = Settings::default();
         assert_eq!(d.version, 1);
         assert_eq!(d.language, LanguageSetting::Auto);
@@ -395,9 +416,15 @@ mod tests {
         assert_eq!(d.exit_action, ExitAction::Keep);
         assert!(!d.open_page_on_start);
         assert_eq!(d.scripts_dir_override, None);
-        assert_eq!(d.access_channel, AccessChannel::Direct, "默认通道=直连（兼容既有部署）");
-        assert_eq!(d.tunnel, None, "穿透默认未配置（AC7）");
-        assert!(d.tunnel_enabled);
+        assert_eq!(d.access_channel, AccessChannel::Mesh, "唯一通道 mesh（008 收敛）");
+        assert_eq!(d.mesh, MeshConfig::default());
+        assert_eq!(d.mesh.network_name, crate::consts::DEFAULT_MESH_NETWORK_NAME);
+        assert_eq!(d.mesh.virtual_ip, crate::consts::DEFAULT_MESH_VIRTUAL_IP);
+        assert_eq!(
+            d.mesh.peers,
+            vec!["tcp://sh.vomiku.com:7910".to_string()],
+            "默认对端=社区节点（T2 实测选定）"
+        );
         assert!(d.domain_heartbeat, "心跳默认开（spec 005 AC1）");
         assert_eq!(d.stack_dir, crate::consts::DEFAULT_STACK_DIR);
     }
@@ -431,11 +458,18 @@ mod tests {
             "\"exitAction\":\"keep\"",
             "\"openPageOnStart\":false",
             "\"scriptsDirOverride\":null",
-            "\"accessChannel\":\"direct\"",
-            "\"tunnel\":null",
-            "\"tunnelEnabled\":true",
+            "\"accessChannel\":\"mesh\"",
+            "\"mesh\":{",
+            "\"networkName\":\"ai-remote\"",
+            "\"virtualIp\":\"10.126.126.1\"",
+            "\"virtualCidr\":\"10.126.126.0/24\"",
+            "\"peers\":[\"tcp://sh.vomiku.com:7910\"]",
         ] {
             assert!(json.contains(key), "序列化结果缺 {key}：{json}");
+        }
+        // spec 008：旧通道字段已彻底移除，序列化不得再现
+        for gone in ["\"tunnel\"", "\"tunnelEnabled\"", "\"tunnelDisabled\"", "\"directDisabled\""] {
+            assert!(!json.contains(gone), "旧通道字段 {gone} 不应再出现：{json}");
         }
         // 回读一致
         let back: Settings = serde_json::from_str(&json).expect("反序列化失败");
@@ -469,12 +503,12 @@ mod tests {
         s.exit_action = ExitAction::Stop;
         s.autostart_app = true;
         s.scripts_dir_override = Some("D:\\my-scripts".into());
-        s.access_channel = AccessChannel::Tunnel;
-        s.tunnel = Some(TunnelConfig {
-            tunnel_id: "29080263".into(),
-            node_domain: "frp-can.com".into(),
-        });
-        s.tunnel_enabled = false;
+        s.mesh = MeshConfig {
+            network_name: "office".into(),
+            virtual_ip: "10.200.0.1".into(),
+            virtual_cidr: "10.200.0.0/24".into(),
+            peers: vec!["tcp://p.example.com:11010".into()],
+        };
         save_to(&path, &s).expect("保存失败");
         match load_from(&path) {
             LoadOutcome::Loaded(loaded) => assert_eq!(loaded, s),
@@ -536,9 +570,10 @@ mod tests {
         base.autostart_app = true;
         base.scripts_dir_override = Some("D:\\old".into());
 
-        // 空补丁：原样返回（仅 version 规整）
+        // 空补丁：原样返回（仅 version 规整）；base 默认通道随 007 改为 mesh
         let untouched = apply_patch(&base, &SettingsPatch::default());
         assert_eq!(untouched, base);
+        assert_eq!(untouched.access_channel, AccessChannel::Mesh);
 
         // 部分补丁：只改提交字段
         let patch = SettingsPatch {
@@ -577,60 +612,149 @@ mod tests {
     }
 
     #[test]
-    fn apply_patch_channel_and_tunnel_fields() {
-        // spec 004：通道/穿透配置的补丁合并语义
-        let mut base = Settings::default();
-        base.tunnel = Some(TunnelConfig {
-            tunnel_id: "111".into(),
-            node_domain: "old.example.com".into(),
-        });
-
-        // 空补丁不动
+    fn apply_patch_stack_dir_normalizes_input() {
+        // spec 004：栈目录补丁合并 + 规整；空补丁不动其余字段
+        let base = Settings::default();
         let untouched = apply_patch(&base, &SettingsPatch::default());
-        assert_eq!(untouched.access_channel, AccessChannel::Direct);
-        assert_eq!(untouched.tunnel, base.tunnel);
-        assert!(untouched.tunnel_enabled);
+        assert_eq!(untouched, base);
 
-        // 各字段独立生效
         let patch = SettingsPatch {
-            access_channel: Some(AccessChannel::Tunnel),
-            tunnel: Some(TunnelConfig {
-                tunnel_id: "29080263".into(),
-                node_domain: "frp-can.com".into(),
-            }),
-            tunnel_enabled: Some(false),
             stack_dir: Some("D:\\Software\\".into()),
             ..Default::default()
         };
         let merged = apply_patch(&base, &patch);
-        assert_eq!(merged.access_channel, AccessChannel::Tunnel);
-        assert_eq!(
-            merged.tunnel.as_ref().expect("tunnel 应被设置").tunnel_id,
-            "29080263"
-        );
-        assert!(!merged.tunnel_enabled);
         // 栈目录输入安装根 → 规整追加子目录（需求方 2026-09-10）
         assert_eq!(merged.stack_dir, "D:\\Software\\cloudcli-https");
+        assert_eq!(merged.language, base.language, "未提交字段不变");
     }
 
     #[test]
-    fn old_settings_file_without_channel_fields_loads_as_direct() {
-        // 向后兼容：004 之前的 settings.json（无 accessChannel/tunnel 字段）→ 默认直连，
-        // 既有部署升级零感知（spec 004 §5「兼容性假设」）
+    fn old_settings_file_without_channel_fields_loads_as_mesh() {
+        // 向后兼容（spec 008 D1）：004 之前的 settings.json（无 accessChannel 字段）
+        // → serde default → Mesh，其余字段原样
         let path = temp_settings_path("legacy");
         fs::write(
             &path,
-            r#"{"version":1,"language":"auto","autostartServices":true,"autostartApp":false,"linkStartServices":true,"exitAction":"keep","openPageOnStart":false,"scriptsDirOverride":null}"#,
+            r#"{"version":1,"language":"zh","autostartServices":true,"autostartApp":false,"linkStartServices":true,"exitAction":"keep","openPageOnStart":false,"scriptsDirOverride":null}"#,
         )
         .expect("写入失败");
         match load_from(&path) {
             LoadOutcome::Loaded(s) => {
-                assert_eq!(s.access_channel, AccessChannel::Direct);
-                assert_eq!(s.tunnel, None);
+                assert_eq!(s.access_channel, AccessChannel::Mesh, "缺字段回默认=mesh");
+                assert_eq!(s.language, LanguageSetting::Zh, "其余字段保留");
+                assert_eq!(s.mesh, MeshConfig::default(), "无 mesh 字段回默认");
             }
             other => panic!("应为 Loaded，实际 {other:?}"),
         }
         cleanup(&path);
+    }
+
+    /// spec 008 AC2 迁移矩阵：旧值加载映射 + 字段保留 + 异常值走损坏修复
+    fn write_legacy(raw: &str, tag: &str) -> PathBuf {
+        let path = temp_settings_path(tag);
+        fs::write(&path, raw).expect("写入失败");
+        path
+    }
+
+    #[test]
+    fn migration_direct_and_tunnel_values_map_to_mesh() {
+        // 五态之一/二：direct、tunnel → Mesh，其余字段不受影响
+        for old in ["direct", "tunnel"] {
+            let path = write_legacy(
+                &format!(
+                    r#"{{"version":1,"accessChannel":"{old}","language":"en","tunnel":{{"tunnelId":"29080263","nodeDomain":"frp-can.com"}},"tunnelEnabled":true,"tunnelDisabled":false,"directDisabled":false,"mesh":{{"networkName":"kept","virtualIp":"10.9.9.1","virtualCidr":"10.9.9.0/24","peers":["tcp://keep:1"]}},"stackDir":"D:\\Software\\cloudcli-https"}}"#
+                ),
+                &format!("mig-{old}"),
+            );
+            match load_from(&path) {
+                LoadOutcome::Loaded(s) => {
+                    assert_eq!(s.access_channel, AccessChannel::Mesh, "{old} 应迁移为 mesh");
+                    assert_eq!(s.language, LanguageSetting::En, "{old}:其余字段保留");
+                    assert_eq!(s.stack_dir, "D:\\Software\\cloudcli-https");
+                    // 旧 tunnel 字段被 serde 忽略未知字段语义丢弃（无对应结构可断言，
+                    // 迁移不触发损坏修复即为其消失的证据）
+                    assert_eq!(s.mesh.network_name, "kept", "{old}:组网配置保留");
+                }
+                other => panic!("{old} 应为 Loaded，实际 {other:?}"),
+            }
+            // 迁移后保存：被删字段从磁盘消失（AC2「下次保存时自然消失」）
+            match load_from(&path) {
+                LoadOutcome::Loaded(s) => {
+                    save_to(&path, &s).expect("保存失败");
+                    let on_disk = fs::read_to_string(&path).unwrap();
+                    assert!(!on_disk.contains("tunnelId"), "保存后穿透字段应消失");
+                    // pretty JSON 冒号后带空格，解析断言与格式无关
+                    let saved: serde_json::Value =
+                        serde_json::from_str(&on_disk).expect("保存文件应为合法 JSON");
+                    assert_eq!(saved["accessChannel"], "mesh");
+                }
+                _ => unreachable!(),
+            }
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn migration_mesh_value_loads_unchanged() {
+        // 五态之三：mesh 原样
+        let path = write_legacy(
+            r#"{"version":1,"accessChannel":"mesh","stackDir":"E:\\Stack\\cloudcli-https"}"#,
+            "mig-mesh",
+        );
+        match load_from(&path) {
+            LoadOutcome::Loaded(s) => {
+                assert_eq!(s.access_channel, AccessChannel::Mesh);
+                assert_eq!(s.stack_dir, "E:\\Stack\\cloudcli-https");
+            }
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        cleanup(&path);
+    }
+
+    #[test]
+    fn migration_unknown_channel_value_triggers_repair() {
+        // 五态之四：异常值（如 "frp"）→ 反序列化报错 → 既有损坏修复（AC24 口径）
+        let path = write_legacy(
+            r#"{"version":1,"accessChannel":"frp"}"#,
+            "mig-bad",
+        );
+        match load_from(&path) {
+            LoadOutcome::Repaired { settings, backup_path } => {
+                assert_eq!(settings, Settings::default(), "回默认值");
+                assert!(backup_path.is_file(), "留档存在");
+            }
+            other => panic!("应为 Repaired，实际 {other:?}"),
+        }
+        cleanup(&path);
+    }
+
+    #[test]
+    fn apply_patch_mesh_config() {
+        // spec 007 AC11：组网配置编辑的补丁合并
+        let base = Settings::default();
+        let custom = MeshConfig {
+            network_name: "office".into(),
+            virtual_ip: "10.200.0.1".into(),
+            virtual_cidr: "10.200.0.0/24".into(),
+            peers: vec!["tcp://a.example.com:11010".into(), "udp://b.example.com:11011".into()],
+        };
+        let patch = SettingsPatch {
+            mesh: Some(custom.clone()),
+            ..Default::default()
+        };
+        let merged = apply_patch(&base, &patch);
+        assert_eq!(merged.mesh, custom, "组网配置整块写入");
+
+        // 空补丁不动既有值
+        let again = apply_patch(&merged, &SettingsPatch::default());
+        assert_eq!(again.mesh, custom);
+
+        // JSON 侧：mesh 对象 camelCase 可解析
+        let patch: SettingsPatch = serde_json::from_str(
+            r#"{"mesh":{"networkName":"n","virtualIp":"10.0.0.9","virtualCidr":"10.0.0.0/24","peers":["tcp://x:1"]}}"#,
+        )
+        .expect("解析失败");
+        assert_eq!(patch.mesh.as_ref().unwrap().virtual_ip, "10.0.0.9");
     }
 
     #[test]

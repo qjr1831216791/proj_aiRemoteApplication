@@ -1,17 +1,17 @@
 ﻿{
-    "appVersion":  "0.2.0",
+    "appVersion":  "0.4.0",
     "source":  "tools/sprint0/bin",
     "files":  {
                   "run-server-hidden.ps1":  "95f18e832c4e8eed909027db41106ab0acb5c78b8a2cb72bf76c9340f781deb0",
                   "run-caddy-hidden.ps1":  "918b85714a1c215502da7f57ead2c942743482422cad4d7827109ead988b74d8",
-                  "setup-autostart.ps1":  "683c5d622080e9aefd9bcaceb736b4441defc5743e4bcfd5a41775fd5708ce6a",
+                  "setup-autostart.ps1":  "a9e16c9b480b8d9185968c2695e5f8deb1edc1b08cc6293231ca018c30cdc319",
                   "install-server.ps1":  "6788847ae27dfac03d2583298331014ef9022d21209ebac07b8f2b759f660a9e",
-                  "install-https.ps1":  "6210eccf08164b962618c965aaa208373cf9a34201f4fb299c17c2df937dc517",
-                  "enable-https.ps1":  "bb6c801b05bdc1b9e1f7f2218c8f8021d11aec2836fab8466ae92f9558a9956b",
+                  "install-https.ps1":  "788fb6f7782d31c580b3bdb22ebe858cc8082fd311439881a718d11e2ea0285b",
+                  "enable-https.ps1":  "7b9b75483ffc8d4fe3f399de58925bc786607a03b2897b5fcb536ce0832f5d46",
                   "install-client.ps1":  "357ed400ef580a011fa35ab7a5aab7af080619bdaec40b270847795a69f45805",
-                  "reset-ddns-password.ps1":  "f15760467f7b5a206d3c1865391ff130ee2feab043189a6eba86e454547b221c",
-                  "set-frp-key.ps1":  "12da6d0dc4bd15fd28edff093fed2e4c096d2a046acd49a82d3f7fbc3056264d",
-                  "set-tencent-key.ps1":  "f4f1b47cd73e1c7775dbda705467abf2c2aeb42dd2f5c88ddb2a3955bb5d2583",
-                  "config-ddnsgo.ps1":  "1adabd07030b65e8e5e8cb36598915cbf4dd3ad2cfe246237ba235975bb16e07"
+                  "set-tencent-key.ps1":  "9968e22c2079b4e129f0eb48cadc5446e72bc072ae963cbb996b55f28b0a3fc9",
+                  "mesh-service.ps1":  "f263b3ee9e587de7cfd6186058d00f1ecde7a2d997e33bdef9cae2c8de1bddca",
+                  "set-mesh-secret.ps1":  "440c92efa1a8628639216ddd035da3549ededa9ff1c91a546a1bfe7c2161e8c8",
+                  "uninstall-legacy.ps1":  "99591dc40a6e83b7aada0e35360a8af3eec62935903584b91315b1079a8ecdad"
               }
 }

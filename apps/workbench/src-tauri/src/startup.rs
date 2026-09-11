@@ -169,7 +169,8 @@ mod tests {
 
     #[test]
     fn link_start_enabled_starts_all_components() {
-        // AC11/12：联动开 → start_all 恰一次（CloudCLI 脚本 ×1 + 原生派发 ×2）
+        // AC11/12：联动开 → start_all 恰一次（CloudCLI 脚本 ×1 + 原生派发 ×1；
+        // ddns-go 已随直连通道退役——spec 008）
         let (orch, exec) = mock_orch();
         apply_link_start(&orch, &StartupPlan { hidden: true, link_start: true });
         for id in crate::orchestrator::COMPONENT_ORDER {
@@ -179,7 +180,7 @@ mod tests {
             );
         }
         assert_eq!(exec.executed.lock().unwrap().len(), 1, "CloudCLI 脚本恰一次");
-        assert_eq!(exec.dispatched.lock().unwrap().len(), 2, "Caddy/ddns-go 原生派发");
+        assert_eq!(exec.dispatched.lock().unwrap().len(), 1, "Caddy 原生派发");
     }
 
     #[test]

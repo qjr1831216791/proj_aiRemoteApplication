@@ -1,17 +1,29 @@
 /**
- * 设置页（T14：AC21/22/24/25 展示层）。
+ * 设置页（T14：AC21/22/24/25 展示层 + 007 T11：组网设置/服务卡）。
  * - 五项行为开关：两项自启开关先跑计划任务命令（tookOver → 提示）再持久化；
  *   联动补齐 / 退出行为 / 启动后打开页面为纯设置项，改即存
+ * - 部署目录（spec 004）：编辑保存 + 打开栈目录（spec 008：随穿透卡退役迁入）
+ * - 组网设置卡（007 AC11）：网络名/虚拟 IP/网段/对端节点编辑 + 前端预检
+ *   （最终裁决在 Rust mesh_apply_config）；密钥只经脚本写入（无输入框，AC8）；
+ *   服务管理（安装/应用/卸载，UAC 派发）
+ * - 旧通道停用卡/穿透设置卡已随通道退役删除——spec 008（残留清理走
+ *   uninstall-legacy.ps1，主看板 MeshCard 常驻入口承接日常维护）
  * - 语言：跟随系统/中文/英文三选，切换立即生效（App 负责 Rust 托盘重建 + 全局换词典）
- * - 端口/路径/域名只读卡：一键复制 + "修改须重跑安装脚本"指引（AC22）
+ * - 端口/域名只读卡：一键复制 + "修改须重跑安装脚本"指引（AC22）
  * - 打开日志目录按钮；settings://repaired 事件提示在 App 层统一 toast
  * 全部乐观更新 + 失败回滚，长任务期间对应开关禁用防重复提交。
  */
 
 import { useState } from "preact/hooks";
-import { api, copyText } from "../api";
-import { t, type Lang } from "../i18n";
-import type { ExitAction, LanguageSetting, Settings, SettingsPatch } from "../types";
+import { api } from "../api";
+import { t, type DictKey, type Lang } from "../i18n";
+import type {
+  ExitAction,
+  LanguageSetting,
+  MeshDiagItem,
+  Settings,
+  SettingsPatch,
+} from "../types";
 import { CopyButton } from "./CopyButton";
 
 export interface SettingsViewProps {
@@ -28,7 +40,6 @@ export interface SettingsViewProps {
 const READONLY = {
   cloudcliPort: 3001,
   caddyPort: 443,
-  ddnsgoPort: 9876,
   stackDir: "D:\\Software\\cloudcli-https",
   domain: "ai.jackqi.cn",
 } as const;
@@ -38,9 +49,6 @@ export function SettingsView(props: SettingsViewProps) {
   // 任务类开关在途标记（计划任务脚本最长 ~60s，期间禁用对应开关）
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [langBusy, setLangBusy] = useState(false);
-  // 穿透设置表单（spec 004 AC14；初始值取已存配置，空串 = 未配置）
-  const [tunnelId, setTunnelId] = useState(settings.tunnel?.tunnelId ?? "");
-  const [nodeDomain, setNodeDomain] = useState(settings.tunnel?.nodeDomain ?? "");
   // 部署目录（spec 004：用户输入安装根，重启生效）
   const [stackDir, setStackDir] = useState(settings.stackDir);
 
@@ -93,34 +101,6 @@ export function SettingsView(props: SettingsViewProps) {
     }
   };
 
-  /** 穿透配置保存（AC14/15）：校验 → 持久化；就绪判定实时生效（守护/切换入口读设置） */
-  const saveTunnel = async () => {
-    const id = tunnelId.trim();
-    const dom = nodeDomain.trim();
-    if (!/^\d+$/.test(id)) {
-      onToast(t("settings.tunnelIdInvalid", lang), "error");
-      return;
-    }
-    if (!dom) {
-      onToast(t("settings.tunnelNodeRequired", lang), "error");
-      return;
-    }
-    try {
-      onSettingsChange(await api.saveSettings({ tunnel: { tunnelId: id, nodeDomain: dom } }));
-      onToast(t("settings.tunnelSaved", lang), "success");
-    } catch (e) {
-      onToast(`${t("toast.saveFailed", lang)}: ${String(e)}`, "error");
-    }
-  };
-
-  /** 访问密钥脚本（AC16）：拉起控制台交互窗，密钥经脚本直写 .env 不进 IPC/日志 */
-  const openSetFrpKey = () => {
-    api
-      .runTool("set_frp_key", { update: false, mirror: false })
-      .then(() => onToast(t("settings.setFrpKeyDispatched", lang), "info"))
-      .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
-  };
-
   /** 部署目录保存（spec 004）：非空校验 → 持久化；重启工作台后全链生效 */
   const saveStackDir = async () => {
     const dir = stackDir.trim();
@@ -138,10 +118,109 @@ export function SettingsView(props: SettingsViewProps) {
     }
   };
 
+  // 组网设置表单（007 AC11；非敏感部分，密钥走脚本通道）
+  const [meshName, setMeshName] = useState(settings.mesh.networkName);
+  const [meshIp, setMeshIp] = useState(settings.mesh.virtualIp);
+  const [meshCidr, setMeshCidr] = useState(settings.mesh.virtualCidr);
+  const [meshPeersText, setMeshPeersText] = useState(settings.mesh.peers.join("\n"));
+  // 组网动作在途（安装/应用/卸载共用；UAC 派发为异步返回）
+  const [meshBusy, setMeshBusy] = useState(false);
+  // 组网诊断结果（007 T16/AC13；null = 尚未运行）
+  const [diag, setDiag] = useState<MeshDiagItem[] | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
+
+  /** 组网配置保存（AC11）：前端预检（与 Rust validate_mesh_config 同形宽松，
+   * 最终裁决在 mesh_apply_config）→ 持久化 */
+  const saveMesh = async () => {
+    const name = meshName.trim();
+    const ip = meshIp.trim();
+    const cidr = meshCidr.trim();
+    const peers = meshPeersText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (!name) {
+      onToast(t("settings.meshNameRequired", lang), "error");
+      return;
+    }
+    const ipL = ipv4ToLong(ip);
+    if (ipL === null) {
+      onToast(t("settings.meshIpInvalid", lang), "error");
+      return;
+    }
+    const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(cidr);
+    const netL = m ? ipv4ToLong(m[1]) : null;
+    const prefix = m ? Number(m[2]) : -1;
+    if (netL === null || prefix < 0 || prefix > 32) {
+      onToast(t("settings.meshCidrInvalid", lang), "error");
+      return;
+    }
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    if ((((ipL ^ netL) as number) & mask) !== 0) {
+      onToast(t("settings.meshIpNotInCidr", lang), "error");
+      return;
+    }
+    if (peers.length === 0 || peers.some((p) => !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+$/.test(p))) {
+      onToast(t("settings.meshPeersInvalid", lang), "error");
+      return;
+    }
+    try {
+      onSettingsChange(
+        await api.saveSettings({
+          mesh: { networkName: name, virtualIp: ip, virtualCidr: cidr, peers },
+        }),
+      );
+      onToast(t("settings.meshSaved", lang), "success");
+    } catch (e) {
+      onToast(`${t("toast.saveFailed", lang)}: ${String(e)}`, "error");
+    }
+  };
+
+  /** 组网服务动作统一派发（安装/应用/卸载；UAC 通过后状态由 mesh://status 收敛） */
+  const runMeshAction = async (
+    kind: "install" | "apply" | "uninstall",
+    doneKey: Parameters<typeof t>[0],
+  ) => {
+    setMeshBusy(true);
+    try {
+      if (kind === "install") await api.meshInstallService();
+      else if (kind === "apply") await api.meshApplyConfig();
+      else await api.meshUninstallService();
+      onToast(t(doneKey, lang), "info");
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setMeshBusy(false);
+    }
+  };
+
+  // 旧通道停用卡已随通道退役删除（spec 008）——残留清理走 uninstall-legacy.ps1
+
+  /** 组网密钥脚本入口（AC8/AC11：拉起控制台交互窗，密钥经脚本直写栈目录
+   * network-secret 文件，不进 IPC 载荷/设置文件/日志——前端无密钥输入框） */
+  const openSetMeshSecret = () => {
+    api
+      .runTool("set_mesh_secret", { update: false, mirror: false })
+      .then(() => onToast(t("settings.meshSecretDispatched", lang), "info"))
+      .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
+  };
+
+  /** 组网诊断（007 T16/AC13）：六项只读探测（服务/密钥/对端可达/成员/本机
+   * 网卡/域名链路），Rust 侧 spawn_blocking，逐对端 3s 超时可能耗时数秒 */
+  const runDiagnostics = async () => {
+    setDiagBusy(true);
+    try {
+      setDiag(await api.meshDiagnostics());
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setDiagBusy(false);
+    }
+  };
+
   const readonlyRows: { label: string; value: string }[] = [
     { label: t("settings.portCloudcli", lang), value: String(READONLY.cloudcliPort) },
     { label: t("settings.portCaddy", lang), value: String(READONLY.caddyPort) },
-    { label: t("settings.portDdnsgo", lang), value: String(READONLY.ddnsgoPort) },
     { label: t("settings.domain", lang), value: READONLY.domain },
   ];
 
@@ -200,7 +279,7 @@ export function SettingsView(props: SettingsViewProps) {
         <div class="settings__rows">
           <div class="settings__row">
             <div class="settings__row-text">
-              <span class="settings__label">{t("settings.stackDirEditable", lang)}</span>
+              <span class="settings__label">{t("settings.stackDir", lang)}</span>
               <input
                 class="form-input"
                 value={stackDir}
@@ -211,87 +290,134 @@ export function SettingsView(props: SettingsViewProps) {
         </div>
         <div class="settings__actions">
           <button class="btn btn--sm btn--primary" onClick={() => void saveStackDir()}>
-            {t("settings.tunnelSave", lang)}
+            {t("settings.save", lang)}
+          </button>
+          <button
+            class="btn btn--sm"
+            onClick={() => api.openStackDir().catch((e) => onToast(String(e), "error"))}
+          >
+            {t("settings.openStackDir", lang)}
           </button>
         </div>
       </section>
 
-      {/* 穿透设置（spec 004 AC14/15/16） */}
+      {/* 组网设置（spec 007 AC11）：非敏感配置编辑 + 密钥脚本入口（无输入框，AC8）+ 服务管理 */}
       <section class="card">
-        <h2 class="card__title">{t("settings.tunnel", lang)}</h2>
-        <p class="muted">{t("settings.tunnelDesc", lang)}</p>
+        <h2 class="card__title">{t("settings.mesh", lang)}</h2>
+        <p class="muted">{t("settings.meshDesc", lang)}</p>
         <div class="tunnel-form-row">
           <div class="tunnel-form-field">
-            <span class="settings__label">{t("settings.tunnelId", lang)}</span>
+            <span class="settings__label">{t("settings.meshName", lang)}</span>
             <input
               class="form-input"
-              placeholder={t("settings.tunnelIdPlaceholder", lang)}
-              value={tunnelId}
-              onInput={(e) => setTunnelId(e.currentTarget.value)}
+              value={meshName}
+              onInput={(e) => setMeshName(e.currentTarget.value)}
             />
           </div>
           <div class="tunnel-form-field">
-            <span class="settings__label">{t("settings.tunnelNodeDomain", lang)}</span>
+            <span class="settings__label">{t("settings.meshIp", lang)}</span>
             <input
               class="form-input"
-              placeholder={t("settings.tunnelNodePlaceholder", lang)}
-              value={nodeDomain}
-              onInput={(e) => setNodeDomain(e.currentTarget.value)}
+              placeholder={t("settings.meshIpPlaceholder", lang)}
+              value={meshIp}
+              onInput={(e) => setMeshIp(e.currentTarget.value)}
             />
           </div>
-          <button class="btn btn--sm btn--primary tunnel-form-save" onClick={() => void saveTunnel()}>
-            {t("settings.tunnelSave", lang)}
+          <div class="tunnel-form-field">
+            <span class="settings__label">{t("settings.meshCidr", lang)}</span>
+            <input
+              class="form-input"
+              value={meshCidr}
+              onInput={(e) => setMeshCidr(e.currentTarget.value)}
+            />
+          </div>
+          <button
+            class="btn btn--sm btn--primary tunnel-form-save"
+            onClick={() => void saveMesh()}
+          >
+            {t("settings.save", lang)}
+          </button>
+        </div>
+        <div class="tunnel-form-field">
+          <span class="settings__label">{t("settings.meshPeers", lang)}</span>
+          <textarea
+            class="form-input"
+            rows={3}
+            placeholder={t("settings.meshPeersPlaceholder", lang)}
+            value={meshPeersText}
+            onInput={(e) => setMeshPeersText(e.currentTarget.value)}
+          />
+        </div>
+        <div class="settings__row">
+          <div class="settings__row-text">
+            <span class="settings__label">{t("settings.meshSecretHint", lang)}</span>
+          </div>
+          <button class="btn btn--sm" onClick={openSetMeshSecret}>
+            {t("settings.meshSecretBtn", lang)}
           </button>
         </div>
         <div class="settings__row">
           <div class="settings__row-text">
-            <span class="settings__label">{t("settings.setFrpKeyHint", lang)}</span>
-          </div>
-          <button class="btn btn--sm" onClick={openSetFrpKey}>
-            {t("settings.setFrpKey", lang)}
-          </button>
-        </div>
-        <div class="settings__row">
-          <div class="settings__row-text">
-            <span class="settings__label">
-              {t("settings.openStackDir", lang)}：
-              <button class="link-btn" onClick={() => api.openStackDir().catch((e) => onToast(String(e), "error"))}>
-                {settings.stackDir}
-              </button>
-            </span>
+            <span class="settings__label">{t("settings.meshServiceHint", lang)}</span>
           </div>
         </div>
-        <p class="muted">{t("settings.frpcDeploy", lang)}</p>
         <div class="settings__actions">
           <button
             class="btn btn--sm"
-            onClick={() =>
-              api
-                .getDefenderExclusionCmd()
-                .then(copyText)
-                .then((ok) =>
-                  onToast(
-                    ok ? t("settings.whitelistCopied", lang) : t("toast.copyFailed", lang),
-                    ok ? "success" : "error",
-                  ),
-                )
-                .catch((e) => onToast(String(e), "error"))
-            }
+            disabled={meshBusy}
+            onClick={() => void runMeshAction("install", "settings.meshInstallDone")}
           >
-            {t("settings.copyWhitelist", lang)}
+            {t("settings.meshInstallBtn", lang)}
           </button>
           <button
             class="btn btn--sm"
-            onClick={() =>
-              api
-                .downloadFrpc()
-                .then((msg) => onToast(`${t("settings.downloadFrpcDone", lang)}：${msg}`, "success"))
-                .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"))
-            }
+            disabled={meshBusy}
+            onClick={() => void runMeshAction("apply", "settings.meshApplyDone")}
           >
-            {t("settings.downloadFrpc", lang)}
+            {t("settings.meshApplyBtn", lang)}
+          </button>
+          <button
+            class="btn btn--sm btn--danger"
+            disabled={meshBusy}
+            onClick={() => void runMeshAction("uninstall", "settings.meshUninstallDone")}
+          >
+            {t("settings.meshUninstallBtn", lang)}
           </button>
         </div>
+        {/* 组网诊断（007 T16/AC13）：六项只读探测，成员访问异常时自查断点 */}
+        <div class="settings__row">
+          <div class="settings__row-text">
+            <span class="settings__label">{t("mesh.diag.desc", lang)}</span>
+          </div>
+          <button class="btn btn--sm" disabled={diagBusy} onClick={() => void runDiagnostics()}>
+            {diagBusy ? t("mesh.diag.running", lang) : t("mesh.diag.runBtn", lang)}
+          </button>
+        </div>
+        {diag ? (
+          <div class="settings__rows">
+            {(() => {
+              const failed = diag.filter((d) => !d.ok).length;
+              return failed === 0 ? (
+                <p class="notice notice--ok">{t("mesh.diag.summaryOk", lang)}</p>
+              ) : (
+                <p class="notice notice--warn">
+                  {t("mesh.diag.summaryBad", lang).replace("{n}", String(failed))}
+                </p>
+              );
+            })()}
+            {diag.map((d) => (
+              <div class="settings__row" key={d.code}>
+                <div class="settings__row-text">
+                  <span class="settings__label">
+                    {d.ok ? "✓" : "✗"}{" "}
+                    {t(`mesh.diag.${d.code}.${d.ok ? "ok" : "bad"}` as DictKey, lang)}
+                  </span>
+                  {d.detail ? <span class="muted">{d.detail}</span> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       {/* 域名心跳（spec 005 AC7） */}
@@ -345,6 +471,15 @@ export function SettingsView(props: SettingsViewProps) {
       </section>
     </>
   );
+}
+
+/** IPv4 → 无符号 32 位数（组网预检用；非法返回 null） */
+function ipv4ToLong(ip: string): number | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!m) return null;
+  const parts = m.slice(1).map(Number);
+  if (parts.some((p) => p > 255)) return null;
+  return (((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) as number) >>> 0;
 }
 
 /** 开关行：标题 + 说明 + 视觉开关（styled checkbox，无依赖红线内） */

@@ -3,7 +3,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
-  AccessChannel,
   AccessUrls,
   ComponentId,
   ComponentStatus,
@@ -11,6 +10,8 @@ import type {
   DomainHealth,
   ExternalKind,
   LanguageSetting,
+  MeshDiagItem,
+  MeshStatus,
   NetStatus,
   NetCategory,
   ProbeOutcome,
@@ -20,7 +21,6 @@ import type {
   TookOverPayload,
   ToolKind,
   ToolOpts,
-  TunnelStatus,
   WizardState,
 } from "./types";
 
@@ -56,34 +56,30 @@ export const api = {
     category: Extract<NetCategory, "private" | "public">,
   ) => invoke<void>("set_network_category", { name, ifIndex, category }),
 
-  /** 隧道状态快照（spec 004；此后以 tunnel://status 事件为准） */
-  getTunnelStatus: () => invoke<TunnelStatus>("get_tunnel_status"),
-  /** 通道切换（AC5/6）：前置校验失败 → Err（未配置/已处于目标通道） */
-  switchChannel: (target: AccessChannel) =>
-    invoke<Settings>("switch_channel", { target }),
-  /** 穿透启用开关（AC11） */
-  setTunnelEnabled: (enabled: boolean) =>
-    invoke<Settings>("set_tunnel_enabled", { enabled }),
-  /** DNS 对齐检测（AC12/13）：权威 CNAME/A 实况 */
+  /** 组网状态快照（spec 007；此后以 mesh://status 事件为准） */
+  getMeshStatus: () => invoke<MeshStatus>("mesh_status"),
+  /** 组网配置生效（AC1/AC9）：渲染 → 校验 → 落位 → UAC install/restart */
+  meshApplyConfig: () => invoke<void>("mesh_apply_config"),
+  /** 安装/刷新组网服务（AC3 前置；幂等建档，强制 install 动作） */
+  meshInstallService: () => invoke<void>("mesh_install_service"),
+  /** 卸载组网服务（停用 mesh 清理路径） */
+  meshUninstallService: () => invoke<void>("mesh_uninstall_service"),
+  /** 同步 DNS 到组网通道（AC13）：CNAME 全删 + A upsert 虚拟 IP；返回记录操作数 */
+  meshSyncDns: () => invoke<number>("mesh_sync_dns"),
+  /** 组网诊断（007 T16/AC13）：六项只读探测，可能耗时数秒（逐对端 3s 超时） */
+  meshDiagnostics: () => invoke<MeshDiagItem[]>("mesh_diagnostics"),
+  /** DNS 对齐检测（AC8：A=虚拟 IP 对齐 + 残留 CNAME 判旁路暴露面） */
   checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
-  /** 打开栈目录（穿透设置指引链接） */
+  /** 打开栈目录（设置页「栈目录」链接） */
   openStackDir: () => invoke<void>("open_stack_dir"),
   /** 即时域名探测（通道体检；独立于 60s 心跳） */
   checkDomainHealthNow: () => invoke<ProbeOutcome>("check_domain_health_now"),
-  /** 手动重启隧道（停止 → flushdns → 重新登录） */
-  restartTunnel: () => invoke<TunnelStatus>("restart_tunnel"),
-  /** Defender 白名单命令文本（frpc 两个运行位置；spec 004 分发保障） */
-  getDefenderExclusionCmd: () => invoke<string>("get_defender_exclusion_cmd"),
-  /** 一键恢复 frpc（官方 CDN 下载 → SHA256 校验 → 落位栈目录） */
-  downloadFrpc: () => invoke<string>("download_frpc"),
 
   // ── 装机向导（spec 006）───────────────────────────────────────────────
   wizardGetState: () => invoke<WizardState>("wizard_get_state"),
   /** 全量重探测（外部办理/脚本跑完后的统一「校验」入口） */
   wizardDetect: () => invoke<WizardState>("wizard_detect"),
   wizardSetDomain: (domain: string) => invoke<WizardState>("wizard_set_domain", { domain }),
-  /** 分支选择：同步写 Settings.access_channel（frpc/ddns-go 收敛复用 004 守护） */
-  wizardSetBranch: (branch: AccessChannel) => invoke<WizardState>("wizard_set_branch", { branch }),
   wizardComplete: () => invoke<WizardState>("wizard_complete"),
 };
 
@@ -99,9 +95,9 @@ export function onStatusChanged(
   return listen<ComponentStatus[]>("status://changed", (e) => cb(e.payload));
 }
 
-/** 隧道状态事件（spec 004：守护线程 5s 收敛驱动，变化才发） */
-export function onTunnelStatus(cb: (status: TunnelStatus) => void): Promise<() => void> {
-  return listen<TunnelStatus>("tunnel://status", (e) => cb(e.payload));
+/** 组网状态事件（spec 007：观察者 5s 探询，变化才发；载荷同 mesh_status） */
+export function onMeshStatus(cb: (status: MeshStatus) => void): Promise<() => void> {
+  return listen<MeshStatus>("mesh://status", (e) => cb(e.payload));
 }
 
 /** 域名心跳事件（spec 005：60s 周期探测，载荷 healthy 已含 2 次防抖） */
@@ -116,7 +112,7 @@ export function onSettingsRepaired(
   return listen<{ backupPath: string }>("settings://repaired", (e) => cb(e.payload));
 }
 
-/** 向导状态事件（spec 006：set_domain/set_branch/detect/complete 后推全量） */
+/** 向导状态事件（spec 006：set_domain/detect/complete 后推全量） */
 export function onWizardChanged(cb: (state: WizardState) => void): Promise<() => void> {
   return listen<WizardState>("wizard://changed", (e) => cb(e.payload));
 }

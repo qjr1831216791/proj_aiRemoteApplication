@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AI-Remote-Workbench",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "identifier": "cn.jackqi.workbench",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -36,8 +36,7 @@
         "type": "embedBootstrapper"
       },
       "nsis": {
-        "installMode": "currentUser",
-        "installerHooks": "./installer-hooks.nsh"
+        "installMode": "currentUser"
       }
     }
   }

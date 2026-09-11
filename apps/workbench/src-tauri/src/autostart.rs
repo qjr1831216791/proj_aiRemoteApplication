@@ -3,8 +3,9 @@
 //! 两个独立开关（spec 决策 4，ADR-0002）：
 //! - **服务自启**（AC8/9）：开 = 复用 `setup-autostart.ps1` 幂等重建（=接管
 //!   存量任务，不产生双通道）；关 = 同脚本 `-Remove`（运行中进程不受影响）。
-//!   接管检测：执行前以 `Get-ScheduledTask` 查询三条任务存在性（经
-//!   `CommandExecutor` seam，可 mock），任一存在即 tookOver=true。
+//!   接管检测：执行前以 `Get-ScheduledTask` 查询两条任务存在性（经
+//!   `CommandExecutor` seam，可 mock），任一存在即 tookOver=true
+//!   （ddns-go 任务随直连通道退役——spec 008）。
 //! - **程序自身**（AC10）：PowerShell `Register-ScheduledTask` 注册登录触发
 //!   任务——任务名固定、参数 `--hidden`、`ExecutionTimeLimit Zero`（取消默认
 //!   72h 强杀）、Action 指向 `current_exe()`；移除 = `Unregister-ScheduledTask`。
@@ -22,12 +23,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// sprint0 服务自启任务名（与 setup-autostart.ps1 组件定义逐字对齐，AC8）
-pub const SERVICE_TASK_NAMES: [&str; 3] = [
-    "CloudCLI Sprint0 autostart",
-    "Caddy Sprint0 autostart",
-    "ddns-go Sprint0 autostart",
-];
+/// sprint0 服务自启任务名（与 setup-autostart.ps1 组件定义逐字对齐，AC8）。
+pub const CLOUDCLI_TASK_NAME: &str = "CloudCLI Sprint0 autostart";
+pub const CADDY_TASK_NAME: &str = "Caddy Sprint0 autostart";
+pub const SERVICE_TASK_NAMES: [&str; 2] = [CLOUDCLI_TASK_NAME, CADDY_TASK_NAME];
 
 /// 程序自身登录任务名（AC10，plan §5.2）
 pub const APP_TASK_NAME: &str = "AI Remote Workbench Autostart";
@@ -147,7 +146,7 @@ pub fn set_services_autostart(
     stack_dir: &str,
     enable: bool,
 ) -> Result<ServicesAutostartOutcome, String> {
-    // 接管检测（AC8）：开启前查询三条任务存在性，任一存在 = 接管存量。
+    // 接管检测（AC8）：开启前查询两条任务存在性，任一存在 = 接管存量。
     // 单条查询失败不阻断（按不存在处理，脚本本身幂等重建兼容双通道）
     let took_over = if enable {
         let mut existed = false;
@@ -289,14 +288,11 @@ mod tests {
 
     #[test]
     fn service_task_names_align_with_sprint0_script() {
-        // setup-autostart.ps1 组件定义逐字对齐（AC8 接管前提：任务名不能漂移）
+        // setup-autostart.ps1 组件定义逐字对齐（AC8 接管前提：任务名不能漂移；
+        // ddns-go 任务随直连通道退役——spec 008）
         assert_eq!(
             SERVICE_TASK_NAMES,
-            [
-                "CloudCLI Sprint0 autostart",
-                "Caddy Sprint0 autostart",
-                "ddns-go Sprint0 autostart"
-            ]
+            ["CloudCLI Sprint0 autostart", "Caddy Sprint0 autostart"]
         );
     }
 
@@ -345,7 +341,6 @@ mod tests {
         let exec = MockExecutor::with_exits(&[
             ExecOutcome::Exited(0), // 查询：CloudCLI 存在
             ExecOutcome::Exited(1), // 查询：Caddy 不存在
-            ExecOutcome::Exited(0), // 查询：ddns-go 存在
             ExecOutcome::Exited(0), // setup-autostart.ps1 成功
         ]);
         let out = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), DEFAULT_STACK_DIR, true)
@@ -353,13 +348,13 @@ mod tests {
         assert!(out.took_over, "任一任务存在即视为接管");
 
         let executed = exec.executed.lock().unwrap();
-        assert_eq!(executed.len(), 4, "3 次查询 + 1 次脚本执行");
-        for spec in &executed[..3] {
-            assert!(spec.command_line().contains("Get-ScheduledTask"), "前 3 步应为存在性查询");
+        assert_eq!(executed.len(), 3, "2 次查询 + 1 次脚本执行");
+        for spec in &executed[..2] {
+            assert!(spec.command_line().contains("Get-ScheduledTask"), "前 2 步应为存在性查询");
         }
-        let setup = &executed[3];
+        let setup = &executed[2];
         let line = setup.command_line();
-        assert!(line.contains("setup-autostart.ps1"), "第 4 步应执行自启脚本：{line}");
+        assert!(line.contains("setup-autostart.ps1"), "第 3 步应执行自启脚本：{line}");
         assert!(line.contains("-Lang zh"), "脚本语言须与生效语言对齐：{line}");
         assert!(line.contains("-StackDir"), "{line}");
         assert!(!line.contains("-Remove"), "开启分支不得带 -Remove：{line}");
@@ -367,9 +362,8 @@ mod tests {
 
     #[test]
     fn enable_without_existing_tasks_reports_no_takeover() {
-        // 全新环境：三条任务都不存在 → 首次注册，非接管
+        // 全新环境：两条任务都不存在 → 首次注册，非接管
         let exec = MockExecutor::with_exits(&[
-            ExecOutcome::Exited(1),
             ExecOutcome::Exited(1),
             ExecOutcome::Exited(1),
             ExecOutcome::Exited(0),
@@ -395,7 +389,7 @@ mod tests {
 
     #[test]
     fn services_setup_failure_maps_sprint0_exit1() {
-        // setup-autostart.ps1 exit 1 = 栈目录缺 caddy.exe/ddns-go.exe（sprint0 契约）
+        // setup-autostart.ps1 exit 1 = 栈目录缺 caddy.exe（sprint0 契约；ddns-go 已退役）
         let exec = MockExecutor::with_exits(&[ExecOutcome::Exited(1)]);
         let err = set_services_autostart(&exec, Path::new(r"D:\scripts"), Lang::Zh, &logs(), DEFAULT_STACK_DIR, false)
             .expect_err("exit 1 应报错");
@@ -495,7 +489,7 @@ mod tests {
     }
 
     /// 真机演练（T11 手工验证项，`cargo test -- --ignored` 显式执行）：
-    /// 1) 只读验证三条 Sprint0 任务存在性（不动其原状）；
+    /// 1) 只读验证两条 Sprint0 任务存在性（不动其原状）；
     /// 2) 程序自身任务 注册 → 查询存在 → 移除 → 查询消失。
     #[test]
     #[ignore = "真机演练：操作本机计划任务（注册后即移除，终态无残留）"]
@@ -503,7 +497,7 @@ mod tests {
         let exec = crate::scripts::ProcessExecutor;
         let dir = std::env::temp_dir();
 
-        // 只读：接管检测真机路径（本机 sprint0 已部署，三条任务应存在）
+        // 只读：接管检测真机路径（本机 sprint0 已部署，两条任务应存在）
         for name in SERVICE_TASK_NAMES {
             assert!(
                 task_exists(&exec, name, &dir).unwrap_or(false),

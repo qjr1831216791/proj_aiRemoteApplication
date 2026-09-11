@@ -6,7 +6,6 @@
 //!   故必须先枚举后动手，spec §4.1 为此不直接复用 stop-server.ps1）→ 端口复核
 //! - **Caddy**：`caddy stop`（5s 超时）→ 失败则按 443 找监听进程、校验可执行
 //!   路径为 StackDir 下 caddy.exe 后强杀 → 复核
-//! - **ddns-go**：按可执行路径匹配进程（非进程名）强杀 → 复核
 //!
 //! 单组件 10s 预算：超时记日志 + detail 给手动排查命令，放行不阻塞其余组件
 //! （AC2）。进程操作全部经 `ProcessOps` seam（taskkill/进程枚举也抽象），
@@ -15,7 +14,7 @@
 //! detail 文案经 [`crate::lang::stop_texts`] 双语化（AC25：用户可见路径
 //! zh/en 同源；调用方传生效语言，编排器取实时语言源）。
 
-use crate::consts::{CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT, DDNSGO_PORT, DEFAULT_STACK_DIR};
+use crate::consts::{CADDY_PORT, CLOUDCLI_EXE_NAME, CLOUDCLI_PORT};
 use crate::lang::StopTexts;
 use crate::probe::{paths_equal, StatusProbe};
 use crate::scripts::{CommandExecutor, CommandSpec, CREATE_NO_WINDOW, ExecOutcome};
@@ -67,8 +66,6 @@ pub enum StopOutcome {
 pub trait ProcessOps: Send + Sync {
     /// pid 的全部后代进程（进程树快照，不含自身；先收集后杀的依据）
     fn descendants(&self, pid: u32) -> Vec<u32>;
-    /// 按可执行完整路径枚举进程（ddns-go 判据；路径大小写不敏感）
-    fn pids_by_exe(&self, exe: &str) -> Vec<u32>;
     /// 强杀单个进程（taskkill /F 语义；目标已退出视为成功，幂等）
     fn kill(&self, pid: u32) -> Result<(), String>;
 }
@@ -106,22 +103,6 @@ impl ProcessOps for SysinfoProcessOps {
         out
     }
 
-    fn pids_by_exe(&self, exe: &str) -> Vec<u32> {
-        use sysinfo::{ProcessesToUpdate, System};
-
-        let mut sys = System::new();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
-        sys.processes()
-            .iter()
-            .filter(|(_, proc)| {
-                proc.exe()
-                    .map(|e| paths_equal(&e.to_string_lossy(), exe))
-                    .unwrap_or(false)
-            })
-            .map(|(pid, _)| pid.as_u32())
-            .collect()
-    }
-
     fn kill(&self, pid: u32) -> Result<(), String> {
         use sysinfo::{Pid, ProcessesToUpdate, System};
 
@@ -140,9 +121,6 @@ impl ProcessOps for SysinfoProcessOps {
 #[cfg(not(windows))]
 impl ProcessOps for SysinfoProcessOps {
     fn descendants(&self, _pid: u32) -> Vec<u32> {
-        Vec::new()
-    }
-    fn pids_by_exe(&self, _exe: &str) -> Vec<u32> {
         Vec::new()
     }
     fn kill(&self, pid: u32) -> Result<(), String> {
@@ -346,45 +324,6 @@ pub fn stop_caddy(
     verify_port_released(probe, CADDY_PORT, cfg, deadline, texts)
 }
 
-/// ddns-go 停止：按可执行路径匹配（非进程名）强杀 → 复核（spec §4.4）
-pub fn stop_ddnsgo(
-    probe: &dyn StatusProbe,
-    procs: &dyn ProcessOps,
-    cfg: &StopConfig,
-    texts: &StopTexts,
-    stack_dir: &str,
-    deadline: Instant,
-) -> StopOutcome {
-    if let Some(t) = budget_expired(cfg, deadline, DDNSGO_PORT, texts) {
-        return t;
-    }
-    // 判据是可执行全路径（同名不同路径的进程不碰）
-    let expected = format!(r"{stack_dir}\ddns-go.exe");
-    let pids = procs.pids_by_exe(&expected);
-    if pids.is_empty() {
-        // 无本栈进程：复核端口，被无关进程占时如实报告
-        let holders = probe.port_holders(DDNSGO_PORT);
-        if holders.listen_addrs.is_empty() {
-            return StopOutcome::AlreadyStopped;
-        }
-        let name = holders
-            .processes
-            .iter()
-            .find_map(|p| p.exe_name.clone())
-            .unwrap_or_else(|| "unknown".into());
-        return StopOutcome::Failed(texts.refuse_ddnsgo(DDNSGO_PORT, &name));
-    }
-    for &pid in &pids {
-        if let Some(t) = budget_expired(cfg, deadline, DDNSGO_PORT, texts) {
-            return t;
-        }
-        if let Err(e) = procs.kill(pid) {
-            log::warn!("结束 ddns-go 进程失败（pid={pid}）：{e}");
-        }
-    }
-    verify_port_released(probe, DDNSGO_PORT, cfg, deadline, texts)
-}
-
 // ── 单元测试（先红后绿：桩期 todo!()）──────────────────────────────────────
 
 #[cfg(test)]
@@ -392,6 +331,7 @@ mod tests {
     use crate::orchestrator::test_support::*;
     use crate::probe::PortHolders;
     use super::*;
+    use crate::consts::DEFAULT_STACK_DIR;
 
     /// 中文词条（zh 与历史文案逐字一致，既有断言不变）
     fn zh() -> crate::lang::StopTexts {
@@ -598,51 +538,6 @@ mod tests {
     }
 
     #[test]
-    fn ddnsgo_kills_by_executable_path_then_verifies() {
-        // spec §4.4：按可执行路径匹配（非进程名/非端口定位）
-        let probe = ScriptedProbe::new();
-        probe.enqueue_holders(DDNSGO_PORT, &[PortHolders::default()]);
-        let log = probe.log();
-        let procs = MockProcessOps::with_log(log.clone());
-        procs.set_by_exe(r"D:\Software\cloudcli-https\ddns-go.exe", &[300, 301]);
-
-        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), DEFAULT_STACK_DIR, deadline(&fast_cfg()));
-        assert_eq!(outcome, StopOutcome::Stopped);
-
-        let entries = log.snapshot();
-        assert!(
-            entries.iter().any(|e| e == "procs:pids_by_exe(D:\\Software\\cloudcli-https\\ddns-go.exe)->[300, 301]"),
-            "应以栈目录全路径匹配进程：{entries:?}"
-        );
-        assert!(entries.iter().any(|e| e == "procs:kill(300)") && entries.iter().any(|e| e == "procs:kill(301)"));
-        let i_kill = entries.iter().position(|e| e == "procs:kill(301)").unwrap();
-        let i_verify = entries.iter().rposition(|e| e == "probe:port=9876").unwrap();
-        assert!(i_kill < i_verify, "杀完才复核：{entries:?}");
-    }
-
-    #[test]
-    fn ddnsgo_reports_foreign_port_holder() {
-        // 无本栈 ddns-go 进程但 9876 被占 → 如实报告，不误杀占用者
-        let probe = ScriptedProbe::new();
-        probe.pin_holders(
-            DDNSGO_PORT,
-            holders(&[addr([127, 0, 0, 1])], &[(9, Some(r"C:\x\other.exe"), Some("other.exe"))]),
-        );
-        let log = probe.log();
-        let procs = MockProcessOps::with_log(log.clone());
-
-        let outcome = stop_ddnsgo(&probe, &procs, &fast_cfg(), &zh(), DEFAULT_STACK_DIR, deadline(&fast_cfg()));
-        match outcome {
-            StopOutcome::Failed(detail) => {
-                assert!(detail.contains("other.exe"), "{detail}");
-                assert!(detail.contains("拒绝"), "{detail}");
-            }
-            other => panic!("应为 Failed，实际 {other:?}"),
-        }
-        assert!(!log.snapshot().iter().any(|e| e.starts_with("procs:kill")));
-    }
-
-    #[test]
     fn stopped_components_are_noop() {
         // 均未运行 → AlreadyStopped，零执行器/进程调用
         let probe = ScriptedProbe::new(); // holders 默认空
@@ -659,12 +554,7 @@ mod tests {
             stop_caddy(&probe, &exec, &procs, &cfg, &zh(), Path::new(r"D:\logs"), DEFAULT_STACK_DIR, deadline(&cfg)),
             StopOutcome::AlreadyStopped
         );
-        assert_eq!(
-            stop_ddnsgo(&probe, &procs, &cfg, &zh(), DEFAULT_STACK_DIR, deadline(&cfg)),
-            StopOutcome::AlreadyStopped
-        );
         let entries = log.snapshot();
-        // ddns-go 的按路径探测（pids_by_exe）属正常调用；不应发生的是杀与树收集
         assert!(
             !entries.iter().any(|e| e.starts_with("procs:kill") || e.starts_with("procs:descendants")),
             "不应有杀进程/树收集：{entries:?}"

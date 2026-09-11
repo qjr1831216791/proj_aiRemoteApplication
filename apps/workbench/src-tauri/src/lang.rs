@@ -221,7 +221,7 @@ impl DetailTexts {
         }
     }
 
-    /// 原生拉起（caddy/ddns-go）失败
+    /// 原生拉起（caddy）失败
     pub fn dispatch_failed(&self, err: &str) -> String {
         match self.lang {
             Lang::Zh => format!("拉起失败：{err}"),
@@ -343,20 +343,6 @@ impl StopTexts {
             ),
         }
     }
-
-    /// ddns-go 端口被本栈以外进程占用，拒杀
-    pub fn refuse_ddnsgo(&self, port: u16, name: &str) -> String {
-        match self.lang {
-            Lang::Zh => format!(
-                "端口 {port} 被非本栈进程（{name}）占用：拒绝结束。{}",
-                self.manual_hint(port)
-            ),
-            Lang::En => format!(
-                "Port {port} is held by a process outside this stack ({name}); refusing to kill. {}",
-                self.manual_hint(port)
-            ),
-        }
-    }
 }
 
 // ── 命令层错误文案（autostart.rs / commands.rs 用户可见 Err 的双语源）────────
@@ -373,11 +359,12 @@ pub fn err_texts(lang: Lang) -> ErrTexts {
 }
 
 impl ErrTexts {
-    /// setup-autostart.ps1 exit 1：栈目录缺 caddy.exe / ddns-go.exe（sprint0 契约）
+    /// setup-autostart.ps1 exit 1：栈目录缺 caddy.exe（sprint0 契约；
+    /// ddns-go 随直连通道退役，spec 008）
     pub fn stack_dir_missing(&self) -> String {
         match self.lang {
-            Lang::Zh => "栈目录缺少 caddy.exe / ddns-go.exe".into(),
-            Lang::En => "stack directory is missing caddy.exe / ddns-go.exe".into(),
+            Lang::Zh => "栈目录缺少 caddy.exe".into(),
+            Lang::En => "stack directory is missing caddy.exe".into(),
         }
     }
 
@@ -632,13 +619,11 @@ mod tests {
         assert!(t.verify_failed(3001, "x.exe").contains("复核未通过"));
         assert!(t.refuse_cloudcli(3001, "svchost.exe").contains("拒绝结束"));
         assert!(t.refuse_caddy(443, "x.exe").contains("拒绝强杀"));
-        assert!(t.refuse_ddnsgo(9876, "x.exe").contains("拒绝结束"));
         for s in [
             t.timeout_released(10, 443),
             t.verify_failed(1, "x"),
             t.refuse_cloudcli(1, "x"),
             t.refuse_caddy(1, "x"),
-            t.refuse_ddnsgo(1, "x"),
         ] {
             assert!(s.contains("taskkill"), "应附手动排查命令：{s}");
         }
@@ -652,14 +637,12 @@ mod tests {
         assert!(t.verify_failed(3001, "x.exe").contains("recheck failed"));
         assert!(t.refuse_cloudcli(3001, "x.exe").contains("refusing to kill"));
         assert!(t.refuse_caddy(443, "x.exe").contains("refusing to force-kill"));
-        assert!(t.refuse_ddnsgo(9876, "x.exe").contains("refusing to kill"));
         for s in [
             t.manual_hint(443),
             t.timeout_released(10, 443),
             t.verify_failed(1, "x"),
             t.refuse_cloudcli(1, "x"),
             t.refuse_caddy(1, "x"),
-            t.refuse_ddnsgo(1, "x"),
         ] {
             assert!(!s.contains('端'), "英文文案不得混入中文：{s}");
         }
@@ -671,7 +654,7 @@ mod tests {
     fn err_texts_zh_matches_legacy_wording() {
         // autostart.rs / commands.rs 既有断言依赖这些字样
         let t = err_texts(Lang::Zh);
-        assert_eq!(t.stack_dir_missing(), "栈目录缺少 caddy.exe / ddns-go.exe");
+        assert_eq!(t.stack_dir_missing(), "栈目录缺少 caddy.exe");
         assert!(t.scripts_dir_unavailable_autostart().contains("无法管理服务自启任务"));
         assert_eq!(t.autostart_join_failed("X"), "自启任务执行异常结束：X");
         assert_eq!(t.locate_exe_failed("X"), "无法定位自身可执行文件：X");
