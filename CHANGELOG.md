@@ -5,7 +5,13 @@
 
 ## [Unreleased]
 
-（暂无——下一迭代登记于此）
+### Fixed
+
+- **组网通道体检的端口占用文案**：本机组件项（caddy 443 / 上游 3001）在端口被占（port-held）态误显示原始键名 `common.port-held`，补 `common.portHeld` 特判后正常显示「端口被占」（与主看板组件卡同款口径）
+
+### Changed
+
+- **v0.4.0 后全仓瘦身**（工程清理，不改变用户可见行为）：Rust 死代码退役——`Script::StopServer` 整链（随包分发已无 `stop-server.ps1`，实际停止走程序内实现）、`ScriptOutcome::TimedOut`（全仓无构造点）、`PollerHandle`（装配即弃的停止句柄）、零引用常量与便捷方法，编译告警 14→2（剩余为 spec 007 网段冲突检测的未接线功能提示）；前端清理 i18n 死键 4 项（词典 250→246，zh/en 键集一致）、死 CSS 类 2 块、零引用的 api/类型导出；文档对齐——`tools/` 两级 README 断链修复与脚本清单补齐（run-caddy-hidden / set-tencent-key / mesh-service / set-mesh-secret）、访问模型表述对齐双方案实态、根 README 新增「远程访问方案」段、spec 005 模板残留死导航链删除
 
 ## [0.4.0] - 2026-09-11
 

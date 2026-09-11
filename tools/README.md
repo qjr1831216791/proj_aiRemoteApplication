@@ -17,13 +17,15 @@
 
 | 脚本 | 用途 |
 |------|------|
-| [sprint0/install-server.ps1](./sprint0/install-server.ps1) | Sprint 0 服务端一键安装：CloudCLI on Windows（局域网版，需管理员） |
-| [sprint0/install-client.ps1](./sprint0/install-client.ps1) | Sprint 0 客户端：连通性验证 + 桌面快捷方式（浏览器即客户端，无需安装其他软件） |
-| [sprint0/install-server.bat](./sprint0/install-server.bat) | 服务端双击启动器：自动弹 UAC 提权并调用同名 .ps1（纯 ASCII，避免 cmd 编码问题） |
-| [sprint0/install-client.bat](./sprint0/install-client.bat) | 客户端双击启动器：顶部编辑 `SERVER_URL` 后双击即用（为空时运行中输入亦可） |
-| [sprint0/start-server.bat](./sprint0/start-server.bat) | 服务端双击启动 CloudCLI：已在运行则直接打开浏览器 |
-| [sprint0/run-server-hidden.ps1](./sprint0/run-server-hidden.ps1) | 幂等后台启动 CloudCLI（计划任务与 SessionStart hook 共用；日志 `%TEMP%\cloudcli.log`） |
-| [sprint0/setup-autostart.ps1](./sprint0/setup-autostart.ps1) | 注册/移除 CloudCLI 登录自启计划任务（`-Remove` 移除；推荐的常驻方式） |
+| [sprint0/install-server.ps1](./sprint0/bin/install-server.ps1) | Sprint 0 服务端一键安装：CloudCLI on Windows（局域网版，需管理员） |
+| [sprint0/install-client.ps1](./sprint0/bin/install-client.ps1) | Sprint 0 客户端：连通性验证 + 桌面快捷方式（浏览器即客户端，无需安装其他软件） |
+| [sprint0/install-server.bat](./sprint0/bin/install-server.bat) | 服务端双击启动器：自动弹 UAC 提权并调用同名 .ps1（纯 ASCII，避免 cmd 编码问题） |
+| [sprint0/install-client.bat](./sprint0/bin/install-client.bat) | 客户端双击启动器：顶部编辑 `SERVER_URL` 后双击即用（为空时运行中输入亦可） |
+| [sprint0/start-server.bat](./sprint0/bin/start-server.bat) | 服务端双击启动 CloudCLI：已在运行则直接打开浏览器 |
+| [sprint0/run-server-hidden.ps1](./sprint0/bin/run-server-hidden.ps1) | 幂等后台启动 CloudCLI（计划任务与 SessionStart hook 共用；日志 `%TEMP%\cloudcli.log`） |
+| [sprint0/setup-autostart.ps1](./sprint0/bin/setup-autostart.ps1) | 注册/移除 CloudCLI + Caddy 两个登录自启计划任务（`-Remove` 全关；推荐的常驻方式） |
+
+> 上表只列高频入口。`sprint0/bin/` 的全部脚本（另含 HTTPS 栈装机、腾讯云密钥写入、EasyTier 组网服务/密钥与旧通道卸载）以 [sprint0/README.md](./sprint0/README.md) 的"文件清单"为唯一来源，此处不重复维护。
 
 ## 约定
 
