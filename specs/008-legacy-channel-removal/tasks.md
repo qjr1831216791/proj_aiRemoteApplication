@@ -52,7 +52,7 @@
 
 ## 完成标志（DoD 检查）
 
-- [ ] spec.md 中所有 AC 已逐条验证通过（AC10/AC11 真机项待闸门满足后执行回填；清单见 [acceptance-manual.md](./acceptance-manual.md)）
+- [x] spec.md 中所有 AC 已逐条验证通过（2026-09-11 需求方签收指令「所有验收项标记成功」——AC1 静态部分/AC2 为 T20 实测与自动化覆盖，AC10/AC11 真机卸载按指令免单独实测、脚本随包保留；清单回填见 [acceptance-manual.md](./acceptance-manual.md)）
 - [x] 自动化测试全部通过（迁移矩阵/编排收缩/DNS 判定回归/manifest 一致性——T20 基线 190 passed + 3 ignored）
 - [x] 相关文档已更新（spec/plan/tasks/MOC/CHANGELOG/ADR-0004/.env.example/归档 + acceptance-manual）
 - [x] 本文件全部任务勾选完毕

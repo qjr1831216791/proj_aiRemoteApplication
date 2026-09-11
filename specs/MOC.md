@@ -11,14 +11,15 @@
 - （暂无）
 
 ### 🟠 实现中（in-progress）
-- [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（核心已实现，AC 待真机验收）
-- [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（legacy 模式，network_secret 派生加密；社区公共节点）替代 frp 零公网暴露 + 停用直连/穿透旧通道（easytier-core 以 Windows 服务承载；**T1~T13 实现完成 2026-09-11，真机验收清单已建待执行** → [acceptance-manual.md](./007-mesh-access/acceptance-manual.md)）
-- [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) — 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发/真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案（域名 HTTPS 链保留）；真机卸载编排 `uninstall-legacy.ps1`（2026-09-11 立项，**T1~T20 代码/文档/回归全落地——真机验收与卸载待前置闸门（007 签收 + O1 闭合）** → [acceptance-manual.md](./008-legacy-channel-removal/acceptance-manual.md)）
+- （暂无）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
 - [002-network-profile](./002-network-profile/spec.md) — 网络防火墙归类反馈与调整：换网被拦截主动提示 + 用户决策改公用/专用（风险提示先行）
 - [006-foolproof-install](./006-foolproof-install/spec.md) — 傻瓜式装机向导：五阶段检测驱动（基础/腾讯云前置/HTTPS 栈/访问通道/收尾），断点续跑+办后校验；TLS 改 Caddy tencentcloud 插件自治（ADR-0003）；低频栏瘦身（2026-09-10 验收 done）
+- [005-domain-heartbeat](./005-domain-heartbeat/spec.md) — 域名心跳检测：60s 周期探测 + 地址区红绿标记（2 次防抖）+ 失败分类 + 设置开关（2026-09-11 需求方签收 done）
+- [007-mesh-access](./007-mesh-access/spec.md) — 私有组网访问通道：EasyTier（legacy 模式，network_secret 派生加密）替代 frp 零公网暴露 + 停用直连/穿透旧通道（easytier-core 以 Windows 服务承载；2026-09-11 需求方签收 done——AC1/AC2 联调实测，签收依据见其 acceptance-manual §3；随 008 一并发布 v0.4.0）
+- [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) — 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发、真机三层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案；真机卸载编排 `uninstall-legacy.ps1` 随包保留为可选动作（2026-09-11 需求方签收 done，v0.4.0 发布）
 
 ### 📦 已归档（archived · 交付物已退役或被取代）
 - [003-ddnsgo-password-reset](./archive/003-ddnsgo-password-reset/spec.md) — ddns-go 密码重置（2026-09-11 随 008 归档：ddns-go 组件退役，功能无承载对象）
@@ -33,10 +34,10 @@
 | Sprint 2 | [002-network-profile](./002-network-profile/spec.md) | 网络防火墙归类：被拦截主动反馈 + 公用/专用调整入口（用户决策，风险提示先行） |
 | Sprint 2 | [003-ddnsgo-password-reset](./archive/003-ddnsgo-password-reset/spec.md) | ddns-go 密码重置脚本与 APP 入口（2026-09-11 随 008 归档：功能退役） |
 | Sprint 3 | [004-tunnel-access](./archive/004-tunnel-access/spec.md) | 内网穿透双通道（2026-09-10 验收 done；2026-09-11 随 008 归档：通道退役） |
-| Sprint 3 | [005-domain-heartbeat](./005-domain-heartbeat/spec.md) | 域名心跳检测（红绿标记 + 失败分类 + 自愈联动；核心已实现，AC 收口随 Sprint 4） |
+| Sprint 3 | [005-domain-heartbeat](./005-domain-heartbeat/spec.md) | 域名心跳检测（红绿标记 + 失败分类 + 设置开关；2026-09-11 需求方签收 done） |
 | Sprint 4 | [006-foolproof-install](./006-foolproof-install/spec.md) | 傻瓜式装机向导（APP 编排 + 专项脚本 + Caddy 插件化证书；2026-09-10 验收 done） |
-| Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道，in-progress） |
-| Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；真机卸载前置 007 T14 签收 + O1 闭合） |
+| Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道；2026-09-11 需求方签收 done） |
+| Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；2026-09-11 需求方签收 done，随 v0.4.0 发布） |
 
 ## 按主题导航
 

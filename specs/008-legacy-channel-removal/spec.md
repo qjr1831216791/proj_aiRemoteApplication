@@ -2,10 +2,10 @@
 
 > 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: in-progress <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: done <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 6
 - **创建日期**: 2026-09-11
-- **最后更新**: 2026-09-11（初稿；同日经四路全仓审核 + 前端外观审核定稿范围，需求方指示直接实施）
+- **最后更新**: 2026-09-11（需求方指令签收全部验收项 → done；AC1 静态部分 T20 实测（acceptance-manual 附录 A），AC2 自动化五态覆盖，AC10/AC11 真机卸载按签收指令免单独实测——`uninstall-legacy.ps1` 随包保留，真机执行时脚本内置组网在线与凭证双重前置校验）
 
 ## 1. 背景与问题
 
@@ -49,30 +49,30 @@
 
 ### US1: 作为服务端用户，我希望旧通道从代码与分发中彻底消失，以便维护面收敛到组网单通道。
 
-- [ ] **AC1**: Given 仓库与打包产物 When 全文检索 frp/frpc/SakuraFrp/ddns-go/直连通道标识 Then 无残留实现代码与资源（frpc.exe 不随包分发；`$ScriptSubset`/manifest.json/resources 三者一致，构建产物无被删脚本的陈旧副本）。
-- [ ] **AC2**: Given 旧版 settings.json（`accessChannel` 为 `"direct"` 或 `"tunnel"`，含 `tunnel`/`tunnelEnabled`/`tunnelDisabled`/`directDisabled` 字段）When 新版本加载 Then `accessChannel` 迁移为 `"mesh"`，其余设置（语言/栈目录/自启/组网配置等）原样保留，被删字段在下次保存时自然消失；不触发损坏修复流程（不回默认、不改名 .bad）。
+- [x] **AC1**: Given 仓库与打包产物 When 全文检索 frp/frpc/SakuraFrp/ddns-go/直连通道标识 Then 无残留实现代码与资源（frpc.exe 不随包分发；`$ScriptSubset`/manifest.json/resources 三者一致，构建产物无被删脚本的陈旧副本）。
+- [x] **AC2**: Given 旧版 settings.json（`accessChannel` 为 `"direct"` 或 `"tunnel"`，含 `tunnel`/`tunnelEnabled`/`tunnelDisabled`/`directDisabled` 字段）When 新版本加载 Then `accessChannel` 迁移为 `"mesh"`，其余设置（语言/栈目录/自启/组网配置等）原样保留，被删字段在下次保存时自然消失；不触发损坏修复流程（不回默认、不改名 .bad）。
 
 ### US2: 作为服务端用户，我希望看板只呈现现役组件与组网通道，以便状态一目了然。
 
-- [ ] **AC3**: Given 工作台运行 When 查看主看板 Then 组件状态卡仅 CloudCLI/Caddy 两张，无 ddns-go 卡及其停用提示文案。
-- [ ] **AC4**: Given 工作台运行 When 查看访问通道区 Then 呈现组网卡（组网服务态/对端列表/虚拟 IP/同步 DNS 与密钥指引入口），无通道切换单选、无停用 chip、无重新启用确认框、无隧道状态行与重启按钮。
-- [ ] **AC5**: Given 工作台运行 When 查看地址区 Then 本机/局域网（`http://<ip>:3001`）/域名三行齐备可复制可打开，域名行心跳点照常（001 AC19 口径不回退）。
+- [x] **AC3**: Given 工作台运行 When 查看主看板 Then 组件状态卡仅 CloudCLI/Caddy 两张，无 ddns-go 卡及其停用提示文案。
+- [x] **AC4**: Given 工作台运行 When 查看访问通道区 Then 呈现组网卡（组网服务态/对端列表/虚拟 IP/同步 DNS 与密钥指引入口），无通道切换单选、无停用 chip、无重新启用确认框、无隧道状态行与重启按钮。
+- [x] **AC5**: Given 工作台运行 When 查看地址区 Then 本机/局域网（`http://<ip>:3001`）/域名三行齐备可复制可打开，域名行心跳点照常（001 AC19 口径不回退）。
 
 ### US3: 作为服务端用户，我希望设置页与装机向导不再出现旧通道踪迹，以便新机部署路径唯一。
 
-- [ ] **AC6**: Given 打开装机向导 When 进入通道阶段 Then 无分支选择器，仅组网步骤（装服务 → 成员客户端指引 → 密钥 → 应用与在线校验 → 同步 DNS）；收尾页无停用旧通道入口。
-- [ ] **AC7**: Given 打开设置页 When 查看 Then 无穿透设置卡（隧道 ID/节点域名/密钥/白名单/下载 frpc）、无旧通道停用卡、无 ddns-go 端口行；组网设置卡（网络名/虚拟 IP/网段/对端列表/密钥脚本指引）功能不回退。
-- [ ] **AC8**: Given 组网在线 When 执行体检 Then 组网服务/对端项与 DNS 对齐项（A=虚拟 IP）正常工作，无穿透/直连专属体检项与指引。
-- [ ] **AC9**: Given 低频工具区 When 展开 Then 仅「升级 CloudCLI」「安装客户端」两项（ddns-go 密码重置/管理页入口消失）。
+- [x] **AC6**: Given 打开装机向导 When 进入通道阶段 Then 无分支选择器，仅组网步骤（装服务 → 成员客户端指引 → 密钥 → 应用与在线校验 → 同步 DNS）；收尾页无停用旧通道入口。
+- [x] **AC7**: Given 打开设置页 When 查看 Then 无穿透设置卡（隧道 ID/节点域名/密钥/白名单/下载 frpc）、无旧通道停用卡、无 ddns-go 端口行；组网设置卡（网络名/虚拟 IP/网段/对端列表/密钥脚本指引）功能不回退。
+- [x] **AC8**: Given 组网在线 When 执行体检 Then 组网服务/对端项与 DNS 对齐项（A=虚拟 IP）正常工作，无穿透/直连专属体检项与指引。
+- [x] **AC9**: Given 低频工具区 When 展开 Then 仅「升级 CloudCLI」「安装客户端」两项（ddns-go 密码重置/管理页入口消失）。
 
 ### US4: 作为服务端用户，我希望有一条一次性脚本把真机上的旧通道残留清干净，以便暴露面与磁盘归零。
 
-- [ ] **AC10**: Given 007 验收通过的机器 When 执行 `uninstall-legacy.ps1` Then frpc/ddns-go 进程终止、`ddns-go Sprint0 autostart` 计划任务注销、栈目录 `ddns-go.exe`/`ddns-go.yaml`/`frpc.exe`/`frpc-run.log` 与 `.env` 的 `SAKURA_FRP_KEY` 行清除；重复执行幂等（已清理项跳过、退出码 0）；卸载后**组网访问与局域网 IP 访问双通道复测正常**（成员设备 + 同网设备）。
-- [ ] **AC11**: Given 栈 `.env` 缺腾讯密钥且 `ddns-go.yaml` 存有密钥的机器 When 执行卸载脚本 Then 脚本拒绝删除 yaml 并提示先运行 `set-tencent-key.ps1`（不自动搬运凭证——密钥经用户交互输入，不进脚本参数/日志）。
+- [x] **AC10**: Given 007 验收通过的机器 When 执行 `uninstall-legacy.ps1` Then frpc/ddns-go 进程终止、`ddns-go Sprint0 autostart` 计划任务注销、栈目录 `ddns-go.exe`/`ddns-go.yaml`/`frpc.exe`/`frpc-run.log` 与 `.env` 的 `SAKURA_FRP_KEY` 行清除；重复执行幂等（已清理项跳过、退出码 0）；卸载后**组网访问与局域网 IP 访问双通道复测正常**（成员设备 + 同网设备）。
+- [x] **AC11**: Given 栈 `.env` 缺腾讯密钥且 `ddns-go.yaml` 存有密钥的机器 When 执行卸载脚本 Then 脚本拒绝删除 yaml 并提示先运行 `set-tencent-key.ps1`（不自动搬运凭证——密钥经用户交互输入，不进脚本参数/日志）。
 
 ### US5: 作为维护者，我希望文档如实反映这次退役，以便规格与实现不漂移。
 
-- [ ] **AC12**: Given 本 Spec 验收 When 核对文档 Then specs/003 与 004 已归档并带取代注记、MOC 已流转、CHANGELOG Unreleased 有 Removed 条目、`.env.example` 无 SAKURA_FRP_KEY 段、`docs/adr/0004` 登记 settings 契约变更。
+- [x] **AC12**: Given 本 Spec 验收 When 核对文档 Then specs/003 与 004 已归档并带取代注记、MOC 已流转、CHANGELOG Unreleased 有 Removed 条目、`.env.example` 无 SAKURA_FRP_KEY 段、`docs/adr/0004` 登记 settings 契约变更。
 
 ## 4. 功能需求与边界
 
