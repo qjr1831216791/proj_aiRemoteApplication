@@ -5,7 +5,13 @@
 
 ## [Unreleased]
 
-Sprint 4~6（Spec 006 已验收 2026-09-10、Spec 007 实现落地 2026-09-11，均待随下版发布；Spec 005 核心实现落地、AC 真机验收进行中；Spec 007 真机验收清单已建待执行；Spec 008 代码与文档全落地 2026-09-11，真机卸载待前置闸门）。
+（暂无——下一迭代登记于此）
+
+## [0.4.0] - 2026-09-11
+
+Sprint 4~6 交付：域名心跳（005）、傻瓜式装机向导（006）、EasyTier 私有组网通道（007）、旧通道彻底移除（008）。006 于 2026-09-10 验收；005/007/008 于 2026-09-11 需求方签收（007 的 AC1/AC2 为真机联调实测，其余项按签收指令确认，依据见各 spec 的 acceptance-manual）。
+
+交付: specs/005-domain-heartbeat · specs/006-foolproof-install · specs/007-mesh-access · specs/008-legacy-channel-removal
 
 ### Added
 - **旧通道卸载编排脚本（Spec 008）**：`uninstall-legacy.ps1`（随包分发）——幂等清理真机残留：停止 frpc/ddns-go 进程 → 注销 ddns-go 自启计划任务 → 删除栈目录退役二进制与配置（frpc.exe/ddns-go.exe/ddns-go.yaml/frpc-run.log）→ 从栈 `.env` 移除 `SAKURA_FRP_KEY` 行（BOM/其余内容保留）→ CNAME 残留检测并指引「同步 DNS」；凭证安全闸门：栈 `.env` 无腾讯云密钥时拒绝删除 ddns-go.yaml（唯一持密副本）并指引用户先跑 `set-tencent-key.ps1`，脚本永不自动搬运凭证；服务安全闸门：EasyTierMesh 服务未运行时仅允许 `-Force` 干跑演练；全程双语台账式汇总（Done/Skipped/Failed），任一失败即非零退出
