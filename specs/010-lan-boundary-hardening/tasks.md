@@ -11,8 +11,14 @@
 
 ## 阶段 1: 契约底座（脚本层）
 
-- [ ] **T1 取证归档与契约定稿**（验收: 全部 AC 的契约锚点；依赖: 无）
-  - 核对 plan.md §1 取证附录与真机现状一致（TUN 接口名/规则 Profile/虚拟 IP——plan 撰写时已实测，本任务为复核防漂移）。
+- [x] **T1 取证归档与契约定稿**（验收: 全部 AC 的契约锚点；依赖: 无）
+  - **契约冻结（2026-09-12 复核通过，后续任务不得擅改）**：
+    - 规则名：443 白名单 = `CloudCLI Mesh HTTPS 443`（Profile Any + RemoteAddress=CIDR + InterfaceAlias=TUN）；3001 例外 = `CloudCLI LAN 3001 Exception`（**Private + RemoteAddress LocalSubnet，无接口条件**）；
+    - 旧规则退役清单（migrate 幂等删除）：`CloudCLI LAN HTTPS 443` + `CloudCLI LAN 3001`；
+    - 例外 TTL = **12h**（`now-since == 12h` 即到期回落）；健康轮询 = **60s**；
+    - status JSON 契约（plan §4.2）：`legacy443 / legacy3001 / mesh443{present,remote,iface,profile} / exc3001{present,profile} / tun{name,ip}`，压缩 JSON + UTF8 输出，`profile` 沿实测 flags（0=Any/1=Domain/2=Private/4=Public）；
+    - lan-guard 退出码：**0** 成功/幂等跳过；**1** 前置不满足（非管理员/参数非法）；**3** TUN 未解析（`-WaitTun` 耗尽，不建规则——休眠非异常）。
+  - 取证复核（2026-09-12 本机只读 PowerShell）：两条旧规则实测均 Profile=Private、RemoteAddress=Any、InterfaceAlias=Any（007 O1 的 Any 漂移不可复现）；TUN=`et_8_1999`（ifIndex 60，持有 10.126.126.1/24）；新契约两规则尚不存在。回填 spec 开放问题 Q1/Q2/Q3/Q5（Q6 保持另立）。
   - 冻结契约常量定稿：`CloudCLI Mesh HTTPS 443` / `CloudCLI LAN 3001 Exception` / 旧规则退役清单 `CloudCLI LAN HTTPS 443` + `CloudCLI LAN 3001` / 12h TTL / 60s 轮询 / status JSON 契约（plan §3.2、§4.2）——写入本任务备注，后续任务不得擅改。
   - 回填 [spec.md](./spec.md) 开放问题：Q1（规则 Profile 复验）、Q2（002 去留 → plan §3.6）、Q3（迁移时机 → plan §3.7）、Q5（TUN 绑定形态 → plan §3.3）勾选并注明已决位置；Q6 保持另立不动。**不流转 spec 状态**。
   - 完成标志：spec 开放问题四处回填；本文件 T1 勾选；git 提交。
