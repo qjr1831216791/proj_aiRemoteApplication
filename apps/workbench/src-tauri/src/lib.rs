@@ -12,6 +12,7 @@ mod consts;
 pub mod dns_api;
 mod exit_flow;
 mod heartbeat;
+mod lan_guard;
 mod lang;
 mod mesh;
 mod network;
