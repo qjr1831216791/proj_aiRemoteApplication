@@ -22,7 +22,7 @@
   - 冻结契约常量定稿：`CloudCLI Mesh HTTPS 443` / `CloudCLI LAN 3001 Exception` / 旧规则退役清单 `CloudCLI LAN HTTPS 443` + `CloudCLI LAN 3001` / 12h TTL / 60s 轮询 / status JSON 契约（plan §3.2、§4.2）——写入本任务备注，后续任务不得擅改。
   - 回填 [spec.md](./spec.md) 开放问题：Q1（规则 Profile 复验）、Q2（002 去留 → plan §3.6）、Q3（迁移时机 → plan §3.7）、Q5（TUN 绑定形态 → plan §3.3）勾选并注明已决位置；Q6 保持另立不动。**不流转 spec 状态**。
   - 完成标志：spec 开放问题四处回填；本文件 T1 勾选；git 提交。
-- [ ] **T2 lan-guard.ps1 与装机脚本改造**（依赖: T1）（验收: AC1/AC6/AC10）
+- [x] **T2 lan-guard.ps1 与装机脚本改造**（依赖: T1）（验收: AC1/AC6/AC10）——2026-09-12 完成：五动作 UAC 实跑通过（status JSON 可解析、ensure-whitelist 幂等+失配 Remove/New 还原、例外 on/off 往返、exit 3/1 分支）；**migrate 端到端移交 T7**（本机两条旧规则为其验收样本，本批仅语法+幂等逻辑走查）；实测发现并修复 CIDR 掩码存储形态坑（Windows 存 /24 为 255.255.255.0，脚本 Convert-ToCidrForm 归一，Rust 侧比对输入已是 /24）；双目录 12 文件哈希全 MATCH；单测 8 项（红测曾抓到 VirtualIp 泄入例外派发的契约偏差）
   - 测试先行：新增 `lan_guard.rs` 契约常量与派发参数构造的失败单测（动作集、参数串含 `-Cidr/-VirtualIp/-WaitTun` 且经单引号转义、exception-on 参数含 `-Profile Private -RemoteAddress LocalSubnet` 且无 TUN 条件——先红后绿，随 T3 完成实现）。
   - 新建 `tools/sprint0/bin/lan-guard.ps1`（BOM+CRLF、`-Lang` 双语 T()、管理员自检 + 拒绝提示、幂等）：五动作 status / ensure-whitelist / exception-on / exception-off / migrate，退出码契约 0/1/3（plan §5.1），status 输出 plan §4.2 压缩 JSON（UTF8 前缀）。
   - `install-server.ps1`：删除步骤 5（防火墙规则）与步骤 6（网络归类改专用），步骤重编号为 5/7。
