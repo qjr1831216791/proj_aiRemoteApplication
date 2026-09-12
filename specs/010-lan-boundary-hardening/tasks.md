@@ -55,11 +55,11 @@
   - `WizardView.tsx`：收尾页新增「访问白名单」检查项（hb-dot + 详情：旧规则→「一键收口」、失配→「修复白名单」，与主看板同命令）；基础阶段 desc 改「本机服务就绪——局域网直访默认已收口」；收尾清单「局域网访问」标签随语义改「本机服务」。
   - i18n：`languard.*` 25 键 zh/en 对称新增；`net.riskPublic`/`net.dispatched`（T5 改写）与 `tunnel.check.netCategory`（443 放行 → 例外直访）措辞同步脱离已退役规则语义。
   - 完成标志：`npm run build` 全绿 + zh/en 键集对称断言；git 提交。
-- [ ] **T7 存量迁移编排**（依赖: T4/T6）（验收: AC10）
-  - 测试先行：旧规则检测解析（legacy443/legacy3001 → 横幅态）；migrate 幂等序列断言（删两旧名 → ensure-whitelist，重复派发无害）。
-  - 启动自检接线：LanGuardMonitor 首轮 status 发现旧规则 → `languard://changed` 载荷 legacy_present → MeshCard 横幅「一键收口」→ `lan_guard_migrate`；收口后复测横幅消失。
-  - 向导收尾页迁移入口与主看板同命令（T6 已铺 UI，本任务核对端到端）。
-  - 完成标志：真机预演（本机当前两条旧规则即存量——在本机执行迁移并恢复 `CloudCLI Mesh HTTPS 443` 就位态，记录前后 `Get-NetFirewallRule` 清单差异）；全仓 grep 完成口径：旧规则名的 `New-NetFirewallRule` 创建逻辑零残留（仅 lan-guard.ps1 删除清单与 Rust 检测常量引用）；git 提交。
+- [~] **T7 存量迁移编排**（依赖: T4/T6）（验收: AC10）——2026-09-12 代码/测试/收口完成；**真机预演已触发、UAC 等待人工批准未落（会话窗口 ~75 分钟超时），迁移前后正式比对按需求方预案并入 T9 手工清单第 9 项**（预演提权窗保持存活，批准即落地，输出留痕 `C:\Users\Public\lan-guard-migrate-run1.log`）
+  - 测试先行（3 项新单测，全仓 227 → 230 绿）：`migrate_banner_lifecycle_dedupes_after_closure`（判定层端到端序列：旧规则双在 → 横幅态 `legacyPresent=true` 发声 + 白名单 Missing 并存 → 收口复测横幅消失 + 白名单 Ok → 同态重复复测不重发声——重复派发/复测幂等无害）；`migrate_dispatch_is_deterministic_on_repeat`（重复派发参数逐字节一致）；`migrate_script_contract_sequence`（脚本契约锁：双目录逐字节一致 + 旧规则名 `New-NetFirewallRule` 行零出现 + migrate 分支「幂等删两旧名在前 → 复用 Invoke-EnsureWhitelist 在后」+ 443 白名单全脚本单点创建——AC10 grep 完成口径的自动化钉）。legacy_present 载荷 → 横幅态前端判定：T6 已铺（MeshCard `lanHealth?.legacyPresent` 直渲 + `wlChipClass/wlChipKey/wlHintKey/wlNeedsFix` 纯函数、MainView `lanAddrState` 三态、WizardView 收尾页 legacy 分支），单布尔直渲无缺失分支，项目无前端测试基建按 T6 预案以 `tsc && vite build` 兜底。
+  - 启动自检接线核对（链路完整，零补建）：lib.rs 装配 LanGuardMonitor + spawn（首轮 tick=启动补回落自检，probe 输入每轮现取）→ PsLanGuardProbe 跑 status（含 legacy443/legacy3001）→ 变化才发声 `languard://changed`（TauriLanEmitter）→ MainView 持有 lanHealth 下沉 MeshCard 横幅「一键收口」（`runLan` 3.5s/12s 追加复测）→ `lan_guard_migrate` → 复测横幅消失；向导收尾页同命令入口（WizardView `runLanGuard("migrate", api.lanGuardMigrate)` + 进入探测/动作后复测）——以上经代码核对 + 判定层单测背书，UI 手工演练归 T9。
+  - 真机预演（本机=真机）：迁移前留底已取——`CloudCLI LAN 3001`/`CloudCLI LAN HTTPS 443` 均 Profile=Private、Remote=Any、Iface=Any、Enabled=True；`CloudCLI Mesh HTTPS 443` 已在（T2 实跑 ensure-whitelist 所建，Profile=Any、Remote=10.126.126.0（掩码形态）、Iface=et_8_1999）；lan-guard status 实测 `{"legacy443":true,"legacy3001":true,"mesh443":{"present":true,"remote":"10.126.126.0/24","iface":"et_8_1999","profile":0},"exc3001":{"present":false,"profile":0},"tun":{"name":"et_8_1999","ip":"10.126.126.1"}}`（= 横幅态判定输入实况）。`Start-Process -Verb RunAs` 显式触发 migrate（经同意弹窗等待批准，非静默提权），复测与幂等复验（exit 0 无副作用）随批准后/或 T9 清单 9 补记。
+  - 完成标志（本批达成项）：全仓 grep 完成口径已达成并自动化钉死——`New-NetFirewallRule` 全仓仅 lan-guard.ps1 双目录两处（`$RuleMesh443`/`$RuleExc3001`，零旧名创建）；旧规则名仅存脚本删除清单/检测、lan_guard.rs 检测常量、历史调研文档（T8 加注）与 spec 自身文本；git 提交。
 
 ## 阶段 3: 收尾与验收
 

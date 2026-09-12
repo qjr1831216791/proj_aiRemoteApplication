@@ -1383,4 +1383,147 @@ mod tests {
         assert_eq!(*revert.dispatched.lock().unwrap(), 0, "未到期零派发");
         assert_eq!(*revert.cleared.lock().unwrap(), 0, "pending 观察不动（引导重新开启）");
     }
+
+    // ── T7：存量迁移端到端（AC10；序列与横幅态判定层）──────────────────────
+
+    /// 带 legacy 字段的 status 输出（迁移序列专用；其余形态同 status_raw——
+    /// TUN 在场 et_8_1999@10.126.126.1，例外缺席）
+    fn status_raw_legacy(legacy443: bool, legacy3001: bool, mesh_present: bool) -> String {
+        let mesh = if mesh_present {
+            format!(
+                r#"{{"present":true,"remote":{},"iface":{},"profile":0}}"#,
+                serde_json::to_string(CIDR).unwrap(),
+                serde_json::to_string(TUN).unwrap(),
+            )
+        } else {
+            r#"{"present":false,"remote":null,"iface":null,"profile":0}"#.into()
+        };
+        format!(
+            r#"{{"legacy443":{legacy443},"legacy3001":{legacy3001},"mesh443":{mesh},"exc3001":{{"present":false,"profile":0}},"tun":{{"name":"et_8_1999","ip":"10.126.126.1"}}}}"#
+        )
+    }
+
+    /// migrate 端到端横幅态序列（AC10 判定面，真机预演同构）：启动自检首轮
+    /// 探测旧规则在场 → `languard://changed` 载荷 legacyPresent=true（MeshCard/
+    /// 向导横幅的消费形态，白名单 Missing 待修复与横幅并存）；一键收口后复测
+    /// legacyPresent=false 且白名单 Ok（横幅消失）；同态重复复测（3.5s/12s 追加
+    /// 与 60s 轮询）不再发声——重复派发/复测幂等无害，横幅不回弹不重扰
+    #[test]
+    fn migrate_banner_lifecycle_dedupes_after_closure() {
+        let shared = Arc::new(StdMutex::new(inputs(false, 0, 0)));
+        let sink = Arc::new(RecordingLanSink::default());
+        let m = LanGuardMonitor::new(
+            Arc::new(MockLanProbe {
+                outs: StdMutex::new(vec![
+                    Ok(status_raw_legacy(true, true, false)), // 迁移前：双旧规则在、白名单缺席
+                    Ok(status_raw_legacy(false, false, true)), // 收口后：旧规则删净、白名单就位
+                    Ok(status_raw_legacy(false, false, true)), // 重复复测：同态
+                ]
+                .into()),
+            }),
+            Arc::new({
+                let s = shared.clone();
+                move || s.lock().unwrap().clone()
+            }),
+            sink.clone(),
+        );
+        // 首轮（=启动自检）：横幅态发声恰一次
+        let h1 = m.refresh().unwrap();
+        assert!(h1.legacy_present, "任一旧规则在 → 迁移横幅（AC10）");
+        assert_eq!(h1.whitelist, WhitelistState::Missing, "迁移前白名单缺席 → 待修复与横幅并存");
+        assert_eq!(sink.emissions.lock().unwrap().len(), 1);
+        // 一键收口（lan_guard_migrate 派发成功）后复测：横幅消失 + 白名单转 Ok
+        let h2 = m.refresh().unwrap();
+        assert!(!h2.legacy_present, "旧规则删净 → 横幅消失");
+        assert_eq!(h2.whitelist, WhitelistState::Ok, "白名单三元就位");
+        assert_eq!(sink.emissions.lock().unwrap().len(), 2, "状态变化才发声");
+        // 幂等重复复测：同态不再发声（无横幅回弹）
+        let h3 = m.refresh().unwrap();
+        assert!(!h3.legacy_present);
+        assert_eq!(
+            sink.emissions.lock().unwrap().len(),
+            2,
+            "同态重复复测不重复发声（重复派发幂等无害的判定面）"
+        );
+    }
+
+    /// migrate 重复派发的构造层幂等：同一入参两次构造逐字节相同（fire-and-forget
+    /// 模式下重按按钮/重复派发只是同一脚本的幂等重放，不产生新形态的副作用参数）
+    #[test]
+    fn migrate_dispatch_is_deterministic_on_repeat() {
+        let a = dispatch_params(
+            Path::new(DIR),
+            LanGuardAction::Migrate,
+            Some(CIDR),
+            Some(VIP),
+            None,
+            Lang::Zh,
+        )
+        .unwrap();
+        let b = dispatch_params(
+            Path::new(DIR),
+            LanGuardAction::Migrate,
+            Some(CIDR),
+            Some(VIP),
+            None,
+            Lang::Zh,
+        )
+        .unwrap();
+        assert_eq!(a, b, "重复派发参数逐字节一致");
+        assert!(a.contains("-Action migrate"), "{a}");
+    }
+
+    /// lan-guard.ps1 migrate 序列契约锁（AC10「全仓检索」完成口径的自动化钉，
+    /// plan §3.7/§6）：① 双目录副本逐字节一致（R9 打包漂移防线——运行态读
+    /// resources/bin，开发契约以 tools/sprint0/bin 为源，两份漂移即失守）；
+    /// ② 旧规则名在任何 New-NetFirewallRule 行零出现（创建逻辑零残留）；
+    /// ③ migrate 分支 = 幂等删两条旧名在前（存在性判断 + Remove）→ 复用
+    /// Invoke-EnsureWhitelist 在后；④ 443 白名单全脚本仅 Invoke-EnsureWhitelist
+    /// 一处创建（ensure-whitelist 与 migrate 复用同一段，无双源漂移）。
+    #[test]
+    fn migrate_script_contract_sequence() {
+        let tools = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tools/sprint0/bin");
+        let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/bin");
+        let dev = std::fs::read_to_string(tools.join(SCRIPT_FILE)).expect("tools 副本存在");
+        let packed = std::fs::read_to_string(resources.join(SCRIPT_FILE)).expect("resources 副本存在");
+        assert_eq!(dev, packed, "双目录 lan-guard.ps1 逐字节一致（R9）");
+
+        // ② 旧规则名创建逻辑零残留（任务 T7 完成口径）
+        for legacy in [LEGACY_RULE_443, LEGACY_RULE_3001] {
+            assert!(
+                dev.contains(legacy),
+                "{legacy} 必须在删除/检测清单中（契约锚）"
+            );
+            let creating = dev
+                .lines()
+                .filter(|l| l.contains("New-NetFirewallRule"))
+                .any(|l| l.contains(legacy));
+            assert!(
+                !creating,
+                "旧规则 {legacy} 不得出现在任何 New-NetFirewallRule 行（创建逻辑零残留）"
+            );
+        }
+
+        // ③ migrate 分支序列（`'migrate' {` 为 switch 用例唯一形态）
+        let branch = &dev[dev.find("'migrate' {").expect("migrate 分支存在")..];
+        let guard = branch
+            .find("Get-NetFirewallRule -DisplayName $legacy -ErrorAction SilentlyContinue")
+            .expect("删除前存在性判断（幂等）");
+        let del = branch
+            .find("Remove-NetFirewallRule -DisplayName $legacy")
+            .expect("两条旧名幂等删除");
+        let ensure = branch.find("Invoke-EnsureWhitelist").expect("复用 ensure-whitelist 段");
+        assert!(guard < del && del < ensure, "序列 = 幂等删旧在前、ensure-whitelist 在后");
+        assert!(
+            branch.contains("@($LegacyRule443, $LegacyRule3001)"),
+            "删除清单恰为两条旧规则名"
+        );
+
+        // ④ 白名单创建单点（New-NetFirewallRule × $RuleMesh443 全脚本恰一处）
+        assert_eq!(
+            dev.matches("New-NetFirewallRule -DisplayName $RuleMesh443").count(),
+            1,
+            "443 白名单仅 Invoke-EnsureWhitelist 一处创建（migrate 复用同段）"
+        );
+    }
 }
