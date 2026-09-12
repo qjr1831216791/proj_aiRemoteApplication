@@ -108,6 +108,11 @@ pub fn run() {
             commands::mesh_sync_dns,
             commands::mesh_diagnostics,
             commands::mesh_member_config,
+            // spec 010：局域网边界守卫（T4 命令层）
+            commands::lan_guard_status,
+            commands::lan_guard_set_exception,
+            commands::lan_guard_migrate,
+            commands::lan_guard_ensure_whitelist,
             // spec 004/005：栈目录打开 + 域名即时探测（通道体检）
             commands::open_stack_dir,
             commands::check_domain_health_now,
@@ -238,6 +243,37 @@ pub fn run() {
             ));
             app.manage(mesh_monitor.clone());
             mesh_monitor.spawn();
+
+            // ── 局域网边界守卫（spec 010 T4）：60s 轮询 + 12h 回落 watcher ──
+            // 输入每轮现取（网段/虚拟 IP 随设置联动、例外标记随 settings、活动
+            // 网络随 NetMonitor 缓存）；spawn 首轮 tick 即「启动补回落自检」——
+            // enabled ∧ expired ∧ 规则在 → 先派发回落再进轮询；规则不在 →
+            // 免 UAC 本地清标记（plan §3.4「应用退出期间到期」行）
+            let lan_inputs_app = app.handle().clone();
+            let lan_inputs_net = net_monitor.clone();
+            let lan_inputs = std::sync::Arc::new(move || {
+                let s = lan_inputs_app.state::<settings::SettingsState>().current();
+                lan_guard::LanInputs {
+                    virtual_ip: s.mesh.virtual_ip.clone(),
+                    cidr: s.mesh.virtual_cidr.clone(),
+                    exception_enabled: s.lan_guard.exception_enabled,
+                    exception_since_ms: s.lan_guard.exception_since_ms,
+                    networks: lan_inputs_net.last().map(|n| n.networks).unwrap_or_default(),
+                }
+            });
+            let lan_monitor = std::sync::Arc::new(
+                lan_guard::LanGuardMonitor::new(
+                    std::sync::Arc::new(lan_guard::PsLanGuardProbe::new(scripts_dir.clone())),
+                    lan_inputs,
+                    std::sync::Arc::new(TauriLanEmitter { app: app.handle().clone() }),
+                )
+                .with_revert(std::sync::Arc::new(LanRevertExecutor {
+                    app: app.handle().clone(),
+                    scripts_dir: scripts_dir.clone(),
+                })),
+            );
+            app.manage(lan_monitor.clone());
+            lan_monitor.spawn();
 
             // ── 退出流（T10）：意图门注册（托盘/quit 在 app.exit 前置位）─────
             app.manage(exit_flow::ExitGate::new());
@@ -403,6 +439,62 @@ impl mesh::MeshEventSink for TauriMeshEmitter {
         use tauri::Emitter;
         if let Err(e) = self.app.emit(mesh::EVENT_MESH_STATUS, status) {
             log::error!("发送 {} 失败：{e}", mesh::EVENT_MESH_STATUS);
+        }
+    }
+}
+
+/// 白名单健康事件出口（`languard://changed`；载荷 LanHealth，spec 010）
+struct TauriLanEmitter {
+    app: tauri::AppHandle,
+}
+
+impl lan_guard::LanEventSink for TauriLanEmitter {
+    fn emit_lan_health(&self, health: &lan_guard::LanHealth) {
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit(lan_guard::EVENT_LAN_GUARD_CHANGED, health) {
+            log::error!("发送 {} 失败：{e}", lan_guard::EVENT_LAN_GUARD_CHANGED);
+        }
+    }
+}
+
+/// 例外 12h 回落执行面（spec 010 plan §3.4）：派发走 UAC 隐藏窗（fire-and-forget，
+/// 真相以 status 复测为准），清标记走本地 settings 写（免 UAC）
+struct LanRevertExecutor {
+    app: tauri::AppHandle,
+    scripts_dir: Option<std::path::PathBuf>,
+}
+
+impl lan_guard::RevertExecutor for LanRevertExecutor {
+    /// UAC 派发 exception-off；拒绝（code 5）/脚本目录缺失 → Err，
+    /// 由 watcher 计入 30min 重试窗（AC8）
+    fn dispatch_exception_off(&self) -> Result<(), String> {
+        let dir = self
+            .scripts_dir
+            .as_ref()
+            .ok_or_else(|| "脚本目录不可用：无法派发例外回落".to_string())?;
+        let lang = self.app.state::<lang::LanguageState>().current();
+        let params = lan_guard::dispatch_params(
+            dir,
+            lan_guard::LanGuardAction::ExceptionOff,
+            None,
+            None,
+            None,
+            lang,
+        )?;
+        scripts::elevate("powershell.exe", &params)
+    }
+
+    /// 免 UAC 本地清标记（enabled:false / since:0；规则实况已不在——plan §3.4
+    /// 「满 12h ∧ 无规则」行）；写盘失败仅记日志，下轮 tick 重试
+    fn clear_exception_mark(&self) {
+        let state = self.app.state::<settings::SettingsState>();
+        let patch = settings::SettingsPatch {
+            lan_guard: Some(settings::LanGuardSettings::default()),
+            ..Default::default()
+        };
+        match state.patch(&patch) {
+            Ok(_) => log::info!("例外标记已本地清除（满 12h 且规则已不在，回落完成）"),
+            Err(e) => log::error!("例外标记清除失败（下轮重试）：{e}"),
         }
     }
 }

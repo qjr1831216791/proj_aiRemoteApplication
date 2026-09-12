@@ -31,6 +31,13 @@ interface MeshConfig {
   peers: string[];
 }
 
+/** 局域网边界守卫标记（spec 010 plan §4.1；sinceMs 由后端在派发成功后写入，
+ * 前端只提交开关意图；旧设置文件缺字段 → false/0） */
+interface LanGuardSettings {
+  exceptionEnabled: boolean;
+  exceptionSinceMs: number;
+}
+
 /** 全量设置（get_settings 载荷，camelCase 对齐 Rust serde） */
 export interface Settings {
   version: number;
@@ -45,6 +52,7 @@ export interface Settings {
   mesh: MeshConfig;
   domainHeartbeat: boolean;
   stackDir: string;
+  lanGuard: LanGuardSettings;
 }
 
 /** 补丁（save_settings 入参；只提交要改的字段） */
@@ -59,6 +67,7 @@ export interface SettingsPatch {
   mesh?: MeshConfig;
   domainHeartbeat?: boolean;
   stackDir?: string;
+  lanGuard?: LanGuardSettings;
 }
 
 /** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase；spec 008
@@ -208,6 +217,31 @@ export interface NetStatus {
   rulePrivateOnly: boolean;
   networks: NetworkEntry[];
   alert: boolean;
+}
+
+// ── 局域网边界守卫（spec 010）───────────────────────────────────────────────
+
+/** 443 白名单健康五态（languard://changed 与 lan_guard_status 载荷）：
+ * ok=三元全匹配 / missing=规则缺(TUN 在) / staleCidr|staleIface=失配待修复 /
+ * dormant=TUN 未解析(组网不在,休眠非异常) */
+export type WhitelistState = "ok" | "missing" | "staleCidr" | "staleIface" | "dormant";
+
+/** 例外开关四态（tag="state"；on 携剩余秒数；expired=满 12h 回落未完成仍放行；
+ * pending=已请求但规则未生效） */
+export type ExceptionState =
+  | { state: "off" }
+  | { state: "on"; remainingSecs: number }
+  | { state: "expired" }
+  | { state: "pending" };
+
+/** 白名单健康快照（languard://changed 事件与 lan_guard_status 命令载荷） */
+export interface LanHealth {
+  whitelist: WhitelistState;
+  /** 任一旧规则存在 → 迁移横幅（AC10） */
+  legacyPresent: boolean;
+  exception: ExceptionState;
+  /** 例外生效 ∧ 当前有公用活动网络（Private 规则直访不生效的如实提示） */
+  publicBlocksException: boolean;
 }
 
 /** set_autostart_services 返回载荷 */

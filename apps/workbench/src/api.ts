@@ -10,6 +10,7 @@ import type {
   DomainHealth,
   ExternalKind,
   LanguageSetting,
+  LanHealth,
   MeshDiagItem,
   MeshStatus,
   NetStatus,
@@ -71,6 +72,17 @@ export const api = {
   meshMemberConfig: () => invoke<string>("mesh_member_config"),
   /** DNS 对齐检测（AC8：A=虚拟 IP 对齐 + 残留 CNAME 判旁路暴露面） */
   checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
+
+  // ── 局域网边界守卫（spec 010）─────────────────────────────────────────
+  /** 白名单健康（即时探测；null = 尚无成功探测，此后以 languard://changed 为准） */
+  lanGuardStatus: () => invoke<LanHealth | null>("lan_guard_status"),
+  /** 例外开关（AC6/AC7）：UAC 派发成功才持久化；拒绝 → Err 状态原样 */
+  lanGuardSetException: (on: boolean) =>
+    invoke<void>("lan_guard_set_exception", { on }),
+  /** 存量迁移「一键收口」（AC10）：UAC 派发 migrate（幂等删旧规则 + 就位白名单） */
+  lanGuardMigrate: () => invoke<void>("lan_guard_migrate"),
+  /** 失配修复「修复白名单」（AC1/AC9）：UAC 派发 ensure-whitelist */
+  lanGuardEnsureWhitelist: () => invoke<void>("lan_guard_ensure_whitelist"),
   /** 打开栈目录（设置页「栈目录」链接） */
   openStackDir: () => invoke<void>("open_stack_dir"),
   /** 即时域名探测（通道体检；独立于 60s 心跳） */
@@ -99,6 +111,11 @@ export function onStatusChanged(
 /** 组网状态事件（spec 007：观察者 5s 探询，变化才发；载荷同 mesh_status） */
 export function onMeshStatus(cb: (status: MeshStatus) => void): Promise<() => void> {
   return listen<MeshStatus>("mesh://status", (e) => cb(e.payload));
+}
+
+/** 白名单健康事件（spec 010：60s 轮询 + 动作后即时刷新，变化才发） */
+export function onLanGuardChanged(cb: (health: LanHealth) => void): Promise<() => void> {
+  return listen<LanHealth>("languard://changed", (e) => cb(e.payload));
 }
 
 /** 域名心跳事件（spec 005：60s 周期探测，载荷 healthy 已含 2 次防抖） */

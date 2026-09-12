@@ -226,6 +226,13 @@ impl NetMonitor {
             })
             .expect("网络轮询线程创建失败")
     }
+
+    /// 上次成功探测的缓存快照（探测失败不更新；None = 尚无成功探测）。
+    /// spec 010：活动网络归类喂给 LanGuardMonitor（public_blocks_exception
+    /// 判定数据源，plan §3.5「活动网络数据由调用方注入」）。
+    pub fn last(&self) -> Option<NetStatus> {
+        self.last.lock().expect("网络状态锁中毒").clone()
+    }
 }
 
 // ── 真实探测实现（Windows；std::process 直采 stdout，不经日志文件）─────────

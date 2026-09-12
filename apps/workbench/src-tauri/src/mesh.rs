@@ -82,7 +82,7 @@ const MESH_BIN_FILES: [&str; 5] = [
 /// AC8：入参只有栈目录，输出是纯路径参数——network_secret 只进 config.toml
 /// （渲染器职责），命令行永不携带密钥。运行时 binPath 由 mesh-service.ps1
 /// 按同公式从 StackDir 自建（T9 曾经 `-BinPath` 传递，真机缺陷后废弃：
-/// 内嵌双引号过不了 `-Command "..."` 包裹——见 service_install_params 注释）；
+/// 内嵌双引号过不了 `-Command "..."` 包裹——教训留档于 install_params 测试）；
 /// 本函数保留作双端形态契约锚（脚本公式若漂移，单测形态即失配暴露）。
 /// 路径全部加引号：栈目录可配置，含空格时 SCM 命令行才不被拆断。
 ///
@@ -537,19 +537,9 @@ pub fn service_action_params(
     )
 }
 
-/// install 派发参数（mesh_install_service / apply 未装路径）。**不传 -BinPath**：
-/// binPath 由脚本按同公式从 StackDir 自建（脚本内注释与 [`service_bin_path`]
-/// 单测锁定形态一致性）。真机缺陷教训（2026-09-11）：经 `-Command "..."`
-/// 包裹派发时，binPath 内嵌的路径双引号会提前终止外层引用、被 PowerShell
-/// 剥除后触发脚本「binPath 与栈目录不符」误拒——参数串上不出现内嵌引号才是
-/// 稳妥形态；AC8（binPath 无密钥）由公式本身保证，双端测试各自锁形。
-pub fn service_install_params(
-    scripts_dir: &Path,
-    stack_dir: &str,
-    lang: crate::lang::Lang,
-) -> String {
-    service_action_params(scripts_dir, "install", stack_dir, lang)
-}
+// install 派发参数随 spec 010 AC9 组合化并入 service_with_whitelist_params
+//（曾有的 service_install_params 薄别名移除；-BinPath 教训留档于 install_params
+// 测试）。
 
 /// apply（mesh_apply_config / 切组网）的服务动作选择（纯函数）：服务未装 →
 /// install（附 binPath，脚本幂等建档）；已装（含 Disabled）→ restart
@@ -560,6 +550,41 @@ pub fn apply_service_action(service: MeshServiceState) -> &'static str {
         MeshServiceState::NotFound => "install",
         _ => "restart",
     }
+}
+
+/// apply/install 的组合提权派发参数（spec 010 plan §3.5 / AC9）：mesh-service
+/// 服务动作 + lan-guard ensure-whitelist 段**同一可见脚本窗顺序执行**——单次
+/// UAC 单窗（改网段必经 apply 的唯一变更入口，合并消双弹窗）。白名单段由
+/// [`crate::lan_guard::ensure_whitelist_segment`] 单点构造（本侧只拼装：插在
+/// 服务动作之后、收尾提示之前；段内 exit 1/3 只退出脚本作用域，服务段不被
+/// 阻断，§7-R4）。`-WaitTun 20` 由段构造内置（服务重启后 TUN 就绪缓冲，R4）。
+pub fn service_with_whitelist_params(
+    scripts_dir: &Path,
+    action: &str,
+    stack_dir: &str,
+    cidr: &str,
+    virtual_ip: &str,
+    lang: crate::lang::Lang,
+) -> Result<String, String> {
+    let base = service_action_params(scripts_dir, action, stack_dir, lang);
+    let seg = crate::lan_guard::ensure_whitelist_segment(
+        scripts_dir,
+        cidr,
+        virtual_ip,
+        crate::lan_guard::APPLY_WAIT_TUN_SECS,
+        lang,
+    )?;
+    // visible_script_params 产物以 `; Write-Host ''; Write-Host '<收尾提示>'` 结尾，
+    // 锚点唯一（提示文案不含该序列）：在首个锚点前插入白名单段
+    const ANCHOR: &str = "; Write-Host ''";
+    let idx = base
+        .find(ANCHOR)
+        .ok_or_else(|| format!("派发参数形态异常：缺少收尾锚点（{base}）"))?;
+    let mut combined = String::with_capacity(base.len() + seg.len());
+    combined.push_str(&base[..idx]);
+    combined.push_str(&seg);
+    combined.push_str(&base[idx..]);
+    Ok(combined)
 }
 
 /// `sc stop` 退出码是否属于「无需再折腾」的静默完成（纯函数，单测锁定）：
@@ -1543,13 +1568,16 @@ mod tests {
         assert!(!stop_exit_code_is_quiet(1053), "异常 → 兜底");
     }
 
-    /// install 派发参数：-Action install 且**不含 -BinPath**（真机缺陷教训：
-    /// binPath 内嵌双引号过不了 -Command 包裹，由脚本按同公式自建——2026-09-11）
+    /// install 派发参数：-Action install 且**不含 -BinPath**（真机缺陷教训
+    /// 2026-09-11：binPath 内嵌双引号经 `-Command "..."`
+    /// 包裹派发会提前终止外层引用、被 PowerShell 剥除后触发脚本「binPath 与
+    /// 栈目录不符」误拒——参数串上不出现内嵌引号才是稳妥形态，binPath 由脚本
+    /// 按同公式自建；AC8 由 service_bin_path 单测锁形）
     #[test]
     fn install_params_omit_bin_path() {
         let dir = Path::new(r"C:\app\resources\bin");
         let stack = r"D:\Software\cloudcli-https";
-        let params = service_install_params(dir, stack, crate::lang::Lang::Zh);
+        let params = service_action_params(dir, "install", stack, crate::lang::Lang::Zh);
         assert!(params.contains("-Action install"), "{params}");
         assert!(!params.contains("-BinPath"), "binPath 必须由脚本自建：{params}");
         // binPath 内容不得经命令行传递（外层 -Command "..." 的包裹引号除外）
@@ -1560,6 +1588,47 @@ mod tests {
         // 形态契约锚仍在：脚本公式同源（service_bin_path 单测锁 AC8）
         let bp = service_bin_path(stack);
         assert!(!bp.to_ascii_lowercase().contains("secret"), "AC8：{bp}");
+    }
+
+    /// spec 010 AC9 组合派发（plan §3.5）：服务动作 + ensure-whitelist 段同窗
+    /// 顺序（服务在前、白名单在后、收尾提示殿后）、单 -Command 单次 UAC、
+    /// `-WaitTun 20` 内置
+    #[test]
+    fn service_with_whitelist_params_combines_single_window() {
+        let dir = Path::new(r"C:\app\resources\bin");
+        let p = service_with_whitelist_params(
+            dir,
+            "restart",
+            r"D:\Software\cloudcli-https",
+            "10.126.126.0/24",
+            "10.126.126.1",
+            crate::lang::Lang::Zh,
+        )
+        .unwrap();
+        assert!(p.contains("mesh-service.ps1") && p.contains("-Action restart"), "{p}");
+        assert!(p.contains("lan-guard.ps1") && p.contains("-Action ensure-whitelist"), "{p}");
+        assert!(p.contains("-Cidr '10.126.126.0/24'"), "{p}");
+        assert!(p.contains("-VirtualIp '10.126.126.1'"), "{p}");
+        assert!(p.contains("-WaitTun 20"), "TUN 就绪缓冲（R4）：{p}");
+        assert_eq!(p.matches("-Command \"").count(), 1, "单窗单次 UAC：{p}");
+        // 顺序：服务动作 < 白名单段 < 收尾提示（同窗顺序执行）
+        let svc = p.find("mesh-service.ps1").unwrap();
+        let guard = p.find("lan-guard.ps1").unwrap();
+        let hint = p.find("; Write-Host ''").unwrap();
+        assert!(svc < guard && guard < hint, "服务段 → 白名单段 → 收尾提示：{p}");
+        // 收尾提示仍在最末（-NoExit 留窗可读语义不变）
+        assert!(p.contains("核对上方输出后关闭本窗口"), "{p}");
+        // 两个脚本各带一次 -Lang（同一程序语言），en 形态贯通
+        let q = service_with_whitelist_params(
+            dir,
+            "install",
+            r"D:\stack",
+            "10.0.0.0/24",
+            "10.0.0.1",
+            crate::lang::Lang::En,
+        )
+        .unwrap();
+        assert_eq!(q.matches("-Lang en").count(), 2, "服务段与白名单段各一次 -Lang：{q}");
     }
 
     /// AC9：密钥缺失拒绝先于任何落盘（easytier 目录都不建）

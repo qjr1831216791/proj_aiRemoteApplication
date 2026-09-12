@@ -34,12 +34,12 @@
   - 纯函数层：status 参数与 JSON 解析（容错缺字段，沿 parse_net_status 先例）；`judge_health` 全分支（ok/missing/stale_cidr/stale_iface/dormant × exception off/on/expired/pending × legacy_present × public_blocks_exception——覆盖 plan §3.4 状态表每行）；`exception_expired`/`exception_remaining_secs` 边界（==12h 即到期）；回落决策矩阵（enabled ∧ expired ∧ 规则在 → UAC 派发；规则不在 → 免 UAC 清标记）；派发参数构造（ps_quote 单引号翻倍、`-WindowStyle Hidden`）。
   - `LanGuardMonitor`（NetMonitor 同构：probe/sink/缓存/变化才发声 `languard://changed`、60s tick；单测以脚本化 probe 输出驱动状态机）；启动补回落自检逻辑（spawn 首轮 tick 承载，计划注释注明）。
   - 完成标志：上述单测全绿（T2 红测一并转绿）；git 提交。
-- [ ] **T4 settings 扩展与命令层联动**（依赖: T3）（验收: AC6/AC7/AC8/AC9）
+- [x] **T4 settings 扩展与命令层联动**（依赖: T3）（验收: AC6/AC7/AC8/AC9）——2026-09-12 完成：四命令接线 + LanGuardMonitor 装配 spawn（首轮 tick=启动补回落自检）；组合派发单窗单 UAC（服务段在前、白名单段在后、收尾提示殿后，`-WaitTun 20` 内置）；UAC 拒绝路径 Err 且设置不写（AC7）；off 复测确认循环（规则已不在才清标记）；全仓 cargo test 224 绿 + tsc/vite build 绿
   - 测试先行：`LanGuardSettings` serde default（旧文件缺字段 → false/0）与 roundtrip；patch 整块写入；apply 组合派发构造断言（prepare 校验失败 → 参数串不含 ensure-whitelist 段；通过 → 服务动作 + ensure-whitelist 同窗顺序、单次 UAC）。
   - `settings.rs`：`lan_guard: LanGuardSettings { exception_enabled, exception_since_ms }`（#[serde(default)]）+ SettingsPatch 扩展 + 单测。
   - `commands.rs`：`lan_guard_status` / `lan_guard_set_exception` / `lan_guard_migrate` / `lan_guard_ensure_whitelist`（plan §5.2 契约：开关先派发后持久化、UAC 拒绝 code 5 → Err 且不写设置）；`lib.rs` 注册 + LanGuardMonitor 装配与 spawn。
-  - `mesh_apply_config` / `mesh_install_service`：prepare 通过后派发参数追加 ensure-whitelist 段（`-WaitTun 20`）；失败不阻断服务段（plan §3.5）。
-  - 完成标志：单测全绿；git 提交。
+  - `mesh_apply_config` / `mesh_install_service`：prepare 通过后派发参数追加 ensure-whitelist 段（`-WaitTun 20`）；失败不阻断服务段（plan §3.5）。白名单段构造函数 `ensure_whitelist_segment` 单点在 lan_guard.rs（T2 契约原样下沉为 script_invocation，行为逐字节不变），mesh.rs 只拼装；失效薄别名 service_install_params 移除（-BinPath 教训留档测试）。
+  - 完成标志：单测全绿；git 提交。types.ts/api.ts 预落 LanHealth 序列化结构与四命令封装（UI 留 T6）；network.rs 补 NetMonitor.last() 只读访问器（活动网络注入 LanInputs，plan §3.5）。
 - [ ] **T5 002 告警退役与网络卡收敛**（依赖: T3）（验收: AC4）
   - 测试先行：退役断言（network.rs 无 needs_alert/无规则 Profile 探测段）；networks-only 探测契约解析单测（替换原 detect_args 测试）。
   - `network.rs`：删 `FIREWALL_RULE_NAME`/`needs_alert`/NetStatus 的 rule_present/rule_private_only/alert；detect_args 收缩为纯 `Get-NetConnectionProfile`；轮询 15s → 60s（networks 供归类卡与 public_blocks_exception 消费）。

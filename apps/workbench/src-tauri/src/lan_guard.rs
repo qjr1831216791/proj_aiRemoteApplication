@@ -8,7 +8,9 @@
 //! 常量是「双端形态契约锚」（mesh.rs service_bin_path 先例：脚本同值漂移即
 //! 单测失配暴露）。
 
-#![allow(dead_code)] // T4 命令层接线完成后移除（T3 先落状态机，T4 消费）
+// 契约锚常量（规则名/退出码/例外 Profile/RemoteAddress）由脚本同值锁形、仅单测
+// 消费，生产路径不触达——allow(dead_code) 为其保留（移除即契约锚告警）。
+#![allow(dead_code)]
 
 use crate::lang::Lang;
 use crate::network::{NetCategory, NetworkEntry};
@@ -113,6 +115,21 @@ pub fn dispatch_params(
     wait_tun: Option<u32>,
     lang: Lang,
 ) -> Result<String, String> {
+    let inner = script_invocation(scripts_dir, action, cidr, virtual_ip, wait_tun, lang)?;
+    Ok(format!("-NoProfile -NonInteractive -WindowStyle Hidden -Command \"{inner}\""))
+}
+
+/// 脚本调用语句（`& '<脚本>' -Lang x -Action y [args]`，dispatch_params 的
+/// `-Command` 内层；参数校验与拼接规则见 [`dispatch_params`] 文档——T2 冻结
+/// 契约原样下沉，行为逐字节不变，由 T2 单测背书）
+fn script_invocation(
+    scripts_dir: &Path,
+    action: LanGuardAction,
+    cidr: Option<&str>,
+    virtual_ip: Option<&str>,
+    wait_tun: Option<u32>,
+    lang: Lang,
+) -> Result<String, String> {
     let needs_cidr =
         matches!(action, LanGuardAction::EnsureWhitelist | LanGuardAction::Migrate);
     let needs_vip = needs_cidr || action == LanGuardAction::Status;
@@ -142,7 +159,30 @@ pub fn dispatch_params(
         // -WaitTun 只属于建白名单的动作（exception-on/off 无 TUN 语义）
         inner.push_str(&format!(" -WaitTun {}", wait_tun.unwrap()));
     }
-    Ok(format!("-NoProfile -NonInteractive -WindowStyle Hidden -Command \"{inner}\""))
+    Ok(inner)
+}
+
+/// apply 组合派发的 ensure-whitelist 段（plan §3.5/AC9，T4）：以 `; ` 起始的
+/// PS 语句，由 mesh.rs 拼装到 mesh-service 服务动作之后、收尾提示之前——
+/// **同一可见脚本窗顺序执行、单次 UAC**（改网段必经 apply 的唯一变更入口，
+/// 合并消双弹窗）；段内脚本 exit 1/3 只退出脚本作用域，服务段不受阻断
+/// （§7-R4 白名单失败不回滚服务段）。
+pub fn ensure_whitelist_segment(
+    scripts_dir: &Path,
+    cidr: &str,
+    virtual_ip: &str,
+    wait_tun: u32,
+    lang: Lang,
+) -> Result<String, String> {
+    let inner = script_invocation(
+        scripts_dir,
+        LanGuardAction::EnsureWhitelist,
+        Some(cidr),
+        Some(virtual_ip),
+        Some(wait_tun),
+        lang,
+    )?;
+    Ok(format!("; {inner}"))
 }
 
 // ── status 免提权探测（T3；plan §4.2 契约）──────────────────────────────────
