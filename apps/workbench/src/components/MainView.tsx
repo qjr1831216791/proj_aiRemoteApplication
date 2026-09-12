@@ -35,7 +35,7 @@ export interface MainViewProps {
   scripts: ScriptsAvailability | null;
   /** 网络环境快照（spec 002；null = 尚无成功探测） */
   netStatus: NetStatus | null;
-  /** 主动刷新网络环境（切换派发成功后加速收敛，免等 15s 轮询） */
+  /** 主动刷新网络环境（切换派发成功后加速收敛，免等 60s 轮询） */
   onNetRefresh: () => void;
   /** 全量设置（组网卡数据源；App 持有） */
   settings: Settings | null;
@@ -84,7 +84,7 @@ export function MainView(props: MainViewProps) {
       .setNetworkCategory(name, ifIndex, category)
       .then(() => {
         onToast(t("net.dispatched", lang), "success");
-        // UAC 批准后给执行留几秒，主动拉取加速收敛（免干等 15s 轮询）
+        // UAC 批准后给执行留几秒，主动拉取加速收敛（免干等 60s 轮询）
         setTimeout(() => onNetRefresh(), 3500);
       })
       .catch((e) => onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"));
@@ -167,20 +167,10 @@ export function MainView(props: MainViewProps) {
         ))}
       </section>
 
-      {/* 网络环境（spec 002）：被拦截反馈 + 用户决策的归类调整 */}
+      {/* 网络环境（spec 002 US2：归类调整入口；spec 010 T5 起旧告警条随 443
+          Private 语义退役，公用 × 例外的提示由访问白名单区承接） */}
       <section class="card">
         <h2 class="card__title">{t("net.title", lang)}</h2>
-        {netStatus?.alert ? (
-          <p class="notice notice--warn">
-            {t("net.alert", lang).replace(
-              "{names}",
-              netStatus.networks
-                .filter((n) => n.category === "public")
-                .map((n) => n.name)
-                .join("、"),
-            )}
-          </p>
-        ) : null}
         {netStatus === null || netStatus.networks.length === 0 ? (
           <p class="muted">{t("net.noNetworks", lang)}</p>
         ) : (

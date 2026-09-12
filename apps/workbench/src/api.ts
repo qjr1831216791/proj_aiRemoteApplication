@@ -96,7 +96,7 @@ export const api = {
   wizardComplete: () => invoke<WizardState>("wizard_complete"),
 };
 
-/** 网络环境事件（Rust 侧 15s 轮询驱动，变化才发；spec 002 AC3） */
+/** 网络环境事件（Rust 侧 60s 轮询驱动，变化才发；spec 010 T5 告警退役后降频供数） */
 export function onNetChanged(cb: (status: NetStatus) => void): Promise<() => void> {
   return listen<NetStatus>("net://changed", (e) => cb(e.payload));
 }

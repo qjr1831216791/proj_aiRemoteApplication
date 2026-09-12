@@ -1,12 +1,13 @@
-//! 网络环境监测与防火墙归类调整（spec 002：US1 被拦截反馈 + US2 用户决策调整）。
+//! 网络环境监测与防火墙归类调整（spec 002 US2：用户决策的归类调整入口）。
 //!
-//! - 检测：PowerShell 隐藏执行一次调用，合并「443 规则 Profile」与「活动网络归类」
-//!   输出压缩 JSON（契约 plan §5）；两者读取均为普通用户权限
-//! - 判定：`needs_alert` = 规则仅专用生效 ∧ 存在公用活动网络（纯函数，AC1/AC2）
+//! - 检测：PowerShell 隐藏执行一次调用，输出活动网络归类的压缩 JSON（纯
+//!   `Get-NetConnectionProfile`；spec 010 起 443 规则 Profile 探测段随归类告警
+//!   整体退役——告警判定对象消亡，plan §3.6）；读取为普通用户权限
 //! - 修改：ShellExecuteW runas 提权 `Set-NetConnectionProfile`（fire-and-forget），
 //!   结果以复测为准；UAC 拒绝 → Err 交上层提示（AC7，`shell_error_text` 消费）
-//! - 轮询：NetMonitor 15s 周期，状态变化才发 `net://changed`（AC3 ≤30s 收敛）；
-//!   探测失败静默保持上次状态（AC4 降级不劣化）
+//! - 轮询：NetMonitor 60s 周期（spec 010 T5 降频供数：networks 仅供归类卡与
+//!   lan_guard 的 `public_blocks_exception` 判定消费），状态变化才发
+//!   `net://changed`；探测失败静默保持上次状态（AC4 降级不劣化）
 //!
 //! 探测出口经 `NetProbe` trait 注入，单测以脚本化输出驱动状态机，零真实进程。
 
@@ -14,10 +15,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// 防火墙规则名（sprint0 enable-https.ps1 契约，spec §5 假设）
-const FIREWALL_RULE_NAME: &str = "CloudCLI LAN HTTPS 443";
-/// 轮询间隔（AC3：提示 ≤30s 收敛；plan §2 取 15s 摊薄 PS 拉起成本）
-pub const NET_POLL_INTERVAL: Duration = Duration::from_secs(15);
+/// 轮询间隔（spec 010：告警链退役后降频供数，plan §3.6 取 60s 摊薄 PS 拉起
+/// 成本；原 15s 为 002 告警 ≤30s 收敛服务，随对象退役）
+pub const NET_POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// 单次探测超时（超时视为本次探测失败，静默降级）
 const DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// 状态事件名（载荷 = NetStatus）
@@ -32,7 +32,7 @@ pub enum NetCategory {
     Public,
     Private,
     Domain,
-    /// 枚举外取值（前瞻兼容），不参与告警与切换
+    /// 枚举外取值（前瞻兼容），不参与归类切换
     Unknown,
 }
 
@@ -45,31 +45,21 @@ pub struct NetworkEntry {
     pub category: NetCategory,
 }
 
-/// 网络环境快照（前端渲染 + `net://changed` 载荷）
+/// 网络环境快照（前端渲染 + `net://changed` 载荷）。
+/// spec 010 T5：002 的规则存在性/私有判定/告警位字段随归类告警链整体退役，
+/// 快照仅存活动网络行（plan §3.6）。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetStatus {
-    /// 443 规则是否存在
-    pub rule_present: bool,
-    /// 规则存在且 Profile 不含 Public（Any 亦视为含 Public）
-    pub rule_private_only: bool,
     pub networks: Vec<NetworkEntry>,
-    /// 告警 = rule_private_only ∧ 存在公用活动网络（AC1/AC2）
-    pub alert: bool,
-}
-
-/// 告警判定（纯函数；AC1 成立 / AC2 不成立的全部分支）
-pub fn needs_alert(st: &NetStatus) -> bool {
-    st.rule_private_only && st.networks.iter().any(|n| n.category == NetCategory::Public)
 }
 
 // ── 探测（spec 生成 + 解析）────────────────────────────────────────────────
 
 /// 探测命令参数（powershell.exe args）。
-/// 单次调用合并规则与网络查询，输出压缩 JSON（契约 plan §5）；
-/// UTF8 前缀保证中文网络名经管道不乱码。
-/// 防火墙 Profile flags 实测：Any=0、Domain=1、Private=2、Public=4
-/// （NetSecurity.Profile 枚举真机验证）；privateOnly = 存在且非 Any 且不含 Public 位。
+/// 单次调用输出活动网络归类的压缩 JSON（spec 010 T5 契约：探测收缩为纯
+/// `Get-NetConnectionProfile`，防火墙规则 Profile 查询段已随告警链退役，
+/// plan §3.6）；UTF8 前缀保证中文网络名经管道不乱码。
 pub fn detect_args() -> Vec<String> {
     vec![
         "-NoProfile".into(),
@@ -79,13 +69,9 @@ pub fn detect_args() -> Vec<String> {
         "-Command".into(),
         format!(
             "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \
-             $r = Get-NetFirewallRule -DisplayName '{FIREWALL_RULE_NAME}' -ErrorAction SilentlyContinue; \
-             $po = 0; if ($r) {{ $po = [int]$r.Profile }}; \
              $ns = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | \
              ForEach-Object {{ @{{ name = $_.Name; ifIndex = $_.InterfaceIndex; category = [int]$_.NetworkCategory }} }}); \
-             [ordered]@{{ rulePresent = ($null -ne $r); \
-             privateOnly = (($null -ne $r) -and ($po -ne 0) -and ((($po -band 4) -eq 0))); \
-             networks = $ns }} | ConvertTo-Json -Compress"
+             [ordered]@{{ networks = $ns }} | ConvertTo-Json -Compress"
         ),
     ]
 }
@@ -95,8 +81,6 @@ pub fn detect_args() -> Vec<String> {
 pub fn parse_net_status(raw: &str) -> Result<NetStatus, String> {
     let v: serde_json::Value =
         serde_json::from_str(raw.trim()).map_err(|e| format!("探测输出非 JSON：{e}"))?;
-    let rule_present = v["rulePresent"].as_bool().unwrap_or(false);
-    let rule_private_only = v["privateOnly"].as_bool().unwrap_or(false) && rule_present;
     let mut networks = Vec::new();
     if let Some(arr) = v["networks"].as_array() {
         for n in arr {
@@ -112,9 +96,7 @@ pub fn parse_net_status(raw: &str) -> Result<NetStatus, String> {
             });
         }
     }
-    let mut st = NetStatus { rule_present, rule_private_only, networks, alert: false };
-    st.alert = needs_alert(&st);
-    Ok(st)
+    Ok(NetStatus { networks })
 }
 
 // ── 调整（提权参数构造）────────────────────────────────────────────────────
@@ -289,7 +271,7 @@ impl NetProbe for PsNetProbe {
     }
 }
 
-// ── 单元测试（纯逻辑：解析 / 告警 / 参数构造 / 监测器状态机）──────────────
+// ── 单元测试（纯逻辑：退役断言 / 解析 / 契约 / 参数构造 / 监测器状态机）──
 
 #[cfg(test)]
 mod tests {
@@ -297,33 +279,64 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
 
-    const JSON_ONE_PUBLIC: &str = r#"{"rulePresent":true,"privateOnly":true,"networks":[{"name":"LiuGong-Guest-t","ifIndex":7,"category":0}]}"#;
-    const JSON_ONE_PRIVATE: &str = r#"{"rulePresent":true,"privateOnly":true,"networks":[{"name":"home","ifIndex":7,"category":1}]}"#;
+    /// 退役断言（spec 010 T5/AC4）：002 的 443 归类告警链整体退役——本源码不得
+    /// 再含告警判定函数、443 规则名常量与规则 Profile 探测段（判定对象随
+    /// Private 语义消亡，plan §3.6）。针串以 concat 拼接：断言代码同在本源码内，
+    /// 直书针串会自证命中。
+    #[test]
+    fn alert_chain_retired_from_source() {
+        let src = include_str!("network.rs");
+        let needle_judge = concat!("needs", "_alert");
+        let needle_const = concat!("FIREWALL", "_RULE_NAME");
+        let needle_cmdlet = concat!("Get-Net", "FirewallRule");
+        let needle_field = concat!("private", "Only");
+        assert!(!src.contains(needle_judge), "告警判定必须退役（plan §3.6）");
+        assert!(!src.contains(needle_const), "443 规则名常量必须退役");
+        assert!(!src.contains(needle_cmdlet), "规则 Profile 探测段必须退役");
+        assert!(!src.contains(needle_field), "旧探测契约字段必须退役");
+        assert!(
+            src.contains(concat!("Get-Net", "ConnectionProfile")),
+            "归类探测本体保留（002 US2 调整入口供数）"
+        );
+    }
+
+    /// 轮询降频契约：告警退役后 networks 仅供归类卡与 public_blocks_exception
+    /// 消费，60s 摊薄 PS 拉起成本（plan §3.6；原 15s 为 002 告警收敛服务）
+    #[test]
+    fn poll_interval_sixty_seconds_after_retirement() {
+        assert_eq!(NET_POLL_INTERVAL, Duration::from_secs(60));
+    }
+
+    const JSON_ONE_PUBLIC: &str =
+        r#"{"networks":[{"name":"LiuGong-Guest-t","ifIndex":7,"category":0}]}"#;
+    const JSON_ONE_PRIVATE: &str = r#"{"networks":[{"name":"home","ifIndex":7,"category":1}]}"#;
 
     #[test]
-    fn parse_maps_categories_and_alert() {
+    fn parse_maps_categories() {
         let st = parse_net_status(JSON_ONE_PUBLIC).unwrap();
-        assert!(st.rule_present && st.rule_private_only);
+        assert_eq!(st.networks.len(), 1);
+        assert_eq!(st.networks[0].name, "LiuGong-Guest-t");
         assert_eq!(st.networks[0].category, NetCategory::Public);
         assert_eq!(st.networks[0].if_index, 7);
-        assert!(st.alert, "规则仅专用 + 公用网络 → 告警（AC1）");
 
         let st2 = parse_net_status(JSON_ONE_PRIVATE).unwrap();
-        assert!(!st2.alert, "全专用网络 → 不告警（AC2）");
+        assert_eq!(st2.networks[0].category, NetCategory::Private);
     }
 
     #[test]
     fn parse_tolerates_missing_fields_and_unknown_category() {
-        let st = parse_net_status(r#"{"rulePresent":false,"privateOnly":false,"networks":[]}"#).unwrap();
-        assert!(!st.alert, "规则不存在 → 不告警（装机流程另行负责，非目标）");
+        let st = parse_net_status(r#"{"networks":[]}"#).unwrap();
+        assert!(st.networks.is_empty(), "空网络表 → 快照为空（不 Err）");
 
         let st2 = parse_net_status(
-            r#"{"rulePresent":true,"privateOnly":true,"networks":[{"name":"x","ifIndex":1,"category":2},{"name":"y","category":9}]}"#,
+            r#"{"networks":[{"name":"x","ifIndex":1,"category":2},{"name":"y","category":9}]}"#,
         )
         .unwrap();
         assert_eq!(st2.networks[0].category, NetCategory::Domain);
         assert_eq!(st2.networks[1].category, NetCategory::Unknown);
-        assert!(!st2.alert, "域/未知网络不触发告警（spec §4 判定口径）");
+
+        // 顶层缺 networks 字段 → 空表容错（不 Err）
+        assert!(parse_net_status("{}").unwrap().networks.is_empty());
     }
 
     #[test]
@@ -332,15 +345,34 @@ mod tests {
         assert!(parse_net_status("").is_err());
     }
 
+    /// networks-only 探测契约（替换原 002 带规则探测段的 detect_args 测试）：
+    /// 唯一查询 = 归类；压缩 JSON + UTF8 前缀保留
     #[test]
-    fn detect_args_carry_contract() {
+    fn detect_args_networks_only_contract() {
         let args = detect_args();
         let cmd = args.iter().position(|a| a == "-Command").unwrap();
         let script = &args[cmd + 1];
-        assert!(script.contains(FIREWALL_RULE_NAME), "规则名入探测脚本");
-        assert!(script.contains("Get-NetConnectionProfile"));
+        assert!(script.contains("Get-NetConnectionProfile"), "唯一查询 = 归类探测");
         assert!(script.contains("ConvertTo-Json -Compress"), "契约：压缩 JSON");
-        assert!(script.contains("OutputEncoding=[Text.Encoding]::UTF8"), "中文网络名防乱码");
+        assert!(
+            script.contains("OutputEncoding=[Text.Encoding]::UTF8"),
+            "中文网络名防乱码"
+        );
+        assert!(
+            !script.contains(concat!("Get-Net", "FirewallRule")),
+            "防火墙规则探测段已退役（plan §3.6）"
+        );
+        assert!(!script.contains("-DisplayName"), "无规则名查询参数");
+    }
+
+    /// 事件/命令载荷契约：仅 networks（002 的规则字段与告警位不得回流）
+    #[test]
+    fn net_status_payload_networks_only() {
+        let j = serde_json::to_string(&parse_net_status(JSON_ONE_PUBLIC).unwrap()).unwrap();
+        assert!(j.contains(r#""networks":["#), "{j}");
+        assert!(!j.contains(concat!("private", "Only")), "{j}");
+        assert!(!j.contains(concat!("rule", "Present")), "{j}");
+        assert!(!j.contains("\"alert\""), "{j}");
     }
 
     #[test]
@@ -401,14 +433,30 @@ mod tests {
             Ok(JSON_ONE_PRIVATE.into()),
             Err("ps 超时".into()),
         ]);
-        assert_eq!(m.refresh().unwrap().alert, true, "首查：告警态（AC1）");
+        assert_eq!(
+            m.refresh().unwrap().networks[0].category,
+            NetCategory::Public,
+            "首查：公用网络快照"
+        );
         assert_eq!(sink.emissions.lock().unwrap().len(), 1);
-        assert_eq!(m.refresh().unwrap().alert, true, "重复探测结果不变：不发声");
+        assert_eq!(
+            m.refresh().unwrap().networks[0].category,
+            NetCategory::Public,
+            "重复探测结果不变：不发声"
+        );
         assert_eq!(sink.emissions.lock().unwrap().len(), 1, "状态未变不发事件");
-        assert_eq!(m.refresh().unwrap().alert, false, "切到专用网络（AC2 收敛）");
+        assert_eq!(
+            m.refresh().unwrap().networks[0].category,
+            NetCategory::Private,
+            "归类变化（切到专用网络）"
+        );
         assert_eq!(sink.emissions.lock().unwrap().len(), 2, "变化才发声");
         let held = m.refresh().unwrap();
-        assert_eq!(held.alert, false, "探测失败保持上次状态（AC4）");
+        assert_eq!(
+            held.networks[0].category,
+            NetCategory::Private,
+            "探测失败保持上次状态（AC4）"
+        );
         assert_eq!(sink.emissions.lock().unwrap().len(), 2, "失败不发声");
         assert_eq!(held.networks[0].name, "home", "失败后缓存仍为上次完整状态");
     }

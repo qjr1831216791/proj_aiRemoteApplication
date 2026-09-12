@@ -57,22 +57,21 @@ export const en = {
   "tools.uacHint": "Actions marked (admin) show a UAC prompt",
   "tools.dispatched": "Dispatched: follow the prompts in the opened window",
 
-  // Network environment (spec 002: blocked-access feedback + user-decided profile switch)
+  // Network environment (spec 002 US2 profile switch; the 443 profile alert retired with its Private semantics since spec 010 T5)
   "net.title": "Network",
-  "net.alert": "Network \"{names}\" is categorized as Public by Windows: the firewall rules only allow TCP 3001 (LAN) and 443 (domain/mesh) on Private networks, so other devices may be unable to connect. You can set it to Private below (only do this on a network you trust).",
   "net.setPrivate": "Set Private",
   "net.setPublic": "Set Public",
   "net.confirmPrivate": "Confirm: set Private",
   "net.confirmPublic": "Confirm: set Public",
   "net.cancel": "Cancel",
   "net.riskPrivate": "On a Private network this PC becomes discoverable in the current LAN (wider discovery/sharing surface). Only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
-  "net.riskPublic": "Switching back to Public reduces LAN exposure; if the 3001/443 rules are Private-only, other devices will be unable to connect via LAN or domain.",
+  "net.riskPublic": "Switching back to Public reduces LAN exposure; the 3001 exception (if enabled) only applies on Private networks, so other devices will be unable to reach this PC over the LAN (domain/mesh access is unaffected).",
   "net.catPublic": "Public",
   "net.catPrivate": "Private",
   "net.catDomain": "Domain",
   "net.catUnknown": "Unknown",
   "net.noNetworks": "No active network detected",
-  "net.dispatched": "Requested: status refreshes automatically within ~15s after UAC approval",
+  "net.dispatched": "Requested: status refreshes automatically within ~1 minute after UAC approval",
 
   // Settings
   "settings.behavior": "Behavior",

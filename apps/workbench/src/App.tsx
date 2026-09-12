@@ -97,7 +97,7 @@ export function App() {
 
       // 状态事件：此后状态以事件为准（前端零轮询）
       track(await onStatusChanged(setStatuses));
-      // 网络环境事件（spec 002）：变化才发（Rust 侧 15s 轮询去重）
+      // 网络环境事件（spec 002）：变化才发（Rust 侧 60s 轮询去重，spec 010 降频供数）
       track(await onNetChanged(setNetStatus));
       // 组网状态事件（spec 007）：观察者 5s 探询，变化才发
       track(await onMeshStatus(setMeshStatus));

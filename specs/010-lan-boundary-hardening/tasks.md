@@ -40,10 +40,10 @@
   - `commands.rs`：`lan_guard_status` / `lan_guard_set_exception` / `lan_guard_migrate` / `lan_guard_ensure_whitelist`（plan §5.2 契约：开关先派发后持久化、UAC 拒绝 code 5 → Err 且不写设置）；`lib.rs` 注册 + LanGuardMonitor 装配与 spawn。
   - `mesh_apply_config` / `mesh_install_service`：prepare 通过后派发参数追加 ensure-whitelist 段（`-WaitTun 20`）；失败不阻断服务段（plan §3.5）。白名单段构造函数 `ensure_whitelist_segment` 单点在 lan_guard.rs（T2 契约原样下沉为 script_invocation，行为逐字节不变），mesh.rs 只拼装；失效薄别名 service_install_params 移除（-BinPath 教训留档测试）。
   - 完成标志：单测全绿；git 提交。types.ts/api.ts 预落 LanHealth 序列化结构与四命令封装（UI 留 T6）；network.rs 补 NetMonitor.last() 只读访问器（活动网络注入 LanInputs，plan §3.5）。
-- [ ] **T5 002 告警退役与网络卡收敛**（依赖: T3）（验收: AC4）
-  - 测试先行：退役断言（network.rs 无 needs_alert/无规则 Profile 探测段）；networks-only 探测契约解析单测（替换原 detect_args 测试）。
-  - `network.rs`：删 `FIREWALL_RULE_NAME`/`needs_alert`/NetStatus 的 rule_present/rule_private_only/alert；detect_args 收缩为纯 `Get-NetConnectionProfile`；轮询 15s → 60s（networks 供归类卡与 public_blocks_exception 消费）。
-  - `MainView.tsx`：网络环境卡移除告警条（逐网络行 + 设为专用/公用保留）；`i18n/zh.ts`+`en.ts` 删 `net.alert` 等退役键。
+- [x] **T5 002 告警退役与网络卡收敛**（依赖: T3）（验收: AC4）——2026-09-12 完成：红绿同批（4 项退役契约测试对旧实现红 → 实现后全绿）；全仓 cargo test 227 通过（净 +3）+ tsc/vite build 绿；grep 证据：needs_alert 代码零命中、旧规则名仅存 lan_guard.rs 检测常量（契约保留）、net.alert 键零命中
+  - 测试先行：`alert_chain_retired_from_source`（include_str 嵌入自身源码断言无告警判定/规则名常量/规则探测段，针串 concat 拼接防自证命中）+ `poll_interval_sixty_seconds_after_retirement` + networks-only 探测契约 `detect_args_networks_only_contract` 与载荷契约 `net_status_payload_networks_only`（替换原带规则段的 detect_args/告警解析测试）。
+  - `network.rs`：删 `FIREWALL_RULE_NAME`/needs_alert 函数/NetStatus 的 rule_present/rule_private_only/alert 三字段；detect_args 收缩为纯 `Get-NetConnectionProfile`；轮询 15s → 60s（networks 供归类卡与 public_blocks_exception 消费）；逐网络行数据、set_category_params 提权路径（002 US2）、T4 的 last() 访问器全部保留。
+  - 前端：`MainView.tsx` 移除告警条（逐网络行 + 设为专用/公用保留）；`types.ts` NetStatus 同步收缩；`i18n/zh.ts`+`en.ts` 删 `net.alert`（唯一消费方即告警条）；`net.riskPublic` 因仍被「设为公用」确认框消费而保留、文案改写脱离已退役规则语义（指向 3001 例外）；`net.dispatched` 15s → 1 分钟如实措辞。
   - 完成标志：全仓 grep 无 needs_alert/`CloudCLI LAN HTTPS 443` 于 network.rs 残留；git 提交。
 
 ## 阶段 2: 前端呈现与迁移

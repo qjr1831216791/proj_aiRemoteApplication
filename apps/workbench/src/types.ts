@@ -211,12 +211,11 @@ interface NetworkEntry {
   category: NetCategory;
 }
 
-/** 网络环境快照（get_net_status / net://changed 载荷；null = 尚无成功探测） */
+/** 网络环境快照（get_net_status / net://changed 载荷；null = 尚无成功探测）。
+ * spec 010 T5：002 的 rulePresent/rulePrivateOnly/alert 三字段随 443 归类告警
+ * 链退役（plan §3.6），快照仅存活动网络行（供归类卡与 public_blocks_exception 消费） */
 export interface NetStatus {
-  rulePresent: boolean;
-  rulePrivateOnly: boolean;
   networks: NetworkEntry[];
-  alert: boolean;
 }
 
 // ── 局域网边界守卫（spec 010）───────────────────────────────────────────────
