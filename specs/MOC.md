@@ -8,7 +8,7 @@
 - （暂无）
 
 ### 🔵 已确认（reviewed）
-- （暂无）
+- [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md) — 局域网边界收口：443 防火墙改「源网段 + TUN 接口」双条件白名单、3001 直访默认退役 + 12h 自动回落例外开关（2026-09-12 安全审查立项，同日需求方确认 reviewed）
 
 ### 🟠 实现中（in-progress）
 - （暂无）
@@ -40,11 +40,12 @@
 | Sprint 5 | [007-mesh-access](./007-mesh-access/spec.md) | 私有组网访问通道（EasyTier 替代 frp + 停用直连/穿透旧通道；2026-09-11 需求方签收 done） |
 | Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；2026-09-11 需求方签收 done，随 v0.4.0 发布） |
 | Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 成员入网配置展示 + 发版校验脚本 + 真机旧通道清理（2026-09-11 验收 done） |
+| Sprint 8 | [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md) | v0.6.0 候选：局域网边界收口（443/3001 源网段白名单 + 直访默认退役 + 例外开关） |
 
 ## 按主题导航
 
 - 桌面工作台：[001-desktop-console](./001-desktop-console/spec.md)
-- 网络环境：[002-network-profile](./002-network-profile/spec.md) · [007-mesh-access](./007-mesh-access/spec.md) · [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md)
+- 网络环境：[002-network-profile](./002-network-profile/spec.md) · [007-mesh-access](./007-mesh-access/spec.md) · [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) · [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md)
 - 装机体验：[006-foolproof-install](./006-foolproof-install/spec.md)
 
 <!-- 功能域增多后按主题分区，例如：-->
