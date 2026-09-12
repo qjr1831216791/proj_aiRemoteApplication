@@ -70,8 +70,10 @@
   - `specs/MOC.md`：010 状态流转与描述更新。
   - 根 README「远程访问方案」段与 `tools/sprint0` README 脚本清单（补 lan-guard.ps1、删述已移除步骤）。
   - 完成标志：adr/README 索引含 0005；上述文档全部落盘；git 提交。
-- [ ] **T9 自动化全绿 + 真机验收**（依赖: T1~T8）（验收: AC1~AC10 逐条）
+- [~] **T9 自动化全绿 + 真机验收**（依赖: T1~T8）（验收: AC1~AC10 逐条）——2026-09-12 自动化三项完成：①全绿 cargo test **230 passed / 0 failed / 3 ignored** + `tsc && vite build` 绿；②build.ps1 完整跑通（exit 0，release/ 双产物 2026-09-12 17:28 本次时间戳，setup.exe 12.37 MB / zip 15.42 MB）——lan-guard.ps1 进产物核验：便携 zip 内实有 `resources/bin/lan-guard.ps1`（15,423 字节）且包内 manifest.json 钉其 SHA256=8d86ec03… 与双目录源逐字一致，NSIS 侧按 tauri.conf.json `resources: ["resources/bin/*"]` + build.ps1 $ScriptSubset 同源核验；同步段 12 脚本全 `[一致]`、manifest 无变化，无 manifest 校验失败告警（唯一 warning 为 rustc 建库 linker 提示，良性）；③防火墙实况（只读）：两条旧规则 `CloudCLI LAN HTTPS 443`/`CloudCLI LAN 3001` 仍 Profile=Private Enabled=True（T7 migrate 提权窗未被批准，旧态属预期），`CloudCLI Mesh HTTPS 443` 在（Profile=Any）、`CloudCLI LAN 3001 Exception` 不存在（例外关闭），`lan-guard-migrate-run1.log`/`.code` 均未生成。
   - 自动化：`cargo test` + `npm run build` 全绿；`scripts/build.ps1` 打包一轮确认 lan-guard.ps1 进产物（R9 防漂移复核）。
+  - 手工：执行 plan §6.1 十项清单（**待需求方在场执行**；清单 1 伪造源 IP 场景必须实测；清单 7 用 exceptionSince 回填法观察 12h 回落；清单 9 迁移前后规则清单比对留档——migrate 实跑可随清单 9 一并落地）。
+  - 对照 [spec.md](./spec.md) 逐条验证 AC1~AC10 并勾选；验收记录回填 spec（或 acceptance-manual，沿 007/009 惯例）。**AC 勾选与 spec 状态流转均待验收，本批不动。**
   - 手工：执行 plan §6.1 十项清单（需求方在场；清单 1 伪造源 IP 场景必须实测；清单 7 用 exceptionSince 回填法观察 12h 回落；清单 9 迁移前后规则清单比对留档）。
   - 对照 [spec.md](./spec.md) 逐条验证 AC1~AC10 并勾选；验收记录回填 spec（或 acceptance-manual，沿 007/009 惯例）。
   - 完成标志：AC 全勾 + 清单留档 + git 提交。
