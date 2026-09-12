@@ -48,13 +48,12 @@
 
 ## 阶段 2: 前端呈现与迁移
 
-- [ ] **T6 前端白名单健康区与文案**（依赖: T4/T5）（验收: AC4/AC5/AC6/AC7/AC8）
-  - 测试先行（前端侧纯函数）：地址区局域网行三态措辞映射（health → i18n 键）单测（vitest 惯例若无则组件内纯函数 + tsc/build 全绿兜底）。
-  - `types.ts`/`api.ts`：`LanHealth` 与四命令封装。
-  - `MeshCard.tsx`：「访问白名单」行——健康 chip（正常/休眠/待修复分类）、例外开关（风险确认模态：零认证直访风险 + 仅限信任网络 + 12h 回落预告 + 回落将再弹 UAC；剩余时长展示）、失配「修复白名单」按钮、动作失败 toast（AC7）、60s 轮询 + 动作后即时刷新。
-  - `MainView.tsx` 地址区局域网行三态措辞（off 可直访已收口 / on 临时放行剩余 Xh / expired 回落未完成）（AC5/AC8）。
-  - `WizardView.tsx`：收尾页白名单/旧规则检查项（消费 lan_guard_status，含「一键收口」复用）；基础阶段「局域网可达」改「本机服务就绪（局域网直访默认已收口）」如实措辞。
-  - i18n `languard.*` 键族 zh/en 对称新增（缺键即构建挂）。
+- [x] **T6 前端白名单健康区与文案**（依赖: T4/T5）（验收: AC4/AC5/AC6/AC7/AC8）——2026-09-12 完成：`tsc && vite build` 全绿（zh/en 键集对称经 tsc `Record<DictKey,string>` 断言 + 键名 diff 双重核对，languard.* 25 键对称）；cargo test 227 保持绿；`types.ts`/`api.ts` 的 LanHealth 与四命令封装为 T4 预落，本批零改动直接消费
+  - 测试先行（前端侧纯函数）：地址区局域网行三态措辞映射落 `MainView.tsx` 导出纯函数 `lanAddrState(exception)`（on→addrOn+tone:open+剩余整小时 / expired→addrExpired / **off·pending·null→addrOff**——pending 为「已请求但规则未生效」，直访实际不通，按收口如实呈现、MeshCard 另行引导重开）；**项目无 vitest 前端测试基建（package.json 无测试 runner），按本条目预案以组件内纯函数 + `tsc && vite build` 全绿兜底**。
+  - `MeshCard.tsx`：「访问白名单」行——健康 chip 三分类（ok=正常 / dormant=休眠+如实提示 / missing·staleCidr·staleIface=待修复+「修复白名单」→ lanGuardEnsureWhitelist 单 UAC）；`legacy_present` 横幅「检测到旧版局域网放行规则」+「一键收口」→ lanGuardMigrate（UI 本批落，端到端演练 T7）；例外开关：风险确认模态（零认证直访=潜在宿主机 shell / 仅限信任网络应急 / 12h 自动回落 / 回落将再弹 UAC，30s 未确认自动收起沿归类确认先例）→ lanGuardSetException(true)，开启中 chip 显示剩余时长，off 动作同开关（expired 态即手动回落），失败 toast（AC7）；`public_blocks_exception` 提示行；数据流 = languard://changed 事件（后端 60s 监视）+ 动作后即时复测（3.5s/12s 追加，沿归类切换 3.5s 先例）。
+  - `MainView.tsx`：持有 lanHealth（启动 lanGuardStatus 兜底 + 事件订阅）下沉 MeshCard；地址区「局域网」行消费 `lanAddrState` 三态措辞（get_urls 语义不动）。
+  - `WizardView.tsx`：收尾页新增「访问白名单」检查项（hb-dot + 详情：旧规则→「一键收口」、失配→「修复白名单」，与主看板同命令）；基础阶段 desc 改「本机服务就绪——局域网直访默认已收口」；收尾清单「局域网访问」标签随语义改「本机服务」。
+  - i18n：`languard.*` 25 键 zh/en 对称新增；`net.riskPublic`/`net.dispatched`（T5 改写）与 `tunnel.check.netCategory`（443 放行 → 例外直访）措辞同步脱离已退役规则语义。
   - 完成标志：`npm run build` 全绿 + zh/en 键集对称断言；git 提交。
 - [ ] **T7 存量迁移编排**（依赖: T4/T6）（验收: AC10）
   - 测试先行：旧规则检测解析（legacy443/legacy3001 → 横幅态）；migrate 幂等序列断言（删两旧名 → ensure-whitelist，重复派发无害）。

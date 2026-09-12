@@ -8,12 +8,15 @@
  *   直连/穿透分支与向导 branch 字段已随通道退役删除——旧状态文件同名键
  *   被 Rust serde 忽略（spec 008）
  * - detail 稳定码 → i18n 呈现；失败只伤单阶段 + 重试（AC12）
+ * - 收尾页「访问白名单/旧规则」检查项（spec 010 T6）：消费 lan_guard_status，
+ *   旧规则残留给「一键收口」、白名单失配给「修复白名单」（与主看板同命令）
  */
 
 import { useEffect, useState } from "preact/hooks";
 import { api, onWizardChanged } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
 import type {
+  LanHealth,
   Settings,
   StageState,
   StageStatus,
@@ -90,6 +93,32 @@ export function WizardView(props: WizardViewProps) {
   useEffect(() => {
     if (focusStage) setOpen(focusStage);
   }, [focusStage]);
+
+  // 访问白名单/旧规则检查（spec 010 T6 收尾页）：进入向导即探测一次；
+  // 动作后即时/延迟复测（UAC 窗内规则数秒后落位，60s 监视器兜尾）
+  const [lanHealth, setLanHealth] = useState<LanHealth | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    api
+      .lanGuardStatus()
+      .then((h) => {
+        if (!disposed) setLanHealth(h);
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+    };
+  }, []);
+  const refreshLan = () => {
+    api.lanGuardStatus().then(setLanHealth).catch(() => {});
+  };
+  /** 白名单动作：沿 dispatch 提示成败 + 复测（3.5s/12s 追加，监视器兜尾） */
+  const runLanGuard = async (key: string, action: () => Promise<unknown>) => {
+    await dispatch(key, action, false);
+    refreshLan();
+    setTimeout(refreshLan, 3500);
+    setTimeout(refreshLan, 12000);
+  };
 
   if (!state) {
     return (
@@ -325,7 +354,22 @@ export function WizardView(props: WizardViewProps) {
             <CheckButton />
           </>
         );
-      case "finalize":
+      case "finalize": {
+        // 访问白名单检查项（spec 010）：旧规则残留 → 一键收口；白名单失配 → 修复；
+        // ok/dormant 视为达成（dormant = 组网未运行的休眠态，非异常）
+        const wl = lanHealth?.whitelist ?? null;
+        const legacy = lanHealth?.legacyPresent ?? false;
+        const wlBroken = wl === "missing" || wl === "staleCidr" || wl === "staleIface";
+        const lanDotOk = !legacy && !wlBroken;
+        const lanDetail = legacy
+          ? t("languard.legacyBanner", lang)
+          : wl === null
+            ? t("common.loading", lang)
+            : wl === "ok"
+              ? t("languard.wl.okHint", lang)
+              : wl === "dormant"
+                ? t("languard.wl.dormantHint", lang)
+                : t("languard.wl.fixHint", lang);
         return (
           <>
             <p class="wizard__desc">{t("wizard.finalize.desc", lang)}</p>
@@ -340,6 +384,32 @@ export function WizardView(props: WizardViewProps) {
                   {t("wizard.summary.domain", lang)} <code>{state.domain}</code>
                 </span>
               </li>
+              <li>
+                <span class={`hb-dot ${lanDotOk ? "hb-dot--ok" : "hb-dot--fail"}`} />
+                <span>
+                  {t("languard.title", lang)}
+                  <span class="muted">：{lanDetail}</span>
+                </span>
+                {legacy ? (
+                  <button
+                    class="btn btn--sm"
+                    disabled={busy !== null}
+                    onClick={() => void runLanGuard("migrate", () => api.lanGuardMigrate())}
+                  >
+                    {t("languard.migrateBtn", lang)}
+                  </button>
+                ) : wlBroken ? (
+                  <button
+                    class="btn btn--sm"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      void runLanGuard("wlFix", () => api.lanGuardEnsureWhitelist())
+                    }
+                  >
+                    {t("languard.fixBtn", lang)}
+                  </button>
+                ) : null}
+              </li>
             </ul>
             <p class="muted">{t("wizard.finalize.meshHint", lang)}</p>
             <button
@@ -353,6 +423,7 @@ export function WizardView(props: WizardViewProps) {
             </button>
           </>
         );
+      }
     }
   };
 

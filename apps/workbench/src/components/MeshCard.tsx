@@ -9,14 +9,24 @@
  *   符 + 指引文案），移动端 App 逐项输入避免漏项错配
  * - DNS 指引：常态轮询权威检测，对齐即消失；判 A=虚拟 IP，
  *   CNAME 残留按旁路暴露面提示（spec 007 体检口径延续）
+ * - 访问白名单（spec 010 T6）：健康 chip（正常/休眠/待修复）+ 失配「修复白名单」
+ *   + 旧规则迁移横幅「一键收口」+ 3001 例外开关（风险确认模态 + 12h 回落如实呈现）
  * - 通道体检：DNS / 网络归类（组网不适用）/ 组网客户端 / 本机组件 / 域名全链路
- * 通道与配置数据源：settings（App 持有）。
+ * 通道与配置数据源：settings（App 持有）；白名单健康：languard://changed 事件
+ * （60s 监视 + 动作后即时复测经 MainView 下沉的回调）。
  */
 
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
-import type { DnsAlignment, MeshStateKind, MeshStatus, Settings } from "../types";
+import type {
+  DnsAlignment,
+  LanHealth,
+  MeshStateKind,
+  MeshStatus,
+  Settings,
+  WhitelistState,
+} from "../types";
 import { CopyButton } from "./CopyButton";
 
 /** 体检单项结论 */
@@ -31,6 +41,10 @@ export interface MeshCardProps {
   lang: Lang;
   settings: Settings | null;
   meshStatus: MeshStatus | null;
+  /** 白名单健康快照（spec 010；null = 尚无成功探测；MainView 持有） */
+  lanHealth: LanHealth | null;
+  /** 白名单动作后的即时复测（延迟追加由本组件排程） */
+  onLanRefresh: () => void;
   onToast: (text: string, kind?: "info" | "success" | "error") => void;
 }
 
@@ -38,7 +52,7 @@ export interface MeshCardProps {
 const DNS_CHECK_INTERVAL = 30_000;
 
 export function MeshCard(props: MeshCardProps) {
-  const { lang, settings, meshStatus, onToast } = props;
+  const { lang, settings, meshStatus, lanHealth, onLanRefresh, onToast } = props;
   const meshCfg = settings?.mesh ?? null;
 
   // DNS 对齐检测：常态轮询（A=虚拟 IP 生效需常态盯；对齐即隐藏指引）
@@ -110,6 +124,70 @@ export function MeshCard(props: MeshCardProps) {
       setBusy(null);
     }
   };
+
+  // ── 访问白名单（spec 010 T6）───────────────────────────────────────────
+
+  /** 例外开启的风险确认（30s 未确认自动收起，沿网络归类切换确认先例） */
+  const [confirmExc, setConfirmExc] = useState(false);
+  useEffect(() => {
+    if (!confirmExc) return;
+    const id = setTimeout(() => setConfirmExc(false), 30000);
+    return () => clearTimeout(id);
+  }, [confirmExc]);
+
+  /** 白名单动作统一收口：成功 toast + 即时/延迟复测（UAC 窗内规则数秒后才落位，
+   * 沿归类切换 3.5s 追加复测先例，12s 二次兜底；60s 监视器轮询兜尾）；
+   * 失败 toast（AC7：UAC 拒绝 → Err，状态原样不崩溃） */
+  const runLan = async (key: string, action: () => Promise<unknown>) => {
+    setBusy(key);
+    try {
+      await action();
+      onToast(t("tools.dispatched", lang), "success");
+      onLanRefresh();
+      setTimeout(onLanRefresh, 3500);
+      setTimeout(onLanRefresh, 12000);
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** 例外四态 → chip（on 橙警 + 剩余时长 / expired·pending 红 / off 灰） */
+  const exc = lanHealth?.exception ?? null;
+  const excChip = !exc ? (
+    <span class="muted">—</span>
+  ) : exc.state === "on" ? (
+    <span class="chip chip--net-public">
+      {t("languard.exceptionRemaining", lang).replace(
+        "{h}",
+        String(Math.ceil(exc.remainingSecs / 3600)),
+      )}
+    </span>
+  ) : exc.state === "expired" ? (
+    <span class="chip chip--failed">{t("languard.exceptionExpired", lang)}</span>
+  ) : exc.state === "pending" ? (
+    <span class="chip chip--failed">{t("languard.exceptionPending", lang)}</span>
+  ) : (
+    <span class="chip chip--stopped">{t("languard.excOffChip", lang)}</span>
+  );
+
+  /** 例外动作：on/expired → 关闭（off 动作同开关，expired 即手动回落）；
+   * off/pending → 开启（pending 重开即重新派发）；无探测数据不出现按钮 */
+  const excBtn =
+    !exc ? null : exc.state === "on" || exc.state === "expired" ? (
+      <button
+        class="btn btn--sm"
+        disabled={busy !== null}
+        onClick={() => void runLan("excOff", () => api.lanGuardSetException(false))}
+      >
+        {t("languard.exceptionOffBtn", lang)}
+      </button>
+    ) : (
+      <button class="btn btn--sm" disabled={busy !== null} onClick={() => setConfirmExc(true)}>
+        {t("languard.exceptionOnBtn", lang)}
+      </button>
+    );
 
   /** 通道体检（组网单通道口径；组网访客经虚拟网络到达，物理网络归类不影响） */
   const runCheckup = async () => {
@@ -261,6 +339,81 @@ export function MeshCard(props: MeshCardProps) {
           {t("mesh.installBtn", lang)}
         </button>
       </div>
+
+      {/* 访问白名单（spec 010 T6）：健康 chip + 失配修复；数据源 languard://changed
+          （后端 60s 监视）+ 动作后即时复测 */}
+      <div class="net__row">
+        <span class="net__name">{t("languard.title", lang)}</span>
+        {lanHealth ? (
+          <>
+            <span class={`chip ${wlChipClass(lanHealth.whitelist)}`}>
+              {t(wlChipKey(lanHealth.whitelist), lang)}
+            </span>
+            <span class="settings__desc">{t(wlHintKey(lanHealth.whitelist), lang)}</span>
+          </>
+        ) : (
+          <span class="muted">—</span>
+        )}
+        <span class="net__spacer" />
+        {lanHealth && wlNeedsFix(lanHealth.whitelist) ? (
+          <button
+            class="btn btn--sm"
+            disabled={busy !== null}
+            onClick={() => void runLan("wlFix", () => api.lanGuardEnsureWhitelist())}
+          >
+            {t("languard.fixBtn", lang)}
+          </button>
+        ) : null}
+      </div>
+
+      {/* 旧规则迁移横幅（AC10）：一键收口 = 幂等删两旧规则 + 就位白名单（端到端演练 T7） */}
+      {lanHealth?.legacyPresent ? (
+        <div class="net__confirm">
+          <p class="net__risk">{t("languard.legacyBanner", lang)}</p>
+          <button
+            class="btn btn--sm btn--primary"
+            disabled={busy !== null}
+            onClick={() => void runLan("migrate", () => api.lanGuardMigrate())}
+          >
+            {t("languard.migrateBtn", lang)}
+          </button>
+        </div>
+      ) : null}
+
+      {/* 例外开关（AC6/AC7/AC8）：开启走风险确认模态；开启中显示剩余时长 */}
+      <div class="net__row">
+        <span class="net__name">{t("languard.exceptionLabel", lang)}</span>
+        {excChip}
+        <span class="net__spacer" />
+        {excBtn}
+      </div>
+      {lanHealth?.publicBlocksException ? (
+        <p class="notice notice--warn">{t("languard.publicBlocks", lang)}</p>
+      ) : null}
+      {confirmExc ? (
+        <div class="net__confirm">
+          <p class="net__risk">
+            {t("languard.riskTitle", lang)}
+            <br />
+            {t("languard.riskBody", lang)}
+            <br />
+            {t("languard.riskTtl", lang)}
+          </p>
+          <button
+            class="btn btn--sm btn--primary"
+            disabled={busy !== null}
+            onClick={() => {
+              setConfirmExc(false);
+              void runLan("excOn", () => api.lanGuardSetException(true));
+            }}
+          >
+            {t("languard.riskConfirm", lang)}
+          </button>
+          <button class="btn btn--sm" onClick={() => setConfirmExc(false)}>
+            {t("net.cancel", lang)}
+          </button>
+        </div>
+      ) : null}
 
       {/* 成员列表（peer list 首项恒为本机，isLocal 标注） */}
       {meshStatus && meshStatus.peers.length > 0 ? (
@@ -422,6 +575,47 @@ function meshChipClass(state: MeshStateKind): string {
     default:
       return "chip--stopped";
   }
+}
+
+/** 白名单五态 → chip 配色（纯函数：ok 绿 / dormant 灰（休眠非异常）/ 失配红） */
+function wlChipClass(state: WhitelistState): string {
+  switch (state) {
+    case "ok":
+      return "chip--running";
+    case "dormant":
+      return "chip--stopped";
+    default:
+      return "chip--failed";
+  }
+}
+
+/** 白名单五态 → chip 三分类键（正常 / 休眠 / 待修复） */
+function wlChipKey(state: WhitelistState): DictKey {
+  switch (state) {
+    case "ok":
+      return "languard.wl.ok";
+    case "dormant":
+      return "languard.wl.dormant";
+    default:
+      return "languard.wl.fix";
+  }
+}
+
+/** 白名单五态 → 提示行键（chip 同行的如实说明） */
+function wlHintKey(state: WhitelistState): DictKey {
+  switch (state) {
+    case "ok":
+      return "languard.wl.okHint";
+    case "dormant":
+      return "languard.wl.dormantHint";
+    default:
+      return "languard.wl.fixHint";
+  }
+}
+
+/** 待修复判定（missing / staleCidr / staleIface → 「修复白名单」按钮消费） */
+function wlNeedsFix(state: WhitelistState): boolean {
+  return state === "missing" || state === "staleCidr" || state === "staleIface";
 }
 
 /** 组网 detail 为稳定码（mesh.rs DETAIL_*，构造上不含密钥）→ 词典文案；
