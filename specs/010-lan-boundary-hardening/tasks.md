@@ -30,9 +30,9 @@
   - `install-client.ps1` 排障提示与 `menu.ps1` 局域网行文案改如实措辞（局域网直访默认已收口）。
   - 打包登记（006/008 漂移教训）：`lan-guard.ps1` 登记 `scripts/build.ps1` $ScriptSubset；手工同步至 `resources/bin/` 并以 build.ps1 §2 同款逻辑重算 manifest.json 哈希；`Get-FileHash` 比对双目录一致。
   - 完成标志：五动作本地命令行实测各一轮（status JSON 可解析、exception-on/off 幂等往返、migrate 干跑——真机为本机，跑完把例外关闭恢复原状）；双目录哈希一致；全仓 grep 确认旧规则创建逻辑仅剩 lan-guard 删除清单引用；git 提交。
-- [ ] **T3 lan_guard.rs 模块（测试先行）**（依赖: T1；可与 T2 并行）（验收: AC1/AC5/AC8/AC9 判定面）
+- [x] **T3 lan_guard.rs 模块（测试先行）**（依赖: T1；可与 T2 并行）（验收: AC1/AC5/AC8/AC9 判定面）——2026-09-12 完成：15 项新单测全绿（T2 的 8 项一并保持），全仓 cargo test 219 通过；CIDR 契约依赖（脚本 Convert-ToCidrForm 归一 /24 输出）以单测钉死（掩码形态必判 stale_cidr）；tick 探测失败轮不做回落决策（缓存回退 ≠ 实况，盲动防线，单测锁定）
   - 纯函数层：status 参数与 JSON 解析（容错缺字段，沿 parse_net_status 先例）；`judge_health` 全分支（ok/missing/stale_cidr/stale_iface/dormant × exception off/on/expired/pending × legacy_present × public_blocks_exception——覆盖 plan §3.4 状态表每行）；`exception_expired`/`exception_remaining_secs` 边界（==12h 即到期）；回落决策矩阵（enabled ∧ expired ∧ 规则在 → UAC 派发；规则不在 → 免 UAC 清标记）；派发参数构造（ps_quote 单引号翻倍、`-WindowStyle Hidden`）。
-  - `LanGuardMonitor`（NetMonitor 同构：probe/sink/缓存/变化才发声 `languard://changed`、60s tick；单测以脚本化 probe 输出驱动状态机）；启动补回落自检逻辑（spawn 前置）。
+  - `LanGuardMonitor`（NetMonitor 同构：probe/sink/缓存/变化才发声 `languard://changed`、60s tick；单测以脚本化 probe 输出驱动状态机）；启动补回落自检逻辑（spawn 首轮 tick 承载，计划注释注明）。
   - 完成标志：上述单测全绿（T2 红测一并转绿）；git 提交。
 - [ ] **T4 settings 扩展与命令层联动**（依赖: T3）（验收: AC6/AC7/AC8/AC9）
   - 测试先行：`LanGuardSettings` serde default（旧文件缺字段 → false/0）与 roundtrip；patch 整块写入；apply 组合派发构造断言（prepare 校验失败 → 参数串不含 ensure-whitelist 段；通过 → 服务动作 + ensure-whitelist 同窗顺序、单次 UAC）。
