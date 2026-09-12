@@ -248,7 +248,7 @@ export const zh = {
   "wizard.state.done": "完成",
   "wizard.state.failed": "失败",
   "wizard.state.skipped": "已跳过",
-  "wizard.stage.basis": "基础（局域网）",
+  "wizard.stage.basis": "基础（本机）",
   "wizard.stage.tencent": "腾讯云前置",
   "wizard.stage.https": "HTTPS 栈",
   "wizard.stage.channel": "访问通道",

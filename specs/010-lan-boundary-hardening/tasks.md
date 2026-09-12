@@ -63,7 +63,7 @@
 
 ## 阶段 3: 收尾与验收
 
-- [ ] **T8 文档与 ADR**（依赖: T2~T7 定稿）（验收: 宪法 §4 文档纪律）
+- [x] **T8 文档与 ADR**（依赖: T2~T7 定稿）（验收: 宪法 §4 文档纪律）——2026-09-12 完成：ADR-0005 落盘并登记索引；CHANGELOG Unreleased 三区（Added 3 条/Changed +2/Removed 2 条）；002 变更记录退役注记（US1 随对象消亡、US2 保留，状态 done 不动、AC 不改）；MOC 010 条目同步 T1~T8 实施进度；根 README「远程访问方案」如实化（组网主方案 + 局域网直访默认收口）；清扫三项（research 文档 §3.2 旧规则手工示例加「已退役(spec 010)」注记、install-https.ps1 头注释步骤 4 更正为白名单契约（双目录同步 + manifest 哈希重算 731bbf4b…，bundled 校验测试保持绿）、`wizard.stage.basis` 更名「基础（本机）/Basics (Local)」（zh/en 同步，tsc 键集断言保持绿））
   - 新建 `docs/adr/0005-firewall-whitelist-contract.md`（背景/决策/理由/后果：白名单契约取代 Profile 契约 + 002 告警随对象退役 + 3001 默认拒绝 + 例外 12h；模板沿 docs/adr/README.md）并登记索引。
   - `CHANGELOG.md` Unreleased：Added（白名单/例外开关/健康自检/迁移）、Changed（装机脚本契约、002 归类告警退役、地址区文案）、Removed（旧规则创建逻辑、443 归类告警条）。
   - `specs/002-network-profile/spec.md` 变更记录追加一行：US1 告警随 443 Private 语义退役（对象消亡，008 先例），US2 调整入口保留——状态不动。

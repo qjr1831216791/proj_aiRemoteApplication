@@ -13,7 +13,7 @@
        接受构建站下载的裸 .exe 或自行压缩的 zip）
     3. 生成插件式 Caddyfile（已存在则保持不动）：域名:443 TLS 终结 -> 127.0.0.1:3001，
        证书经 DNS-01 自动签发/续期（凭证以 {env.*} 引用不落明文，ADR-0003）
-    4. 调用同目录 enable-https.ps1：防火墙放行 443 + 网络改专用 + hosts 钉定
+    4. 调用同目录 enable-https.ps1：443 白名单规则（经 lan-guard.ps1，spec 010——源 ∈ 组网网段 + TUN 接口，不再做网络归类改专用）+ hosts 钉定
 
   剩一步配置活（涉及密钥，走独立脚本 / 装机向导，命令见结尾打印）：
     a. set-tencent-key.ps1：腾讯云 SecretId/Key 写入栈目录 .env

@@ -6,7 +6,7 @@
                   "run-caddy-hidden.ps1":  "918b85714a1c215502da7f57ead2c942743482422cad4d7827109ead988b74d8",
                   "setup-autostart.ps1":  "a9e16c9b480b8d9185968c2695e5f8deb1edc1b08cc6293231ca018c30cdc319",
                   "install-server.ps1":  "cdbf8c031ac1a4134a22bee043b4c65a7a954d088ad3a173eb3ca9e4fcf7330d",
-                  "install-https.ps1":  "788fb6f7782d31c580b3bdb22ebe858cc8082fd311439881a718d11e2ea0285b",
+                  "install-https.ps1":  "731bbf4ba94393112dd21109e3439e395476027bb3850f9d1778101ebb130552",
                   "enable-https.ps1":  "2ebe50cbbbfca29159757486a8d0d0a0c848ac26b5b3874b6f47f579f3cfe077",
                   "install-client.ps1":  "a9f89c31da37f43d844b72853041a45c2cffb9121a746b0de2a220ce869fbfa6",
                   "set-tencent-key.ps1":  "9968e22c2079b4e129f0eb48cadc5446e72bc072ae963cbb996b55f28b0a3fc9",

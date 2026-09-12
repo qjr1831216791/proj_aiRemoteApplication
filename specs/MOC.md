@@ -11,7 +11,7 @@
 - （暂无）
 
 ### 🟠 实现中（in-progress）
-- [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md) — 局域网边界收口：443 防火墙改「源网段 + TUN 接口」双条件白名单、3001 直访默认退役 + 12h 自动回落例外开关（2026-09-12 立项并确认，plan/tasks 定稿 T1~T9 实施中，分支 spec010-lan-boundary）
+- [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md) — 局域网边界收口：443 防火墙改「源网段 + TUN 接口」双条件白名单、3001 直访默认退役 + 12h 自动回落例外开关（2026-09-12 立项并确认，T1~T8 实现完成——脚本/状态机/命令层/前端/真机迁移预演/ADR-0005 均已落地，待 T9 验收流转；分支 spec010-lan-boundary）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）

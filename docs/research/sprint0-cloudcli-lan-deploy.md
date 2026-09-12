@@ -144,6 +144,8 @@ npx @cloudcli-ai/cloudcli
 New-NetFirewallRule -DisplayName "CloudCLI LAN 3001" -Direction Inbound -Protocol TCP -LocalPort 3001 -Action Allow -Profile Private
 ```
 
+> **注（2026-09-12，spec 010）**：上例及同族规则 `CloudCLI LAN HTTPS 443` **已退役**——现行防火墙契约是「源地址 ∈ 组网网段 + TUN 接口」白名单（`CloudCLI Mesh HTTPS 443`，ADR-0005），3001 默认拒绝、临时放行走工作台例外开关（12h 自动回落）。历史部署的旧规则由工作台「一键收口」或 `bin\lan-guard.ps1 -Action migrate` 幂等清除；下文 §8/§9 中的旧规则命令保留原貌，仅作历史底册。
+
 ### 3.3 查开发机局域网 IP
 
 ```powershell

@@ -21,6 +21,7 @@
 | [0002](./0002-control-data-plane-split.md) | 服务生命周期：控制面/数据面分离，自启走登录计划任务 | accepted | 2026-09-08 |
 | [0003](./0003-caddy-dns-plugin-tls.md) | TLS 获取：acme.sh 外挂退役，改 Caddy tencentcloud 插件自治 | accepted | 2026-09-10 |
 | [0004](./0004-settings-channel-migration.md) | 访问通道契约：三值收敛单值 mesh，加载期静默迁移旧设置 | accepted | 2026-09-11 |
+| [0005](./0005-firewall-whitelist-contract.md) | 防火墙契约：Profile 一比特闸门退役，改「源网段 + TUN 接口」白名单双条件；3001 默认拒绝 + 12h 例外 | accepted | 2026-09-12 |
 
 ## 模板
 

@@ -249,7 +249,7 @@ export const en = {
   "wizard.state.done": "Done",
   "wizard.state.failed": "Failed",
   "wizard.state.skipped": "Skipped",
-  "wizard.stage.basis": "Basics (LAN)",
+  "wizard.stage.basis": "Basics (Local)",
   "wizard.stage.tencent": "Tencent Cloud Prereqs",
   "wizard.stage.https": "HTTPS Stack",
   "wizard.stage.channel": "Access Channel",
