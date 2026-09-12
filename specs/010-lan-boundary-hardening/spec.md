@@ -2,10 +2,10 @@
 
 > 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: reviewed <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: in-progress <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 8
 - **创建日期**: 2026-09-12
-- **最后更新**: 2026-09-12（需求方确认落地 → reviewed；分支 spec010-lan-boundary）
+- **最后更新**: 2026-09-12（plan/tasks 定稿审查通过 → in-progress；T1~T9 实施中，分支 spec010-lan-boundary）
 
 ## 1. 背景与问题
 
@@ -96,3 +96,4 @@
 | 2026-09-12 | 例外开关超时定为 **12h 自动回落**（新增 AC8 + §4 开关形态补回落语义 + 开放问题 Q4 关闭） | 需求方拍板：正常连续工作不超过 12h；防误开后裸奔态永久 |
 | 2026-09-12 | **白名单升级为双条件**（源网段 + TUN 接口）：AC1 补伪造源 IP 探测场景、§4 契约更新、开放问题 +2（TUN 接口绑定实测、分发多宿主机边界）、US3/US4 AC 编号顺延（AC9/AC10） | 需求方就「分发后多用户同局域网」追问时复审发现：纯源 IP 白名单可被同网段设备将网段地址 alias 到自身物理网卡绕过（回包可送达，非盲欺骗）；接口限定使唯一合法入口仍为持密钥入网 |
 | 2026-09-12 | 状态 draft → reviewed | 需求方确认方案落地、新建分支实施；分发场景（多宿主机地址规划/网络名唯一化）暂不纳入本期，开放问题保持另立 |
+| 2026-09-12 | 状态 reviewed → in-progress | plan/tasks 定稿（commit 1fd8c24）审查通过：TUN 绑定取运行期语义锚点（持有 virtual_ip 的适配器，wintun 实例名不可作常量）、443/3001 规则 Profile 复验均 Private（O1 漂移不可复现留档）、002 退役边界/迁移/12h 回落状态机定案 |
