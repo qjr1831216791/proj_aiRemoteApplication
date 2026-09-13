@@ -569,6 +569,7 @@ pub fn service_with_whitelist_params(
     let base = service_action_params(scripts_dir, action, stack_dir, lang);
     let seg = crate::lan_guard::ensure_whitelist_segment(
         scripts_dir,
+        stack_dir,
         cidr,
         virtual_ip,
         crate::lan_guard::APPLY_WAIT_TUN_SECS,
@@ -1610,6 +1611,12 @@ mod tests {
         assert!(p.contains("-Cidr '10.126.126.0/24'"), "{p}");
         assert!(p.contains("-VirtualIp '10.126.126.1'"), "{p}");
         assert!(p.contains("-WaitTun 20"), "TUN 就绪缓冲（R4）：{p}");
+        // AC11：白名单段携 -StackDir（服务段一份 + 白名单段一份）——程序规则清理
+        // 按栈目录识别 caddy/easytier 程序路径
+        assert!(
+            p.matches("-StackDir").count() >= 2,
+            "服务段与白名单段各一份 -StackDir：{p}"
+        );
         assert_eq!(p.matches("-Command \"").count(), 1, "单窗单次 UAC：{p}");
         // 顺序：服务动作 < 白名单段 < 收尾提示（同窗顺序执行）
         let svc = p.find("mesh-service.ps1").unwrap();

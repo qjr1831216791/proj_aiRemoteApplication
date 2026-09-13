@@ -7,12 +7,12 @@
                   "setup-autostart.ps1":  "a9e16c9b480b8d9185968c2695e5f8deb1edc1b08cc6293231ca018c30cdc319",
                   "install-server.ps1":  "cdbf8c031ac1a4134a22bee043b4c65a7a954d088ad3a173eb3ca9e4fcf7330d",
                   "install-https.ps1":  "731bbf4ba94393112dd21109e3439e395476027bb3850f9d1778101ebb130552",
-                  "enable-https.ps1":  "2ebe50cbbbfca29159757486a8d0d0a0c848ac26b5b3874b6f47f579f3cfe077",
+                  "enable-https.ps1":  "23bcbfb760ff7585a85b6df223092547c18d65b1fee2b4636c5d72b0ef445fce",
                   "install-client.ps1":  "a9f89c31da37f43d844b72853041a45c2cffb9121a746b0de2a220ce869fbfa6",
                   "set-tencent-key.ps1":  "9968e22c2079b4e129f0eb48cadc5446e72bc072ae963cbb996b55f28b0a3fc9",
                   "mesh-service.ps1":  "f263b3ee9e587de7cfd6186058d00f1ecde7a2d997e33bdef9cae2c8de1bddca",
                   "set-mesh-secret.ps1":  "440c92efa1a8628639216ddd035da3549ededa9ff1c91a546a1bfe7c2161e8c8",
                   "uninstall-legacy.ps1":  "99591dc40a6e83b7aada0e35360a8af3eec62935903584b91315b1079a8ecdad",
-                  "lan-guard.ps1":  "8d86ec039f0f2a3cb474c5eb8c94276c5fc6f040815d20358a564077d8faa02b"
+                  "lan-guard.ps1":  "1e9cf7f284bde22eca7443f7f31f59adc85af310726f5abb23dfcee1f01f9d99"
               }
 }

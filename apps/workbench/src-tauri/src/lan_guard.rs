@@ -40,6 +40,17 @@ pub const EXCEPTION_PROFILE: &str = "Private";
 /// 例外规则契约：远端限本机子网（严格于旧规则 Any，精确落地「同网段」语义）
 pub const EXCEPTION_REMOTE_ADDRESS: &str = "LocalSubnet";
 
+/// EasyTier P2P 物理层端口（spec §2 非目标「不动 11010」：程序级规则收紧后
+/// 唯一保留端口——脚本 $EtP2pPort 同值锁形，AC11）
+pub const EASYTIER_P2P_PORT: u16 = 11010;
+/// easytier-core.exe 收紧后的 TCP 限定规则名（脚本 $EtTightTcp 同值锁形，AC11）
+pub const ET_TIGHT_RULE_TCP: &str = "CloudCLI Mesh EasyTier 11010 TCP";
+/// easytier-core.exe 收紧后的 UDP 限定规则名（脚本 $EtTightUdp 同值锁形，AC11）
+pub const ET_TIGHT_RULE_UDP: &str = "CloudCLI Mesh EasyTier 11010 UDP";
+/// ddns-go 残留识别文件名（任意目录；exe 已随 008 卸载即纯残留，脚本 $DdnsGoLeaf
+/// 同值锁形，AC11）
+pub const DDNS_GO_EXE: &str = "ddns-go.exe";
+
 /// 退出码：成功 / 幂等跳过（plan §3.2；工作台以 status 复测为准，仅手工排查用）
 pub const EXIT_OK: i32 = 0;
 /// 退出码：前置不满足（非管理员 / 参数非法）
@@ -106,16 +117,21 @@ pub fn ps_quote(s: &str) -> String {
 ///   -RemoteAddress LocalSubnet`，无接口条件）由脚本单点承载，Rust 侧仅以
 ///   [`EXCEPTION_PROFILE`] / [`EXCEPTION_REMOTE_ADDRESS`] 锁形（AC6 断言面）；
 ///   多余的 cidr/virtual_ip/wait_tun 入参不透传（§5.1 例外动作无参数）；
-/// - `-WaitTun <sec>` 原样透传（apply 组合联动传 20，plan §3.5；脚本默认 0）。
+/// - `-WaitTun <sec>` 原样透传（apply 组合联动传 20，plan §3.5；脚本默认 0）；
+/// - `-StackDir <dir>` 仅随建白名单的动作（ensure-whitelist / migrate）透传
+///   （AC11：程序规则清理按栈目录识别 caddy/easytier 程序路径；例外动作无
+///   程序规则语义，None/空白 → 不传，脚本用自身默认值兜底）。
 pub fn dispatch_params(
     scripts_dir: &Path,
     action: LanGuardAction,
     cidr: Option<&str>,
     virtual_ip: Option<&str>,
     wait_tun: Option<u32>,
+    stack_dir: Option<&str>,
     lang: Lang,
 ) -> Result<String, String> {
-    let inner = script_invocation(scripts_dir, action, cidr, virtual_ip, wait_tun, lang)?;
+    let inner =
+        script_invocation(scripts_dir, action, cidr, virtual_ip, wait_tun, stack_dir, lang)?;
     Ok(format!("-NoProfile -NonInteractive -WindowStyle Hidden -Command \"{inner}\""))
 }
 
@@ -128,6 +144,7 @@ fn script_invocation(
     cidr: Option<&str>,
     virtual_ip: Option<&str>,
     wait_tun: Option<u32>,
+    stack_dir: Option<&str>,
     lang: Lang,
 ) -> Result<String, String> {
     let needs_cidr =
@@ -159,6 +176,12 @@ fn script_invocation(
         // -WaitTun 只属于建白名单的动作（exception-on/off 无 TUN 语义）
         inner.push_str(&format!(" -WaitTun {}", wait_tun.unwrap()));
     }
+    if needs_cidr {
+        // -StackDir 同上：程序规则清理（AC11）按栈目录识别 caddy/easytier 程序路径
+        if let Some(sd) = stack_dir.map(str::trim).filter(|s| !s.is_empty()) {
+            inner.push_str(&format!(" -StackDir {}", ps_quote(sd)));
+        }
+    }
     Ok(inner)
 }
 
@@ -169,6 +192,7 @@ fn script_invocation(
 /// （§7-R4 白名单失败不回滚服务段）。
 pub fn ensure_whitelist_segment(
     scripts_dir: &Path,
+    stack_dir: &str,
     cidr: &str,
     virtual_ip: &str,
     wait_tun: u32,
@@ -180,6 +204,7 @@ pub fn ensure_whitelist_segment(
         Some(cidr),
         Some(virtual_ip),
         Some(wait_tun),
+        Some(stack_dir),
         lang,
     )?;
     Ok(format!("; {inner}"))
@@ -203,26 +228,35 @@ pub const REVERT_RETRY_INTERVAL: Duration = Duration::from_secs(30 * 60);
 /// CREATE_NO_WINDOW + 捕获 stdout）。脚本保证 stdout 仅一行压缩 JSON（Write-Host
 /// 走信息流不污染管道，plan §4.2）；status 输出与语言无关，不传 -Lang（默认 auto）。
 /// VirtualIp 是 TUN 解析锚点（§3.3），缺失/空白 → Err（对应脚本参数非法 exit 1 前置）。
-pub fn status_args(scripts_dir: &Path, virtual_ip: &str) -> Result<Vec<String>, String> {
+/// StackDir 供旁路残留探测按栈目录识别 caddy/easytier 程序路径（AC11）；空白 →
+/// 不传（脚本自身默认值兜底，与 sprint0 各脚本 -StackDir 默认一致）。
+pub fn status_args(scripts_dir: &Path, virtual_ip: &str, stack_dir: &str) -> Result<Vec<String>, String> {
     let vip = virtual_ip.trim();
     if vip.is_empty() {
         return Err("lan-guard status 需要 -VirtualIp（宿主机组网虚拟 IP）".into());
     }
-    Ok(vec![
-        "-NoProfile".into(),
-        "-NonInteractive".into(),
-        "-ExecutionPolicy".into(),
-        "Bypass".into(),
-        "-File".into(),
+    let mut args = vec![
+        "-NoProfile".to_string(),
+        "-NonInteractive".to_string(),
+        "-ExecutionPolicy".to_string(),
+        "Bypass".to_string(),
+        "-File".to_string(),
         scripts_dir.join(SCRIPT_FILE).to_string_lossy().into_owned(),
-        "-Action".into(),
-        LanGuardAction::Status.as_arg().into(),
-        "-VirtualIp".into(),
-        vip.into(),
-    ])
+        "-Action".to_string(),
+        LanGuardAction::Status.as_arg().to_string(),
+        "-VirtualIp".to_string(),
+        vip.to_string(),
+    ];
+    let sd = stack_dir.trim();
+    if !sd.is_empty() {
+        args.push("-StackDir".to_string());
+        args.push(sd.to_string());
+    }
+    Ok(args)
 }
 
-/// status JSON 契约解析产物（plan §4.2：legacy443/legacy3001/mesh443/exc3001/tun）
+/// status JSON 契约解析产物（plan §4.2：legacy443/legacy3001/mesh443/exc3001/tun
+/// + AC11 bypass）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LanGuardProbe {
     /// 旧 443 规则（`CloudCLI LAN HTTPS 443`）存在 → 迁移横幅（AC10）
@@ -235,6 +269,32 @@ pub struct LanGuardProbe {
     pub exc3001: ExceptionProbe,
     /// 持有 -VirtualIp 的适配器（None = 未解析到 → 休眠态）
     pub tun: Option<TunInfo>,
+    /// 程序级旁路残留探测（AC11；None = 旧版脚本无 bypass 字段——向后兼容，
+    /// 沿 parse 容错先例不视为风险）
+    pub bypass: Option<BypassProbe>,
+}
+
+/// 程序级旁路残留探测（AC11）：存在指向服务程序路径的入站 Allow 程序规则即为
+/// 残留（该形态规则按 exe 放行所有端口 × 任意 profile，绕过端口白名单契约）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BypassProbe {
+    /// CloudCLI node（3001 监听进程实际路径 + 符号链接真实形态）
+    pub node: bool,
+    /// Caddy（栈目录 caddy.exe + 443 监听进程路径）
+    pub caddy: bool,
+    /// easytier-core.exe（栈目录）存在非「11010 限定」形态的程序规则
+    pub easytier_wide: bool,
+    /// ddns-go（任意路径叶名）残留
+    pub ddns_go: bool,
+    /// node 监听进程缺席（取不到实际路径，探测跳过）——标注位，非风险
+    pub node_skipped: bool,
+}
+
+impl BypassProbe {
+    /// 任一残留（`bypass_risk` 健康位判定源；nodeSkipped 不计）
+    pub fn any(&self) -> bool {
+        self.node || self.caddy || self.easytier_wide || self.ddns_go
+    }
 }
 
 /// 443 白名单规则实况（profile 沿实测 flags 0=Any/1=Domain/2=Private/4=Public，
@@ -276,6 +336,14 @@ pub fn parse_status(raw: &str) -> Result<LanGuardProbe, String> {
             name: name.to_string(),
             ip: v["tun"]["ip"].as_str().unwrap_or_default().to_string(),
         });
+    // bypass 整字段缺失 = 旧版脚本输出（向后兼容，None 不视为风险——AC11）
+    let bypass = v.get("bypass").and_then(|b| b.as_object()).map(|b| BypassProbe {
+        node: b.get("node").and_then(|x| x.as_bool()).unwrap_or(false),
+        caddy: b.get("caddy").and_then(|x| x.as_bool()).unwrap_or(false),
+        easytier_wide: b.get("easytierWide").and_then(|x| x.as_bool()).unwrap_or(false),
+        ddns_go: b.get("ddnsGo").and_then(|x| x.as_bool()).unwrap_or(false),
+        node_skipped: b.get("nodeSkipped").and_then(|x| x.as_bool()).unwrap_or(false),
+    });
     Ok(LanGuardProbe {
         legacy443: v["legacy443"].as_bool().unwrap_or(false),
         legacy3001: v["legacy3001"].as_bool().unwrap_or(false),
@@ -290,6 +358,7 @@ pub fn parse_status(raw: &str) -> Result<LanGuardProbe, String> {
             profile: v["exc3001"]["profile"].as_u64().unwrap_or(0) as u32,
         },
         tun,
+        bypass,
     })
 }
 
@@ -336,6 +405,9 @@ pub struct LanHealth {
     pub exception: ExceptionState,
     /// 例外生效 ∧ ∃公用活动网络（如实提示：Private 规则直访不生效，plan R5）
     pub public_blocks_exception: bool,
+    /// 程序级旁路残留（AC11：任一服务 exe 存在全端口放行程序规则 → 前端
+    /// 「旁路风险」警示 chip，修复白名单清理；旧版脚本无 bypass 字段 → false）
+    pub bypass_risk: bool,
 }
 
 /// 例外是否到期（纯函数；边界 `now - since == ttl` 即到期，plan §4.1）。
@@ -417,12 +489,76 @@ pub fn judge_health(
     };
     let public_blocks_exception = matches!(exception, ExceptionState::On { .. } | ExceptionState::Expired)
         && networks.iter().any(|n| n.category == NetCategory::Public);
+    // 旁路风险（AC11）：只叠加独立呈现位，不参与白名单五态判定——白名单三元组
+    // 判的是端口级规则契约，程序级旁路是正交的另一层（修复走同一 ensure-whitelist）
+    let bypass_risk = probe.bypass.as_ref().map(|b| b.any()).unwrap_or(false);
     LanHealth {
         whitelist,
         legacy_present: probe.legacy443 || probe.legacy3001,
         exception,
         public_blocks_exception,
+        bypass_risk,
     }
+}
+
+// ── 程序级规则清理判定（AC11 纯函数锚）──────────────────────────────────────
+
+/// 单条程序级规则的处置（lan-guard.ps1 `Invoke-BypassCleanup` 同规则镜像执行；
+/// 本枚举 + [`classify_program_rule`] 是判定契约锚与单测载体——脚本漂移即
+/// 矩阵单测与脚本契约测试失守）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BypassAction {
+    /// 删除该入站 Allow 程序规则（node/caddy/ddns-go：全端口放行与端口白名单
+    /// 契约冲突，443/3001 均由端口级规则承载，无程序级放行之必要）
+    Delete,
+    /// 删除并按端口限定重建（easytier：仅留 11010 P2P 物理层，network_secret
+    /// 认证兜底——spec §2 非目标「不动 11010」的端口限定替代全放行）
+    Tighten,
+    /// 不动（无关软件的程序规则——误伤红线）
+    Keep,
+    /// 跳过并标注（ddns-go 进程仍在跑：规则在用，删除无效且属用户自装软件）
+    Skip,
+}
+
+/// 清理目标的识别输入（全部来自运行期识别：node = 3001 监听进程实际路径 +
+/// 符号链接解析形态，caddy = 栈目录 + 443 监听进程路径，easytier = 栈目录；
+/// None/空 = 识别不到 → 相应规则一律 [`BypassAction::Keep`]——绝不按
+/// DisplayName（如 'Node.js JavaScript Runtime'）猜测，误伤红线）
+pub struct BypassTargets {
+    pub node_path: Option<String>,
+    pub caddy_paths: Vec<String>,
+    pub easytier_path: Option<String>,
+    pub ddns_go_running: bool,
+}
+
+/// 单条程序规则的处置判定（纯函数）：只按 Program 路径精确匹配（大小写不敏感、
+/// 分隔符归一），匹配不到任何目标一律 [`BypassAction::Keep`]。ddns-go 特例按
+/// 叶文件名匹配任意目录（exe 已随 008 卸载即无主残留；进程在跑 → 跳过）。
+pub fn classify_program_rule(program: &str, t: &BypassTargets) -> BypassAction {
+    // 归一：去引号/空白 + 正反斜杠统一 + 小写（Windows 路径大小写不敏感）
+    let norm = |p: &str| {
+        p.trim()
+            .trim_matches('"')
+            .replace('/', "\\")
+            .to_ascii_lowercase()
+    };
+    let p = norm(program);
+    if Path::new(&p)
+        .file_name()
+        .map_or(false, |f| f.to_string_lossy() == DDNS_GO_EXE)
+    {
+        return if t.ddns_go_running { BypassAction::Skip } else { BypassAction::Delete };
+    }
+    if t.node_path.as_deref().map_or(false, |n| norm(n) == p) {
+        return BypassAction::Delete;
+    }
+    if t.caddy_paths.iter().any(|c| norm(c) == p) {
+        return BypassAction::Delete;
+    }
+    if t.easytier_path.as_deref().map_or(false, |e| norm(e) == p) {
+        return BypassAction::Tighten;
+    }
+    BypassAction::Keep
 }
 
 // ── 12h 回落决策（plan §3.4 状态机；watcher 每轮调用）──────────────────────
@@ -461,12 +597,14 @@ fn revert_due(last_attempt: Option<Instant>, now: Instant) -> bool {
 
 // ── 白名单健康监视器（NetMonitor 同构：probe/sink/缓存/变化才发声）──────────
 
-/// 单轮探测输入（装配层每次 tick 现取：virtual_ip/cidr 随设置联动，例外标记
-/// 随 settings，活动网络随 NetMonitor 缓存——plan §3.5 输入源）
+/// 单轮探测输入（装配层每次 tick 现取：virtual_ip/cidr/stack_dir 随设置联动，
+/// 例外标记随 settings，活动网络随 NetMonitor 缓存——plan §3.5 输入源；
+/// stack_dir 供旁路残留探测按栈目录识别程序路径，AC11）
 #[derive(Debug, Clone, PartialEq)]
 pub struct LanInputs {
     pub virtual_ip: String,
     pub cidr: String,
+    pub stack_dir: String,
     pub exception_enabled: bool,
     pub exception_since_ms: u64,
     pub networks: Vec<NetworkEntry>,
@@ -475,7 +613,7 @@ pub struct LanInputs {
 /// 探测出口（真实实现拉起 PowerShell 跑 lan-guard status；单测脚本化输出）
 pub trait LanProbe: Send + Sync {
     /// 返回 status 原始 stdout；Err = 探测失败（保持上次缓存，AC4 同口径）
-    fn status(&self, virtual_ip: &str) -> Result<String, String>;
+    fn status(&self, virtual_ip: &str, stack_dir: &str) -> Result<String, String>;
 }
 
 /// 事件出口（真实实现 Tauri emit `languard://changed`；单测断言事件序列）
@@ -601,7 +739,7 @@ impl LanGuardMonitor {
     fn refresh_with(&self, inputs: &LanInputs) -> (Option<LanHealth>, bool) {
         let parsed = self
             .probe
-            .status(&inputs.virtual_ip)
+            .status(&inputs.virtual_ip, &inputs.stack_dir)
             .ok()
             .as_deref()
             .map(parse_status);
@@ -653,7 +791,7 @@ impl PsLanGuardProbe {
 
 #[cfg(windows)]
 impl LanProbe for PsLanGuardProbe {
-    fn status(&self, virtual_ip: &str) -> Result<String, String> {
+    fn status(&self, virtual_ip: &str, stack_dir: &str) -> Result<String, String> {
         use std::io::Read;
         use std::os::windows::process::CommandExt;
         use std::process::{Command, Stdio};
@@ -663,7 +801,7 @@ impl LanProbe for PsLanGuardProbe {
             .as_ref()
             .ok_or_else(|| "脚本目录不可用：白名单探测禁用（spec §4.5）".to_string())?;
         let mut child = Command::new("powershell.exe")
-            .args(status_args(dir, virtual_ip)?)
+            .args(status_args(dir, virtual_ip, stack_dir)?)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .creation_flags(crate::scripts::CREATE_NO_WINDOW)
@@ -705,6 +843,7 @@ mod tests {
     const DIR: &str = r"C:\app\resources\bin";
     const CIDR: &str = "10.126.126.0/24";
     const VIP: &str = "10.126.126.1";
+    const STACK: &str = r"D:\Software\cloudcli-https";
 
     fn params(action: LanGuardAction) -> String {
         dispatch_params(
@@ -713,6 +852,7 @@ mod tests {
             Some(CIDR),
             Some(VIP),
             None,
+            Some(STACK),
             crate::lang::Lang::Zh,
         )
         .unwrap()
@@ -748,7 +888,8 @@ mod tests {
     }
 
     /// ensure-whitelist 派发参数：-Cidr/-VirtualIp 单引号字面量 + -WaitTun 透传 +
-    /// 隐藏窗 + -Lang（AC1/AC9 派发面，plan §3.5 `-WaitTun 20`）
+    /// -StackDir（AC11 程序规则清理的程序路径识别锚）+ 隐藏窗 + -Lang
+    /// （AC1/AC9 派发面，plan §3.5 `-WaitTun 20`）
     #[test]
     fn ensure_whitelist_params_carry_cidr_vip_waittun() {
         let p = dispatch_params(
@@ -757,6 +898,7 @@ mod tests {
             Some(CIDR),
             Some(VIP),
             Some(20),
+            Some(STACK),
             Lang::Zh,
         )
         .unwrap();
@@ -765,6 +907,7 @@ mod tests {
         assert!(p.contains("-Cidr '10.126.126.0/24'"), "{p}");
         assert!(p.contains("-VirtualIp '10.126.126.1'"), "{p}");
         assert!(p.contains("-WaitTun 20"), "{p}");
+        assert!(p.contains(&format!("-StackDir '{}'", STACK)), "{p}");
         assert!(p.contains("-WindowStyle Hidden"), "提权隐藏派发（plan §2）：{p}");
         assert!(p.contains("-NoProfile -NonInteractive"), "{p}");
         assert!(p.contains("-Lang zh"), "-Lang 对齐程序语言：{p}");
@@ -780,11 +923,13 @@ mod tests {
             Some("10.0.0.0/24'x"),
             Some("10.0.0.1"),
             None,
+            Some(r"E:\sta'ck"),
             Lang::En,
         )
         .unwrap();
         assert!(p.contains(r"'D:\odd''name\lan-guard.ps1'"), "{p}");
         assert!(p.contains(r"-Cidr '10.0.0.0/24''x'"), "{p}");
+        assert!(p.contains(r"-StackDir 'E:\sta''ck'"), "{p}");
         assert!(p.contains("-Lang en"), "{p}");
     }
 
@@ -798,21 +943,27 @@ mod tests {
         let on = params(LanGuardAction::ExceptionOn);
         assert!(on.contains("-Action exception-on"), "{on}");
         assert!(!on.contains("-InterfaceAlias"), "例外无接口条件（TUN 绑定仅属 443 白名单）：{on}");
-        assert!(!on.contains("-Cidr") && !on.contains("-VirtualIp") && !on.contains("-WaitTun"), "{on}");
+        assert!(
+            !on.contains("-Cidr") && !on.contains("-VirtualIp") && !on.contains("-WaitTun")
+                && !on.contains("-StackDir"),
+            "例外动作无网段/栈目录语义（程序规则清理不随例外）：{on}"
+        );
 
         let off = params(LanGuardAction::ExceptionOff);
         assert!(off.contains("-Action exception-off"), "{off}");
         assert!(!off.contains("-InterfaceAlias"), "{off}");
     }
 
-    /// migrate / status 参数形态：migrate 携带网段两参（删旧 + ensure 复用）；
-    /// status 只携 -VirtualIp（tun 解析锚点）
+    /// migrate / status 参数形态：migrate 携带网段两参 + -StackDir（删旧 + ensure
+    /// 复用 + 程序规则清理）；status 只携 -VirtualIp + -StackDir（tun 解析锚点 +
+    /// 旁路探测锚点，AC11）
     #[test]
     fn migrate_and_status_params_shape() {
         let m = params(LanGuardAction::Migrate);
         assert!(m.contains("-Action migrate"), "{m}");
         assert!(m.contains("-Cidr '10.126.126.0/24'"), "{m}");
         assert!(m.contains("-VirtualIp '10.126.126.1'"), "{m}");
+        assert!(m.contains(&format!("-StackDir '{}'", STACK)), "{m}");
 
         let s = dispatch_params(
             Path::new(DIR),
@@ -820,12 +971,15 @@ mod tests {
             None,
             Some(VIP),
             None,
+            None,
             Lang::Zh,
         )
         .unwrap();
         assert!(s.contains("-Action status"), "{s}");
         assert!(s.contains("-VirtualIp '10.126.126.1'"), "{s}");
         assert!(!s.contains("-Cidr"), "{s}");
+        // status 的 -StackDir 非必传：None → 不透传（脚本自身默认值兜底）
+        assert!(!s.contains("-StackDir"), "{s}");
     }
 
     /// 参数校验：ensure-whitelist/migrate 的 Cidr/VirtualIp 与 status 的
@@ -833,20 +987,20 @@ mod tests {
     #[test]
     fn dispatch_params_reject_missing_required_args() {
         for action in [LanGuardAction::EnsureWhitelist, LanGuardAction::Migrate] {
-            assert!(dispatch_params(Path::new(DIR), action, None, Some(VIP), None, Lang::Zh).is_err());
+            assert!(dispatch_params(Path::new(DIR), action, None, Some(VIP), None, None, Lang::Zh).is_err());
             assert!(
-                dispatch_params(Path::new(DIR), action, Some("  "), Some(VIP), None, Lang::Zh).is_err(),
+                dispatch_params(Path::new(DIR), action, Some("  "), Some(VIP), None, None, Lang::Zh).is_err(),
                 "空白 Cidr 视同缺失：{action:?}"
             );
-            assert!(dispatch_params(Path::new(DIR), action, Some(CIDR), None, None, Lang::Zh).is_err());
+            assert!(dispatch_params(Path::new(DIR), action, Some(CIDR), None, None, None, Lang::Zh).is_err());
             assert!(
-                dispatch_params(Path::new(DIR), action, Some(CIDR), Some(""), None, Lang::Zh).is_err(),
+                dispatch_params(Path::new(DIR), action, Some(CIDR), Some(""), None, None, Lang::Zh).is_err(),
                 "空白 VirtualIp 视同缺失：{action:?}"
             );
         }
-        assert!(dispatch_params(Path::new(DIR), LanGuardAction::Status, None, None, None, Lang::Zh).is_err());
-        assert!(dispatch_params(Path::new(DIR), LanGuardAction::ExceptionOn, None, None, None, Lang::Zh).is_ok());
-        assert!(dispatch_params(Path::new(DIR), LanGuardAction::ExceptionOff, None, None, None, Lang::Zh).is_ok());
+        assert!(dispatch_params(Path::new(DIR), LanGuardAction::Status, None, None, None, None, Lang::Zh).is_err());
+        assert!(dispatch_params(Path::new(DIR), LanGuardAction::ExceptionOn, None, None, None, None, Lang::Zh).is_ok());
+        assert!(dispatch_params(Path::new(DIR), LanGuardAction::ExceptionOff, None, None, None, None, Lang::Zh).is_ok());
     }
 
     /// 退出码 / TTL / 轮询常量冻结（plan §3.2、§3.4、§3.5；T1 备注）
@@ -860,10 +1014,11 @@ mod tests {
     // ── T3：status 免提权探测参数与 JSON 解析（plan §4.2）─────────────────
 
     /// status 探测参数：-File 直跑脚本 + -Action status + -VirtualIp（TUN 解析
-    /// 锚点），不携 -Cidr/-WaitTun；空白 VirtualIp → Err（脚本 exit 1 前置同口径）
+    /// 锚点）+ -StackDir（旁路探测锚点，AC11），不携 -Cidr/-WaitTun/-Lang；
+    /// 空白 VirtualIp → Err；空白 StackDir → 省略（脚本默认值兜底）
     #[test]
     fn status_args_carry_contract() {
-        let args = status_args(Path::new(DIR), VIP).unwrap();
+        let args = status_args(Path::new(DIR), VIP, STACK).unwrap();
         let file = args.iter().position(|a| a == "-File").unwrap();
         assert!(
             args[file + 1].replace('/', "\\").ends_with(&format!("\\{}", SCRIPT_FILE)),
@@ -871,21 +1026,26 @@ mod tests {
         );
         assert!(args.windows(2).any(|w| w[0] == "-Action" && w[1] == "status"), "{args:?}");
         assert!(args.windows(2).any(|w| w[0] == "-VirtualIp" && w[1] == VIP), "{args:?}");
+        assert!(args.windows(2).any(|w| w[0] == "-StackDir" && w[1] == STACK), "{args:?}");
         assert!(!args.contains(&"-Cidr".to_string()), "status 无需网段：{args:?}");
         assert!(!args.contains(&"-Lang".to_string()), "status 输出与语言无关（JSON）：{args:?}");
         // TUN 解析锚点缺失/空白 → Err（对应脚本参数非法 exit 1）
-        assert!(status_args(Path::new(DIR), "").is_err());
-        assert!(status_args(Path::new(DIR), "   ").is_err());
+        assert!(status_args(Path::new(DIR), "", STACK).is_err());
+        assert!(status_args(Path::new(DIR), "   ", STACK).is_err());
+        // 栈目录空白 → 省略 -StackDir（旁路探测回落脚本默认栈目录）
+        let no_stack = status_args(Path::new(DIR), VIP, "  ").unwrap();
+        assert!(!no_stack.contains(&"-StackDir".to_string()), "{no_stack:?}");
     }
 
-    /// plan §4.2 契约样例全字段解析（T2 真机实测形态：/24 归一、profile flags、
-    /// tun 对象两字段）
+    /// plan §4.2 + AC11 契约样例全字段解析（T2 真机实测形态：/24 归一、profile
+    /// flags、tun 对象两字段；bypass 五布尔）
     #[test]
     fn parse_status_full_contract() {
         let raw = r#"{"legacy443":true,"legacy3001":false,
  "mesh443":{"present":true,"remote":"10.126.126.0/24","iface":"et_8_1999","profile":0},
  "exc3001":{"present":false,"profile":2},
- "tun":{"name":"et_8_1999","ip":"10.126.126.1"}}"#;
+ "tun":{"name":"et_8_1999","ip":"10.126.126.1"},
+ "bypass":{"node":true,"caddy":true,"easytierWide":true,"ddnsGo":true,"nodeSkipped":false}}"#;
         let p = parse_status(raw).unwrap();
         assert!(p.legacy443 && !p.legacy3001, "任一旧规则在 → 迁移横幅（AC10）");
         assert!(p.mesh443.present);
@@ -898,10 +1058,15 @@ mod tests {
             p.tun.as_ref().map(|t| (t.name.as_str(), t.ip.as_str())),
             Some(("et_8_1999", "10.126.126.1"))
         );
+        let b = p.bypass.expect("bypass 字段在");
+        assert!(b.node && b.caddy && b.easytier_wide && b.ddns_go, "四类残留全真（真机缺陷实况形态）");
+        assert!(!b.node_skipped);
+        assert!(b.any(), "any = bypass_risk 判定源");
     }
 
     /// 容错缺字段/null（沿 parse_net_status 先例）：tun:null 即休眠；规则缺席时
-    /// remote/iface 为 null → None；legacy 缺失 → false
+    /// remote/iface 为 null → None；legacy 缺失 → false；bypass 整字段缺失 →
+    /// None（旧版脚本输出向后兼容，None 不视为风险）
     #[test]
     fn parse_status_tolerates_missing_and_null() {
         // 收口默认态：无双旧规则、白名单缺席（remote/iface=null）、例外缺席、TUN 不在
@@ -913,15 +1078,21 @@ mod tests {
         assert!(!p.legacy443 && !p.legacy3001);
         assert!(!p.mesh443.present && p.mesh443.remote.is_none() && p.mesh443.iface.is_none());
         assert!(p.tun.is_none(), "tun:null = 休眠态（plan §4.2）");
+        assert!(p.bypass.is_none(), "旧版脚本无 bypass 字段 → None（向后兼容）");
 
         // 整字段缺失：默认 false/None，不 Err
         let sparse = parse_status("{}").unwrap();
         assert!(!sparse.legacy443 && !sparse.mesh443.present && !sparse.exc3001.present);
         assert!(sparse.tun.is_none());
+        assert!(sparse.bypass.is_none());
         // tun 对象缺 ip 字段容忍（name 是解析判据）
         let p2 = parse_status(r#"{"tun":{"name":"et_x"}}"#).unwrap();
         assert_eq!(p2.tun.as_ref().unwrap().name, "et_x");
         assert_eq!(p2.tun.as_ref().unwrap().ip, "");
+        // bypass 内字段缺失容忍（false 兜底），nodeSkipped 仅标注不参与 any
+        let p3 = parse_status(r#"{"bypass":{"node":false,"nodeSkipped":true}}"#).unwrap();
+        let b3 = p3.bypass.unwrap();
+        assert!(!b3.any() && b3.node_skipped, "node 跳过标注 ≠ 风险");
     }
 
     #[test]
@@ -933,7 +1104,7 @@ mod tests {
     // ── T3：judge_health 全分支（plan §3.4/§3.5）──────────────────────────
 
     /// 探测实况构造器（测试便捷形态）：TUN 在场 et_8_1999@10.126.126.1，
-    /// 白名单按给定 remote/iface/present，默认无旧规则、例外缺席
+    /// 白名单按给定 remote/iface/present，默认无旧规则、例外缺席、无旁路字段
     fn probe_with(remote: Option<&str>, iface: Option<&str>, present: bool) -> LanGuardProbe {
         LanGuardProbe {
             legacy443: false,
@@ -946,6 +1117,7 @@ mod tests {
             },
             exc3001: ExceptionProbe { present: false, profile: 0 },
             tun: Some(TunInfo { name: "et_8_1999".into(), ip: "10.126.126.1".into() }),
+            bypass: None,
         }
     }
 
@@ -1095,7 +1267,8 @@ mod tests {
         assert!(revert_due(Some(now - Duration::from_secs(31 * 60)), now), "超窗：到点");
     }
 
-    /// LanHealth 序列化契约（前端 types.ts 对齐：camelCase + exception tag 形态）
+    /// LanHealth 序列化契约（前端 types.ts 对齐：camelCase + exception tag 形态
+    /// + bypassRisk 布尔）
     #[test]
     fn lan_health_serializes_frontend_contract() {
         let h = LanHealth {
@@ -1103,12 +1276,14 @@ mod tests {
             legacy_present: true,
             exception: ExceptionState::On { remaining_secs: 3600 },
             public_blocks_exception: true,
+            bypass_risk: true,
         };
         let j = serde_json::to_string(&h).unwrap();
         assert!(j.contains(r#""whitelist":"staleIface""#), "{j}");
         assert!(j.contains(r#""legacyPresent":true"#), "{j}");
         assert!(j.contains(r#""exception":{"state":"on","remainingSecs":3600}"#), "{j}");
         assert!(j.contains(r#""publicBlocksException":true"#), "{j}");
+        assert!(j.contains(r#""bypassRisk":true"#), "AC11 旁路风险位：{j}");
         // 其余四态 tag 形态
         for (state, frag) in [
             (ExceptionState::Off, r#""state":"off""#),
@@ -1120,9 +1295,11 @@ mod tests {
                 legacy_present: false,
                 exception: state,
                 public_blocks_exception: false,
+                bypass_risk: false,
             })
             .unwrap();
             assert!(j.contains(frag), "{state:?}: {j}");
+            assert!(j.contains(r#""bypassRisk":false"#), "{j}");
         }
         // whitelist 五态字符串（前端 chip 分类键）
         for (s, tag) in [
@@ -1137,6 +1314,121 @@ mod tests {
         }
     }
 
+    // ── AC11：程序级规则清理判定（classify_program_rule 矩阵 + judge_health
+    //    bypass 叠加位 + 脚本契约锁）────────────────────────────────────────
+
+    /// 清理判定矩阵（误伤红线）：给定期望路径集合 → 应删/应收紧/应跳过/应保留
+    /// 分类。wemailnode/Electron/其他 node 版本的程序规则一律 Keep；ddns-go 任意
+    /// 路径 Delete（进程在跑 → Skip）；目标识别不到（None）时相应规则 Keep——
+    /// 绝不按 DisplayName 猜测。
+    #[test]
+    fn classify_program_rule_matrix() {
+        assert_eq!(EASYTIER_P2P_PORT, 11010, "P2P 物理层端口契约（spec §2 非目标）");
+        assert_eq!(ET_TIGHT_RULE_TCP, "CloudCLI Mesh EasyTier 11010 TCP");
+        assert_eq!(ET_TIGHT_RULE_UDP, "CloudCLI Mesh EasyTier 11010 UDP");
+        assert_eq!(DDNS_GO_EXE, "ddns-go.exe");
+
+        let t = BypassTargets {
+            node_path: Some(r"D:\Software\nvm\nodejs\node.exe".into()),
+            caddy_paths: vec![
+                r"D:\Software\cloudcli-https\caddy.exe".into(),
+                r"E:\stack2\cloudcli-https\caddy.exe".into(),
+            ],
+            easytier_path: Some(r"D:\Software\cloudcli-https\easytier\easytier-core.exe".into()),
+            ddns_go_running: false,
+        };
+        let cls = |p: &str| classify_program_rule(p, &t);
+
+        // node：监听进程路径精确命中 → Delete；符号链接解析出的真实形态同删
+        assert_eq!(cls(r"D:\Software\nvm\nodejs\node.exe"), BypassAction::Delete);
+        assert_eq!(cls(r"d:\SOFTWARE\NVM\NODEJS\node.exe"), BypassAction::Delete, "大小写不敏感");
+        assert_eq!(cls(r"D:/Software/nvm/nodejs/node.exe"), BypassAction::Delete, "分隔符归一");
+        // 其他 node 版本 / 无关同名族（wemailnode/Electron/其他安装位）→ Keep
+        assert_eq!(cls(r"D:\software\nvm\nvm\v24.9.0\node.exe"), BypassAction::Keep, "非监听进程版本不动");
+        assert_eq!(cls(r"D:\software\node\node.exe"), BypassAction::Keep);
+        assert_eq!(cls(r"D:\Software\??\WXWork\5.0.7.8011\WeMailNode.exe"), BypassAction::Keep, "wemailnode 误伤红线");
+        assert_eq!(cls(r"C:\Users\x\AppData\Local\Programs\app\Electron.exe"), BypassAction::Keep);
+        // caddy：栈目录（多形态）命中 → Delete；栈外 caddy → Keep
+        assert_eq!(cls(r"D:\software\cloudcli-https\caddy.exe"), BypassAction::Delete);
+        assert_eq!(cls(r"E:\stack2\cloudcli-https\caddy.exe"), BypassAction::Delete);
+        assert_eq!(cls(r"D:\elsewhere\caddy.exe"), BypassAction::Keep);
+        // easytier：栈目录命中 → Tighten；栈外 easytier-core → Keep
+        assert_eq!(cls(r"D:\Software\cloudcli-https\easytier\easytier-core.exe"), BypassAction::Tighten);
+        assert_eq!(cls(r"D:\Software\cloudcli-https\easytier\EasyTier-Core.EXE"), BypassAction::Tighten);
+        assert_eq!(
+            cls(r"C:\tools\easytier-core.exe"),
+            BypassAction::Keep,
+            "非栈目录的 easytier 是用户自装软件，不收紧"
+        );
+        // ddns-go：任意路径按叶名 Delete；进程在跑 → Skip
+        assert_eq!(cls(r"D:\software\cloudcli-https\ddns-go.exe"), BypassAction::Delete);
+        assert_eq!(cls(r"E:\ddns-go\ddns-go.exe"), BypassAction::Delete, "任意目录残留");
+        // Program=Any（端口级白名单规则的应用过滤器形态）→ Keep
+        assert_eq!(cls("Any"), BypassAction::Keep);
+
+        // 目标识别不到：相应规则一律 Keep（不按 DisplayName 猜测的构造性证明）
+        let blind = BypassTargets {
+            node_path: None,
+            caddy_paths: vec![],
+            easytier_path: None,
+            ddns_go_running: false,
+        };
+        assert_eq!(classify_program_rule(r"D:\Software\nvm\nodejs\node.exe", &blind), BypassAction::Keep);
+        assert_eq!(classify_program_rule(r"D:\Software\cloudcli-https\caddy.exe", &blind), BypassAction::Keep);
+        assert_eq!(
+            classify_program_rule(r"D:\Software\cloudcli-https\easytier\easytier-core.exe", &blind),
+            BypassAction::Keep
+        );
+        // ddns-go 进程在跑 → Skip（规则在用，删除无效）
+        let running = BypassTargets {
+            node_path: None,
+            caddy_paths: vec![],
+            easytier_path: None,
+            ddns_go_running: true,
+        };
+        assert_eq!(classify_program_rule(r"D:\x\ddns-go.exe", &running), BypassAction::Skip);
+        // 带引号形态（注册表存储变体）也归一命中
+        assert_eq!(cls(r#""D:\Software\nvm\nodejs\node.exe""#), BypassAction::Delete);
+    }
+
+    /// bypass_risk 判定：任一残留布尔为真即风险；nodeSkipped 不计；bypass 字段
+    /// 缺失（旧版脚本）不报风险。**白名单五态与例外判定不受 bypass 影响**
+    ///（AC11 判定单测：旁路是独立呈现位，不改变端口级契约的健康语义）
+    #[test]
+    fn judge_health_bypass_risk_and_whitelist_untouched() {
+        let now = 1_000_000_000_000u64;
+        let bp = |node: bool, caddy: bool, wide: bool, ddns: bool, skipped: bool| {
+            let mut p = probe_with(Some(CIDR), Some(TUN), true);
+            p.bypass = Some(BypassProbe { node, caddy, easytier_wide: wide, ddns_go: ddns, node_skipped: skipped });
+            p
+        };
+        // 全残 → risk
+        assert!(judge(&bp(true, true, true, true, false), false, 0, now, 0).bypass_risk);
+        // 任一为真即 risk
+        for b in [
+            bp(true, false, false, false, false),
+            bp(false, true, false, false, false),
+            bp(false, false, true, false, false),
+            bp(false, false, false, true, false),
+        ] {
+            assert!(judge(&b, false, 0, now, 0).bypass_risk, "{b:?}");
+        }
+        // 全无 / 仅 skipped 标注 / 字段缺失 → 无风险
+        assert!(!judge(&bp(false, false, false, false, false), false, 0, now, 0).bypass_risk);
+        assert!(!judge(&bp(false, false, false, false, true), false, 0, now, 0).bypass_risk, "nodeSkipped 非风险");
+        assert!(!judge(&probe_with(Some(CIDR), Some(TUN), true), false, 0, now, 0).bypass_risk);
+
+        // 白名单五态不因 bypass 改判（同一 probe 仅 bypass 不同 → whitelist 相同）
+        let clean = probe_with(Some(CIDR), Some(TUN), true);
+        assert_eq!(judge(&clean, false, 0, now, 0).whitelist, WhitelistState::Ok);
+        assert_eq!(judge(&bp(true, true, true, true, false), false, 0, now, 0).whitelist, WhitelistState::Ok);
+        let mut stale = bp(false, false, false, false, false);
+        stale.mesh443.remote = Some("10.200.0.0/24".into());
+        assert_eq!(judge(&stale, false, 0, now, 0).whitelist, WhitelistState::StaleCidr);
+        // 例外判定同理不受影响
+        assert_eq!(judge(&bp(true, false, false, false, false), false, 0, now, 0).exception, ExceptionState::Off);
+    }
+
     // ── T3：LanGuardMonitor 状态机（脚本化 probe 输出驱动，零真实进程）────
 
     use std::collections::VecDeque;
@@ -1147,7 +1439,7 @@ mod tests {
         outs: StdMutex<VecDeque<Result<String, String>>>,
     }
     impl LanProbe for MockLanProbe {
-        fn status(&self, _vip: &str) -> Result<String, String> {
+        fn status(&self, _vip: &str, _stack: &str) -> Result<String, String> {
             self.outs.lock().unwrap().pop_front().unwrap_or(Err("耗尽".into()))
         }
     }
@@ -1186,6 +1478,7 @@ mod tests {
         LanInputs {
             virtual_ip: "10.126.126.1".into(),
             cidr: CIDR.into(),
+            stack_dir: STACK.into(),
             exception_enabled: enabled,
             exception_since_ms: since,
             networks: (0..publics)
@@ -1457,6 +1750,7 @@ mod tests {
             Some(CIDR),
             Some(VIP),
             None,
+            Some(STACK),
             Lang::Zh,
         )
         .unwrap();
@@ -1466,11 +1760,90 @@ mod tests {
             Some(CIDR),
             Some(VIP),
             None,
+            Some(STACK),
             Lang::Zh,
         )
         .unwrap();
         assert_eq!(a, b, "重复派发参数逐字节一致");
         assert!(a.contains("-Action migrate"), "{a}");
+    }
+
+    /// lan-guard.ps1 程序规则清理契约锁（AC11「误伤红线」的自动化钉）：① 双目录
+    /// 副本逐字节一致（R9）；② `Invoke-BypassCleanup` 在 ensure-whitelist 与
+    /// migrate 两分支、且于 Invoke-EnsureWhitelist 之后 / exit 3 之前（清理与
+    /// TUN 解耦——休眠态也要清理旁路）；③ 删除一律 `-Name $r.Name`（稳定标识）
+    /// 且过滤「入站 + Allow」（方向/动作双过滤是误伤防线）；④ 绝不出现按
+    /// DisplayName（'Node.js JavaScript Runtime'）全局删除的行；⑤ easytier
+    /// 重建限定 11010（`-LocalPort $EtP2pPort` + `-Program $etPath`）；⑥ status
+    /// 输出 bypass 字段五键；⑦ 443 白名单创建仍单点（程序规则 New 不波及）。
+    #[test]
+    fn bypass_cleanup_script_contract() {
+        let tools = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tools/sprint0/bin");
+        let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/bin");
+        let dev = std::fs::read_to_string(tools.join(SCRIPT_FILE)).expect("tools 副本存在");
+        let packed = std::fs::read_to_string(resources.join(SCRIPT_FILE)).expect("resources 副本存在");
+        assert_eq!(dev, packed, "双目录 lan-guard.ps1 逐字节一致（R9）");
+
+        // ② 两分支各自调用清理，且顺序 = ensure 之后、exit 3 之前（休眠态也清理）
+        for branch in ["'ensure-whitelist' {", "'migrate' {"] {
+            let b = &dev[dev.find(branch).unwrap_or_else(|| panic!("{branch} 分支存在"))..];
+            let b = &b[..b[1..].find("\n        '").map(|i| i + 1).unwrap_or(b.len())];
+            let ensure = b.find("Invoke-EnsureWhitelist").expect("ensure 在前");
+            let clean = b.find("Invoke-BypassCleanup").expect("清理在 ensure 之后");
+            let exit3 = b.find("exit 3").expect("exit 3 契约保留");
+            assert!(ensure < clean && clean < exit3, "{branch} 序列 = ensure → 清理 → exit 3");
+        }
+        // 函数体内 exit 3 已移除（改由调用方按返回值裁决——清理先行完成的保证；
+        // 注释行豁免）
+        let ensure_fn = &dev[dev.find("function Invoke-EnsureWhitelist").expect("函数存在")..];
+        let ensure_fn = &ensure_fn[..ensure_fn.find("function Invoke-BypassCleanup").expect("清理函数存在")];
+        assert!(
+            !ensure_fn.lines().any(|l| !l.trim_start().starts_with('#') && l.contains("exit 3")),
+            "ensure 函数不再内部 exit（返回 bool 交调用方）"
+        );
+
+        // ③ 删除形态：程序规则一律按稳定名删除；方向/动作过滤在识别函数内
+        assert!(
+            dev.contains("$rule.Direction -eq 'Inbound' -and $rule.Action -eq 'Allow'"),
+            "识别只取入站 Allow（误伤防线）：{dev:}"
+        );
+        let cleanup = &dev[dev.find("function Invoke-BypassCleanup").expect("清理函数存在")..];
+        let cleanup = &cleanup[..cleanup.find("try {").expect("主流程起点")];
+        assert!(cleanup.contains("Remove-NetFirewallRule -Name $r.Name"), "按稳定 Name 删除");
+        assert!(
+            !cleanup.lines().any(|l| l.contains("Remove-NetFirewallRule")
+                && (l.contains("DisplayName $node") || l.contains("'Node.js'"))),
+            "绝不按 DisplayName 全局删 node"
+        );
+
+        // ⑤ easytier 重建限定：-LocalPort $EtP2pPort + -Program $etPath，恰两条
+        //（TCP/UDP 各一），创建仅当栈内 exe 存在（New 行跨反引号续行 → 拼接判定）
+        assert_eq!(cleanup.matches("New-NetFirewallRule").count(), 1, "easytier 重建单点（循环两条）");
+        let lines: Vec<&str> = cleanup.lines().collect();
+        let idx = lines.iter().position(|l| l.contains("New-NetFirewallRule")).unwrap();
+        let joined = format!("{} {}", lines[idx].trim_end_matches('`').trim(), lines[idx + 1].trim());
+        assert!(joined.contains("-LocalPort $EtP2pPort"), "{joined}");
+        assert!(joined.contains("-Program $etPath"), "{joined}");
+        assert!(joined.contains("-Profile Domain,Private,Public"), "{joined}");
+
+        // ⑥ status 输出 bypass 字段（Rust parse 契约的数据源）：五探测变量 +
+        // bypass 键（这些变量仅旁路段使用，出现即输出契约在位）
+        assert!(dev.contains("bypass     = [ordered]@{"), "bypass 键");
+        for var in ["$nodeBypass", "$caddyBypass", "$etWide", "$ddnsBypass", "$nodeSkipped"] {
+            assert!(dev.contains(var), "bypass 探测变量 {var}");
+        }
+
+        // ⑦ 443 白名单创建仍单点（AC10 契约不被本批破坏）
+        assert_eq!(
+            dev.matches("New-NetFirewallRule -DisplayName $RuleMesh443").count(),
+            1,
+            "443 白名单仅 Invoke-EnsureWhitelist 一处创建"
+        );
+        // 常量契约锚（与 Rust 侧同值）
+        assert!(dev.contains("$EtP2pPort  = 11010") || dev.contains("$EtP2pPort = 11010"));
+        assert!(dev.contains("$EtTightTcp = 'CloudCLI Mesh EasyTier 11010 TCP'"));
+        assert!(dev.contains("$EtTightUdp = 'CloudCLI Mesh EasyTier 11010 UDP'"));
+        assert!(dev.contains("$DdnsGoLeaf = 'ddns-go.exe'"));
     }
 
     /// lan-guard.ps1 migrate 序列契约锁（AC10「全仓检索」完成口径的自动化钉，

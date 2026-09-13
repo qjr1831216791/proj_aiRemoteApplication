@@ -83,6 +83,8 @@ export const zh = {
   "languard.wl.dormantHint": "组网未运行，白名单暂不就位（休眠非异常：成员本就无组网路由）",
   "languard.wl.fixHint": "白名单与组网实况失配（成员暂不可达，暴露面未扩大）：点「修复白名单」一键重建",
   "languard.fixBtn": "修复白名单",
+  "languard.bypassChip": "旁路风险",
+  "languard.bypassHint": "检测到程序级全端口放行规则绕过白名单（服务进程被整体放行）：点「修复白名单」清理收紧（幂等，只处理本栈服务程序，不动其他软件）",
   "languard.legacyBanner": "检测到旧版局域网放行规则（3001/443 对全网段放行）：建议一键收口，迁移到白名单契约",
   "languard.migrateBtn": "一键收口",
   "languard.exceptionLabel": "3001 局域网例外",

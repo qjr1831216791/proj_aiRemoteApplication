@@ -256,6 +256,7 @@ pub fn run() {
                 lan_guard::LanInputs {
                     virtual_ip: s.mesh.virtual_ip.clone(),
                     cidr: s.mesh.virtual_cidr.clone(),
+                    stack_dir: s.stack_dir.clone(),
                     exception_enabled: s.lan_guard.exception_enabled,
                     exception_since_ms: s.lan_guard.exception_since_ms,
                     networks: lan_inputs_net.last().map(|n| n.networks).unwrap_or_default(),
@@ -476,6 +477,7 @@ impl lan_guard::RevertExecutor for LanRevertExecutor {
         let params = lan_guard::dispatch_params(
             dir,
             lan_guard::LanGuardAction::ExceptionOff,
+            None,
             None,
             None,
             None,

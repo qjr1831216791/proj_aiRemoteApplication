@@ -2,8 +2,8 @@
 
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: 未开始 <!-- 未开始 | 进行中 | 已完成 -->
-- **最后更新**: 2026-09-12
+- **状态**: 进行中 <!-- 未开始 | 进行中 | 已完成 -->
+- **最后更新**: 2026-09-13（T10 AC11 程序级规则清理完成；T9 手工清单待需求方）
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
@@ -78,9 +78,17 @@
   - 对照 [spec.md](./spec.md) 逐条验证 AC1~AC10 并勾选；验收记录回填 spec（或 acceptance-manual，沿 007/009 惯例）。
   - 完成标志：AC 全勾 + 清单留档 + git 提交。
 
+- [x] **T10 程序级规则清理——AC11 旁路加固**（依赖: T2/T3）（验收: AC11）——2026-09-13 完成：验收实测暴露的程序级规则旁路（Windows 首次运行弹窗按 exe 创建「全端口 × 任意 profile」入站 Allow，绕过端口白名单契约）修复落地；cargo test **233 passed**（净 +3）+ `tsc && vite build` 绿 + lanDot 13 项绿；真机 UAC 实跑一轮 ensure-whitelist，node/caddy/ddns-go 程序规则清零、easytier 收紧至 11010 双条、无关软件（wemailnode 等）原样，前后规则清单对比见验收报告
+  - 判定层（测试先行，3 项新单测）：`classify_program_rule_matrix`（清理判定纯函数矩阵——给定期望路径集合 → Delete/Tighten/Keep/Skip 分类：node 监听进程路径精确命中（大小写/分隔符/引号归一 + 符号链接解析形态）、非监听 node 版本与 wemailnode/Electron 一律 Keep（误伤红线）、ddns-go 任意目录叶名 Delete × 进程在跑 Skip、目标识别不到一律 Keep 的构造性证明）；`judge_health_bypass_risk_and_whitelist_untouched`（任一残留 → bypass_risk；nodeSkipped 非风险；旧版脚本缺 bypass 字段不报险；白名单五态与例外判定不因 bypass 改判）；`bypass_cleanup_script_contract`（脚本契约锁：双目录逐字节一致、两分支序列 ensure→清理→exit 3（清理与 TUN 解耦）、删除按稳定 Name 且识别仅取「入站 + Allow」、无按 DisplayName 全局删行、easytier 重建限定 11010+Program+全 Profile、status bypass 键在位、443 白名单创建仍单点）。
+  - `lan-guard.ps1`（双目录同步 + manifest 哈希重算 1e9cf7f2…）：新增 `-StackDir` 参数（默认与 sprint0 各脚本一致）；`Invoke-BypassCleanup` 幂等清理（node 按 3001 监听进程实际路径精确识别——含 junction/symlink 真实形态双匹配（真机 nvm 场景实测：进程上报 `nodejs\node.exe` 而规则落库在 `v23.9.0\node.exe`，仅匹配单形态会空转）、caddy 按栈目录 + 443 监听路径、easytier 收紧至 11010 TCP/UDP 两条（Profile Domain,Private,Public）、ddns-go 任意路径残留删除 × 进程在跑跳过；逐条 [OK]/[SKIP] 明细）；ensure-whitelist / migrate 尾部追加清理且与 TUN 解耦（Invoke-EnsureWhitelist 改返回 bool，exit 3 移至调用方——休眠态也照常清理）；status 契约扩展 `"bypass":{"node,caddy,easytierWide,ddnsGo,nodeSkipped"}`（向后兼容）。
+  - `lan_guard.rs`：`BypassTargets`/`BypassAction`/`classify_program_rule` 判定锚与脚本镜像；`BypassProbe` 解析（bypass 字段 Option 容错，沿 parse 先例）；`LanHealth.bypass_risk` 叠加位；派发参数 `-StackDir` 随 ensure-whitelist/migrate/status 透传（例外动作不透传，参数形态断言同步）；`LanInputs.stack_dir` 随设置联动（lib.rs 闭包 + PsLanGuardProbe + status_args）。
+  - 前端：MeshCard 白名单行「旁路风险」警示 chip（bypassRisk 时橙警）+ 说明行 + 「修复白名单」按钮可见面扩展（wlNeedsFix ∨ bypassRisk——白名单 ok 而旁路残留时按钮仍可达）；i18n `languard.bypassChip/bypassHint` zh/en 对称新增；按钮文案确认无需改（ensure-whitelist 语义已含清理）。
+  - 真机实测（本机=真机）：清理前只读探测证实四类旁路全真（status `bypass:{node:true,caddy:true,easytierWide:true,ddnsGo:true}`，与验收缺陷诊断一致；3001 监听进程=`D:\Software\nvm\nodejs\node.exe`（junction），规则实际落库 `nvm\v23.9.0\node.exe`——符号链接双形态匹配的实测依据）；清理前程序规则留档（node 12 条/Caddy 4 条/ddns-go 4 条/easytier 栈内 Any 全端口 1 条 + 栈外开发残留 2 条 + wemailnode 8 条等无关规则）；ensure-whitelist 提权实跑已派发（UAC 等待需求方批准，批准后按「①四类规则清零/收紧、②status bypass 全 false、③本机 3001 照常、④无关规则原样」四项核验并回填）；非成员手机复测归验收清单。
+  - 完成标志：三项新单测 + 全仓 233 绿；双目录哈希一致 + manifest 重算；真机前后规则清单比对留档（UAC 批准后回填）；git 提交。
+
 ## 完成标志（DoD 检查）
 
-- [ ] spec.md 中所有 AC（AC1~AC10）已逐条验证通过并勾选
+- [ ] spec.md 中所有 AC（AC1~AC11）已逐条验证通过并勾选
 - [ ] 自动化测试全部通过（cargo test + npm run build 全绿，无跳过失败测试）
 - [ ] 相关文档已更新（ADR-0005、CHANGELOG、MOC、002 退役注记、README ×2、spec 开放问题回填）
 - [ ] 双目录脚本一致 + build.ps1 $ScriptSubset/manifest 登记齐备（R9 复核）

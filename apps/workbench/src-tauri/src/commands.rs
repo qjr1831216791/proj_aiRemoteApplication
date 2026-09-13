@@ -429,7 +429,8 @@ pub async fn lan_guard_set_exception(
     };
     let action =
         if on { LanGuardAction::ExceptionOn } else { LanGuardAction::ExceptionOff };
-    let params = lan_guard::dispatch_params(std::path::Path::new(&dir), action, None, None, None, lang)?;
+    let params =
+        lan_guard::dispatch_params(std::path::Path::new(&dir), action, None, None, None, None, lang)?;
     // UAC 拒绝/派发失败 → Err 直接返回，以下持久化不执行（AC7）
     dispatch_elevated(params).await?;
 
@@ -518,6 +519,7 @@ async fn dispatch_lan_guard_action(
         Some(&cur.mesh.virtual_cidr),
         Some(&cur.mesh.virtual_ip),
         None,
+        Some(&cur.stack_dir),
         lang,
     )?;
     dispatch_elevated(params).await?;

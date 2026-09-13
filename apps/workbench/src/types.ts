@@ -241,6 +241,9 @@ export interface LanHealth {
   exception: ExceptionState;
   /** 例外生效 ∧ 当前有公用活动网络（Private 规则直访不生效的如实提示） */
   publicBlocksException: boolean;
+  /** 程序级旁路残留（AC11）：任一服务 exe 存在全端口放行规则 → 「旁路风险」
+   * 警示 chip，经「修复白名单」清理（ensure-whitelist 语义已含程序规则清理） */
+  bypassRisk: boolean;
 }
 
 /** set_autostart_services 返回载荷 */

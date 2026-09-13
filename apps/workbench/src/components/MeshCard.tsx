@@ -13,6 +13,7 @@
  *   CNAME 残留按旁路暴露面提示（spec 007 体检口径延续）
  * - 访问白名单（spec 010 T6）：健康 chip（正常/休眠/待修复）+ 失配「修复白名单」
  *   + 旧规则迁移横幅「一键收口」+ 3001 例外开关（风险确认模态含归类前提 + 12h 回落如实呈现）
+ *   + 旁路风险警示 chip（AC11：程序级全端口放行规则残留，同按钮清理）
  * - 通道体检：DNS / 网络归类（组网不适用）/ 组网客户端 / 本机组件 / 域名全链路
  * 通道与配置数据源：settings（App 持有）；白名单健康：languard://changed 事件
  * （60s 监视 + 动作后即时复测经 MainView 下沉的回调）。
@@ -349,7 +350,9 @@ export function MeshCard(props: MeshCardProps) {
       </div>
 
       {/* 访问白名单（spec 010 T6）：健康 chip + 失配修复；数据源 languard://changed
-          （后端 60s 监视）+ 动作后即时复测 */}
+          （后端 60s 监视）+ 动作后即时复测。旁路风险（AC11）：程序级全端口放行
+          规则残留的警示 chip——与端口级白名单健康正交的另一层，经「修复白名单」
+          清理（ensure-whitelist 语义已含程序规则清理，按钮同款复用） */}
       <div class="net__row">
         <span class="net__name">{t("languard.title", lang)}</span>
         {lanHealth ? (
@@ -357,13 +360,16 @@ export function MeshCard(props: MeshCardProps) {
             <span class={`chip ${wlChipClass(lanHealth.whitelist)}`}>
               {t(wlChipKey(lanHealth.whitelist), lang)}
             </span>
+            {lanHealth.bypassRisk ? (
+              <span class="chip chip--net-public">{t("languard.bypassChip", lang)}</span>
+            ) : null}
             <span class="settings__desc">{t(wlHintKey(lanHealth.whitelist), lang)}</span>
           </>
         ) : (
           <span class="muted">—</span>
         )}
         <span class="net__spacer" />
-        {lanHealth && wlNeedsFix(lanHealth.whitelist) ? (
+        {lanHealth && (wlNeedsFix(lanHealth.whitelist) || lanHealth.bypassRisk) ? (
           <button
             class="btn btn--sm"
             disabled={busy !== null}
@@ -373,6 +379,9 @@ export function MeshCard(props: MeshCardProps) {
           </button>
         ) : null}
       </div>
+      {lanHealth?.bypassRisk ? (
+        <p class="notice notice--warn">{t("languard.bypassHint", lang)}</p>
+      ) : null}
 
       {/* 旧规则迁移横幅（AC10）：一键收口 = 幂等删两旧规则 + 就位白名单（端到端演练 T7） */}
       {lanHealth?.legacyPresent ? (

@@ -58,7 +58,7 @@ if (-not (Test-Path $lanGuard)) {
 # 子进程调用：lan-guard 的退出码契约（0/1/3）经 $LASTEXITCODE 如实读取
 & powershell -NoProfile -ExecutionPolicy Bypass -File $lanGuard `
     -Action ensure-whitelist -Cidr $MeshCidr -VirtualIp $MeshVirtualIp -WaitTun 20 `
-    -Lang $script:lang
+    -StackDir $StackDir -Lang $script:lang
 $lgExit = $LASTEXITCODE
 $lgFailed = $false
 switch ($lgExit) {

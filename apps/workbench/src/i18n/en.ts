@@ -85,6 +85,8 @@ export const en = {
   "languard.wl.dormantHint": "Mesh not running; the whitelist is not in place (dormant, not an error: members have no mesh route anyway)",
   "languard.wl.fixHint": "Whitelist rule doesn't match the current mesh state (members unreachable, no extra exposure): click \"Fix whitelist\" to rebuild it",
   "languard.fixBtn": "Fix whitelist",
+  "languard.bypassChip": "Bypass risk",
+  "languard.bypassHint": "Program-level allow rules bypass the whitelist (a service exe is open on all ports): click \"Fix whitelist\" to clean up (idempotent; only this stack's service programs are touched)",
   "languard.legacyBanner": "Legacy LAN allow rules detected (3001/443 open to any address): run one-click cleanup to migrate to the whitelist contract",
   "languard.migrateBtn": "Clean up now",
   "languard.exceptionLabel": "LAN exception (3001)",
