@@ -2,8 +2,8 @@
 
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: 进行中 <!-- 未开始 | 进行中 | 已完成 -->
-- **最后更新**: 2026-09-13（T10 AC11 程序级规则清理完成；T9 手工清单待需求方）
+- **状态**: 已完成 <!-- 未开始 | 进行中 | 已完成 -->
+- **最后更新**: 2026-09-13（T9 真机验收完成——需求方执行十项清单并拍板验收，AC1~AC11 全勾，spec 流转 done，发布 v0.6.0）
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
@@ -70,13 +70,11 @@
   - `specs/MOC.md`：010 状态流转与描述更新。
   - 根 README「远程访问方案」段与 `tools/sprint0` README 脚本清单（补 lan-guard.ps1、删述已移除步骤）。
   - 完成标志：adr/README 索引含 0005；上述文档全部落盘；git 提交。
-- [~] **T9 自动化全绿 + 真机验收**（依赖: T1~T8）（验收: AC1~AC10 逐条）——2026-09-12 自动化三项完成：①全绿 cargo test **230 passed / 0 failed / 3 ignored** + `tsc && vite build` 绿；②build.ps1 完整跑通（exit 0，release/ 双产物 2026-09-12 17:28 本次时间戳，setup.exe 12.37 MB / zip 15.42 MB）——lan-guard.ps1 进产物核验：便携 zip 内实有 `resources/bin/lan-guard.ps1`（15,423 字节）且包内 manifest.json 钉其 SHA256=8d86ec03… 与双目录源逐字一致，NSIS 侧按 tauri.conf.json `resources: ["resources/bin/*"]` + build.ps1 $ScriptSubset 同源核验；同步段 12 脚本全 `[一致]`、manifest 无变化，无 manifest 校验失败告警（唯一 warning 为 rustc 建库 linker 提示，良性）；③防火墙实况（只读）：两条旧规则 `CloudCLI LAN HTTPS 443`/`CloudCLI LAN 3001` 仍 Profile=Private Enabled=True（T7 migrate 提权窗未被批准，旧态属预期），`CloudCLI Mesh HTTPS 443` 在（Profile=Any）、`CloudCLI LAN 3001 Exception` 不存在（例外关闭），`lan-guard-migrate-run1.log`/`.code` 均未生成。
+- [x] **T9 自动化全绿 + 真机验收**（依赖: T1~T8）（验收: AC1~AC10 逐条）——2026-09-12 自动化三项完成：①全绿 cargo test **230 passed / 0 failed / 3 ignored** + `tsc && vite build` 绿；②build.ps1 完整跑通（exit 0，release/ 双产物 2026-09-12 17:28 本次时间戳，setup.exe 12.37 MB / zip 15.42 MB）——lan-guard.ps1 进产物核验：便携 zip 内实有 `resources/bin/lan-guard.ps1`（15,423 字节）且包内 manifest.json 钉其 SHA256=8d86ec03… 与双目录源逐字一致，NSIS 侧按 tauri.conf.json `resources: ["resources/bin/*"]` + build.ps1 $ScriptSubset 同源核验；同步段 12 脚本全 `[一致]`、manifest 无变化，无 manifest 校验失败告警（唯一 warning 为 rustc 建库 linker 提示，良性）；③防火墙实况（只读）：两条旧规则 `CloudCLI LAN HTTPS 443`/`CloudCLI LAN 3001` 仍 Profile=Private Enabled=True（T7 migrate 提权窗未被批准，旧态属预期），`CloudCLI Mesh HTTPS 443` 在（Profile=Any）、`CloudCLI LAN 3001 Exception` 不存在（例外关闭），`lan-guard-migrate-run1.log`/`.code` 均未生成。**2026-09-13 收口**：需求方真机执行 plan §6.1 十项清单并拍板验收——唯一放行组合=同 WiFi+专用网络+例外放行。
   - 自动化：`cargo test` + `npm run build` 全绿；`scripts/build.ps1` 打包一轮确认 lan-guard.ps1 进产物（R9 防漂移复核）。
-  - 手工：执行 plan §6.1 十项清单（**待需求方在场执行**；清单 1 伪造源 IP 场景必须实测；清单 7 用 exceptionSince 回填法观察 12h 回落；清单 9 迁移前后规则清单比对留档——migrate 实跑可随清单 9 一并落地）。
-  - 对照 [spec.md](./spec.md) 逐条验证 AC1~AC10 并勾选；验收记录回填 spec（或 acceptance-manual，沿 007/009 惯例）。**AC 勾选与 spec 状态流转均待验收，本批不动。**
-  - 手工：执行 plan §6.1 十项清单（需求方在场；清单 1 伪造源 IP 场景必须实测；清单 7 用 exceptionSince 回填法观察 12h 回落；清单 9 迁移前后规则清单比对留档）。
-  - 对照 [spec.md](./spec.md) 逐条验证 AC1~AC10 并勾选；验收记录回填 spec（或 acceptance-manual，沿 007/009 惯例）。
-  - 完成标志：AC 全勾 + 清单留档 + git 提交。
+  - 手工（2026-09-13 完成）：真机实测项——清单 2（公用+无例外非成员 3001/443 不可达）、3/4（成员多网络可达：「各种网络情况下都可通过移动端访问」）、5（loopback 与域名 HTTP 200）、6（换网无告警，合并覆盖）、7（例外开/关全程：603 专用+例外开→手机直访 `http://<ip>:3001` 可达，首测误输 https 纠正；关闭→不可达）、9（迁移留档，随 T7 于 2026-09-12 落地）；背书项（自动化/契约，如实话注记）——清单 1（伪造源 IP，双条件规则实况背书）、8（网段联动，单测背书）、10（白名单健康：真机自然发生同型漂移 et_8_1999→et_8_2vfw 且白名单重建跟踪新名实证 + T2 exit 3 休眠实测）。逐项实况见 [acceptance-manual.md](./acceptance-manual.md) §2。
+  - 对照 [spec.md](./spec.md) 逐条验证 AC1~AC11 并勾选（口径如实：真机实测 / 自动化背书分开）；验收记录回填 acceptance-manual；spec 流转 done。
+  - 完成标志：AC 全勾（附口径注记）+ 清单留档 + git 提交。
 
 - [x] **T10 程序级规则清理——AC11 旁路加固**（依赖: T2/T3）（验收: AC11）——2026-09-13 完成：验收实测暴露的程序级规则旁路（Windows 首次运行弹窗按 exe 创建「全端口 × 任意 profile」入站 Allow，绕过端口白名单契约）修复落地；cargo test **233 passed**（净 +3）+ `tsc && vite build` 绿 + lanDot 13 项绿；真机 UAC 实跑两轮 ensure-whitelist（清理 + 幂等复验），node/caddy/ddns-go 程序规则清零、easytier 收紧至 11010 双条、无关软件（wemailnode 等）原样，前后规则清单对比见下
   - 判定层（测试先行，3 项新单测）：`classify_program_rule_matrix`（清理判定纯函数矩阵——给定期望路径集合 → Delete/Tighten/Keep/Skip 分类：node 监听进程路径精确命中（大小写/分隔符/引号归一 + 符号链接解析形态）、非监听 node 版本与 wemailnode/Electron 一律 Keep（误伤红线）、ddns-go 任意目录叶名 Delete × 进程在跑 Skip、目标识别不到一律 Keep 的构造性证明）；`judge_health_bypass_risk_and_whitelist_untouched`（任一残留 → bypass_risk；nodeSkipped 非风险；旧版脚本缺 bypass 字段不报险；白名单五态与例外判定不因 bypass 改判）；`bypass_cleanup_script_contract`（脚本契约锁：双目录逐字节一致、两分支序列 ensure→清理→exit 3（清理与 TUN 解耦）、删除按稳定 Name 且识别仅取「入站 + Allow」、无按 DisplayName 全局删行、easytier 重建限定 11010+Program+全 Profile、status bypass 键在位、443 白名单创建仍单点）。
@@ -89,8 +87,8 @@
 
 ## 完成标志（DoD 检查）
 
-- [ ] spec.md 中所有 AC（AC1~AC11）已逐条验证通过并勾选
-- [ ] 自动化测试全部通过（cargo test + npm run build 全绿，无跳过失败测试）
-- [ ] 相关文档已更新（ADR-0005、CHANGELOG、MOC、002 退役注记、README ×2、spec 开放问题回填）
-- [ ] 双目录脚本一致 + build.ps1 $ScriptSubset/manifest 登记齐备（R9 复核）
-- [ ] 本文件全部任务勾选完毕
+- [x] spec.md 中所有 AC（AC1~AC11）已逐条验证通过并勾选（口径注记：AC1~AC6/AC10/AC11 真机实测、AC7~AC9 自动化覆盖为主并如实话标注未单独实测子场景）
+- [x] 自动化测试全部通过（T9 收口时点 230 绿 → T10 后 233 passed / 0 failed；`tsc && vite build` 全绿，无跳过失败测试）
+- [x] 相关文档已更新（ADR-0005、CHANGELOG——本批随 v0.6.0 定稿、MOC——本批流转 done、002 退役注记、README ×2、spec 开放问题回填）
+- [x] 双目录脚本一致 + build.ps1 $ScriptSubset/manifest 登记齐备（R9 复核：T2 初登记 + T10 清理改动后哈希重算 1e9cf7f2…）
+- [x] 本文件全部任务勾选完毕
