@@ -22,6 +22,7 @@
 | [sprint0/start-server.bat](./sprint0/bin/start-server.bat) | 服务端双击启动 CloudCLI：已在运行则直接打开浏览器 |
 | [sprint0/run-server-hidden.ps1](./sprint0/bin/run-server-hidden.ps1) | 幂等后台启动 CloudCLI（计划任务与 SessionStart hook 共用；日志 `%TEMP%\cloudcli.log`） |
 | [sprint0/setup-autostart.ps1](./sprint0/bin/setup-autostart.ps1) | 注册/移除 CloudCLI + Caddy 两个登录自启计划任务（`-Remove` 全关；推荐的常驻方式） |
+| [upgrade-component.ps1](./upgrade-component.ps1) | **组件版本升级**（维护者用，spec 011）：`-Component caddy\|easytier -Version x.y.z` 一条命令完成下载 → 预检 → 改写锁定值（install-https 常量 / consts.rs 五哈希 + 二进制 + manifest）→ 跑相关测试 → 输出新旧对照与官方校验和来源。纯仓库侧开发工具，**不随安装包分发** |
 
 > 上表只列高频入口。`sprint0/bin/` 的全部脚本（另含 HTTPS 栈装机、腾讯云密钥写入、EasyTier 组网服务/密钥与旧通道卸载）以 [sprint0/README.md](./sprint0/README.md) 的"文件清单"为唯一来源，此处不重复维护。
 

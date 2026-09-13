@@ -96,6 +96,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 | `install-https.bat` / `.ps1` | 服务端 | **HTTPS 栈装机**（一次）：下载 caddy.exe（caddyserver.com 插件构建；直连失败用 `-CaddyZip` 指手动下载的文件，升级加 `-Update`）+ 生成 Caddyfile + 跑 enable-https |
 | `mesh-service.ps1` | 服务端 | **EasyTier 组网服务管理**（spec 007）：install / uninstall / start / stop / restart / status 六动作（变更动作需管理员，status 只读免提权） |
 | `set-mesh-secret.ps1` | 服务端 | 组网密钥写入 `easytier\network-secret`（spec 007；成员设备加入同一网络时输入相同密钥，输入不回显） |
+| `set-https-account.ps1` | 服务端 | **443 访问账号管理**（spec 011）：add / set（改密）/ remove 三动作——密码在工作台派发的控制台窗口 `Read-Host` 隐藏回显输入两次并校验一致，bcrypt 哈希落栈目录 `auth-accounts.json`（无明文），Caddyfile 标记段随之再生（存量装机首插；写前备份 + `caddy validate` 自检失败回滚 + `caddy reload` 零停机）。日常入口在工作台设置区「访问账号」卡，一般不手点 |
 | `uninstall-legacy.ps1` | 服务端 | **旧通道一次性卸载**（spec 008）：清 frp / ddns-go 残留进程、自启任务、文件与 .env 密钥行（前置闸门：组网服务 EasyTierMesh 在线——卸掉旧通道前组网是唯一远程兜底；`-Force` 仅供演练） |
 
 ## 常见问题

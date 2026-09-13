@@ -11,7 +11,7 @@
 - （暂无）
 
 ### 🟠 实现中（in-progress）
-- [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) — 攻击面加固：工作台命令面硬化（domain/stack_dir 双闸校验 + SHA256 去短路 + CSP）+ Caddy 下载指纹锁定 + 443 入口 basic_auth + 傻瓜式组件升级脚本（依据 [2026-09 安全审查报告](../docs/research/security-audit-2026-09.md)；双子代理评审修订后实施，分支 spec011-attack-surface-hardening）
+- [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) — 攻击面加固：工作台命令面硬化（domain/stack_dir 双闸校验 + SHA256 去短路 + CSP）+ Caddy 下载指纹锁定 + 443 入口 basic_auth + 傻瓜式组件升级脚本（依据 [2026-09 安全审查报告](../docs/research/security-audit-2026-09.md)；双子代理评审修订后实施；**2026-09-13 验收 done**——AC1~AC11 全勾，真机发现并修复登录死循环与心跳误判，单门模式固化，记录见其 acceptance-manual；**v0.7.0 发布**）
 
 ### ✅ 已完成（done）
 - [012-install-client-retirement](./012-install-client-retirement/spec.md) — install-client 退役：运维工具「客户端配置」入口与脚本本体移除（2026-09-13 当日立项当日 done，253 测试绿 + 全仓零残留）
@@ -43,7 +43,7 @@
 | Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；2026-09-11 需求方签收 done，随 v0.4.0 发布） |
 | Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 成员入网配置展示 + 发版校验脚本 + 真机旧通道清理（2026-09-11 验收 done） |
 | Sprint 8 | [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md) | **v0.6.0**：局域网边界收口（443/3001 源网段白名单 + 直访默认退役 + 例外开关；2026-09-13 验收 done，发布 v0.6.0） |
-| Sprint 9 | [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) | 攻击面加固（P1 命令面硬化 / P2 Caddy 指纹锁定 / P3 basic_auth + 升级脚本；in-progress） |
+| Sprint 9 | [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) | **v0.7.0**：攻击面加固（P1 命令面硬化 / P2 Caddy 指纹锁定 / P3 basic_auth + 升级脚本；2026-09-13 验收 done，发布 v0.7.0） |
 | Sprint 9 | [012-install-client-retirement](./012-install-client-retirement/spec.md) | install-client 退役（运维工具「客户端配置」移除；需求方拍板随 011 同迭代，2026-09-13 done） |
 
 ## 按主题导航
