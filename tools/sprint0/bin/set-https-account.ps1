@@ -136,6 +136,11 @@ if ($Action -ne 'remove') {
         Write-Bad (T '两次输入不一致，未写入。' 'The two entries do not match; nothing written.')
         exit 1
     }
+    if ($pw1 -match '[^\x20-\x7E]') {
+        # 真机实证（2026-09-13）：非 ASCII 密码时浏览器对 basic_auth 凭证的编码不一致
+        # （Latin-1 vs UTF-8），会出现「密码正确也反复 401」——只警告不拒绝
+        Write-Info (T '提示：密码含非 ASCII 字符（如中文/全角符号）——部分浏览器认证编码不一致会导致「密码正确也反复询问」，强烈建议改用纯英文数字符号密码。' 'Note: the password contains non-ASCII characters; inconsistent browser encoding can cause endless 401 prompts even with the correct password. ASCII-only passwords are strongly recommended.')
+    }
 
     # bcrypt 哈希：栈目录 caddy.exe hash-password，明文经 stdin 管道（UTF-8 + 单个 \n 结尾）
     # ——绝不进命令行；字节级控制 stdin 是为避开 PowerShell 管道自带 \r\n 的污染
@@ -178,18 +183,19 @@ if ($Action -eq 'add') {
 $beginTag = '# BEGIN workbench-auth'
 $endTag   = '# END workbench-auth'
 
-# 由 JSON 再生的段内容（ASCII：与 install-https.ps1 生成端 -Encoding ascii 一致）
-$segment = @("    $beginTag")
+# 由 JSON 再生的段内容（ASCII：与 install-https.ps1 生成端 -Encoding ascii 一致；
+# 制表符缩进与 caddy fmt 规范化形态一致，避免每次 validate/adapt 的 not formatted 警告）
+$segment = @("`t$beginTag")
 if ($accounts.Count -eq 0) {
-    $segment += '    #   (no access accounts configured - add via the workbench or set-https-account.ps1)'
+    $segment += "`t#   (no access accounts configured - add via the workbench or set-https-account.ps1)"
 } else {
-    $segment += '    basic_auth {'
+    $segment += "`tbasic_auth {"
     foreach ($a in $accounts) {
-        $segment += ('        {0} {1}' -f $a.username, $a.hash)
+        $segment += ("`t`t{0} {1}" -f $a.username, $a.hash)
     }
-    $segment += '    }'
+    $segment += "`t}"
 }
-$segment += "    $endTag"
+$segment += "`t$endTag"
 
 $lines = @(Get-Content -Path $caddyfile)
 $beginIdx = -1
@@ -242,6 +248,17 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $jsonText = [pscustomobject]@{ accounts = $accounts } | ConvertTo-Json -Depth 5
 [System.IO.File]::WriteAllText($authFile, $jsonText, $utf8NoBom)
 [System.IO.File]::WriteAllLines($caddyfile, $lines, $utf8NoBom)
+
+# caddy fmt --overwrite 规范化：消除每次 validate/adapt 的
+# "Caddyfile input is not formatted" 警告（存量手改/空格缩进的 Caddyfile 一并治愈）。
+# .bak 已备，回滚不受影响；fmt 失败不阻断——交给 validate 判死（格式问题属提示级）
+$ErrorActionPreference = 'Continue'
+& $caddy fmt --overwrite $caddyfile | Out-Null
+$fmtCode = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+if ($fmtCode -ne 0) {
+    Write-Info (T "caddy fmt 规范化未执行（退出码 $fmtCode），不影响后续自检与生效。" "caddy fmt normalization skipped (exit $fmtCode); validation and activation unaffected.")
+}
 
 function Restore-Backups {
     Copy-Item -Path $caddyBak -Destination $caddyfile -Force

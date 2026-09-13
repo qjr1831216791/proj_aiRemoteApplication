@@ -223,25 +223,27 @@ if (Test-Path $caddyfile) {
     # 位置参数形式 validate 报 wrong argument count（2026-09-10 实证）
     # 注意：数组字面量元素不可用 'str' + $var 拼接（PS 5.1 会把逗号解析为
     # + 的右操作数，导致值被拆分）——一律用 "${var}" 插值（2026-09-10 实证）
+    # 注意：缩进一律制表符（`t）——caddy fmt 的规范形态，避免每次 validate/adapt
+    # 打出 "Caddyfile input is not formatted" 警告（2026-09-13 真机实证）
     $lines = @(
         '{',
-        '    auto_https disable_redirects',
+        "`tauto_https disable_redirects",
         '}',
         '',
         "${Domain}:443 {",
-        '    tls {',
-        '        dns tencentcloud {',
-        '            secret_id {env.TENCENT_SECRET_ID}',
-        '            secret_key {env.TENCENT_SECRET_KEY}',
-        '        }',
-        '    }',
-        "    reverse_proxy 127.0.0.1:${Port}",
+        "`ttls {",
+        "`t`tdns tencentcloud {",
+        "`t`t`tsecret_id {env.TENCENT_SECRET_ID}",
+        "`t`t`tsecret_key {env.TENCENT_SECRET_KEY}",
+        "`t`t}",
+        "`t}",
+        "`treverse_proxy 127.0.0.1:${Port}",
         # 访问账号标记段（spec 011 AC9/AC11）：新装机即带空段——未设账号=空注释，
         # caddy 正常启动；set-https-account.ps1 以此为锚点原地再生 basic_auth 块
         # （内容保持 ASCII：本文件以 -Encoding ascii 落盘）
-        '    # BEGIN workbench-auth',
-        '    #   (no access accounts configured - add via the workbench or set-https-account.ps1)',
-        '    # END workbench-auth',
+        "`t# BEGIN workbench-auth",
+        "`t#   (no access accounts configured - add via the workbench or set-https-account.ps1)",
+        "`t# END workbench-auth",
         '}'
     )
     Set-Content -Path $caddyfile -Value $lines -Encoding ascii
