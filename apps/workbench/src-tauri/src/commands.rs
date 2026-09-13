@@ -98,7 +98,7 @@ pub fn open_external(
     scripts::open_url(&url).map_err(|code| lang::shell_error_text(code, lang_state.current()))
 }
 
-/// 低频工具派发（AC19/20）：提权类 runas 可见窗、install-client 普通可见交互窗。
+/// 低频工具派发（AC19/20）：提权类 runas 可见窗、密钥/账号类普通可见交互窗。
 /// UAC 拒绝/启动失败 → Err（前端明确提示，不崩溃）。
 /// ShellExecuteW(runas) 在 UAC 弹窗期间可能不返回 → 后台线程执行不冻结 UI。
 #[tauri::command]

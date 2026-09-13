@@ -50,8 +50,6 @@ export const zh = {
   "tools.updateCloudcli": "升级 CloudCLI",
   "tools.updateCloudcliDesc": "install-server.ps1 -Update（管理员）",
   "tools.useMirror": "使用国内镜像源",
-  "tools.installClient": "客户端配置",
-  "tools.installClientDesc": "install-client.ps1（其他电脑/手机，交互式）",
   "tools.scriptsUnavailable": "脚本目录不可用，相关操作已禁用：",
   "tools.uacHint": "带「管理员」标记的操作会弹出 UAC 授权窗口",
   "tools.dispatched": "已派发：请在弹出的窗口中按提示完成操作",

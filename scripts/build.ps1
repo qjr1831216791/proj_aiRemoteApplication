@@ -51,7 +51,6 @@ $ScriptSubset = @(
     'install-server.ps1'      # 安装/升级 CloudCLI（UAC）
     'install-https.ps1'       # HTTPS 栈装机（UAC）
     'enable-https.ps1'        # HTTPS 环境配置（UAC）
-    'install-client.ps1'      # 客户端配置（交互式）
     'set-tencent-key.ps1'     # 腾讯云 CAM 密钥写入 .env（交互式，spec 006）
     'mesh-service.ps1'        # EasyTier 组网服务管理（UAC，spec 007）
     'set-mesh-secret.ps1'     # EasyTier 组网密钥写入 network-secret（交互式，spec 007）

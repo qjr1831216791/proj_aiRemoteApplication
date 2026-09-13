@@ -32,8 +32,6 @@ pub enum Script {
     InstallHttps,
     /// HTTPS 环境配置（需管理员）
     EnableHttps,
-    /// 客户端配置（交互式，无需管理员）
-    InstallClient,
     /// 腾讯云 CAM 密钥写入 .env（交互式，无需管理员；spec 006——
     /// spec 008 后为栈 .env 凭证唯一写入通道）
     SetTencentKey,
@@ -66,7 +64,6 @@ impl Script {
             Script::InstallServer => "install-server.ps1",
             Script::InstallHttps => "install-https.ps1",
             Script::EnableHttps => "enable-https.ps1",
-            Script::InstallClient => "install-client.ps1",
             Script::SetTencentKey => "set-tencent-key.ps1",
             Script::MeshService => "mesh-service.ps1",
             Script::SetMeshSecret => "set-mesh-secret.ps1",
@@ -83,7 +80,7 @@ impl Script {
             | Script::MeshService => {
                 Visibility::Elevated
             }
-            Script::InstallClient | Script::SetTencentKey | Script::SetMeshSecret
+            Script::SetTencentKey | Script::SetMeshSecret
             | Script::SetHttpsAccount => {
                 Visibility::VisibleInteractive
             }
@@ -98,7 +95,6 @@ impl Script {
             Script::InstallServer => Duration::from_secs(900),
             Script::InstallHttps => Duration::from_secs(1800),
             Script::EnableHttps => Duration::from_secs(120),
-            Script::InstallClient => Duration::from_secs(600),
             // 交互输入等待无上限，给足余量；隐藏执行器不消费此值（可见窗 detached）
             Script::SetTencentKey => Duration::from_secs(300),
             // 服务动作最快（stop/start 秒级；install 含落位与 Start-Service 预算 60s）
@@ -526,8 +522,6 @@ pub enum ToolKind {
     InstallHttps,
     /// HTTPS 环境配置（enable-https.ps1，UAC）
     EnableHttps,
-    /// 客户端配置（install-client.ps1，可见交互窗）
-    InstallClient,
     /// 腾讯云 CAM 密钥写入 .env（set-tencent-key.ps1，可见交互窗；spec 006）
     SetTencentKey,
     /// EasyTier 组网密钥写入 network-secret（set-mesh-secret.ps1，可见交互窗；
@@ -544,7 +538,6 @@ impl From<ToolKind> for Script {
             ToolKind::InstallServer => Script::InstallServer,
             ToolKind::InstallHttps => Script::InstallHttps,
             ToolKind::EnableHttps => Script::EnableHttps,
-            ToolKind::InstallClient => Script::InstallClient,
             ToolKind::SetTencentKey => Script::SetTencentKey,
             ToolKind::SetMeshSecret => Script::SetMeshSecret,
             ToolKind::SetHttpsAccount => Script::SetHttpsAccount,
@@ -882,7 +875,7 @@ mod tests {
         assert_eq!(Script::RunServerHidden.timeout(), Duration::from_secs(15));
         assert_eq!(Script::SetupAutostart.timeout(), Duration::from_secs(60));
         assert_eq!(Script::InstallHttps.visibility(), Visibility::Elevated);
-        assert_eq!(Script::InstallClient.visibility(), Visibility::VisibleInteractive);
+        assert_eq!(Script::SetTencentKey.visibility(), Visibility::VisibleInteractive);
         assert_eq!(Script::EnableHttps.visibility(), Visibility::Elevated);
     }
 
@@ -982,12 +975,12 @@ mod tests {
     fn visible_params_quote_path_with_spaces_and_quotes() {
         // 含空格路径：单引号字面量天然安全；路径内单引号按 PowerShell 规则翻倍
         let dir = Path::new(r"D:\with space");
-        let p = visible_script_params(dir, Script::InstallClient, Lang::En, &[]);
-        assert!(p.contains(r"'D:\with space\install-client.ps1'"), "{p}");
+        let p = visible_script_params(dir, Script::SetTencentKey, Lang::En, &[]);
+        assert!(p.contains(r"'D:\with space\set-tencent-key.ps1'"), "{p}");
 
         let dir_q = Path::new(r"D:\odd'name");
-        let p2 = visible_script_params(dir_q, Script::InstallClient, Lang::En, &[]);
-        assert!(p2.contains(r"'D:\odd''name\install-client.ps1'"), "{p2}");
+        let p2 = visible_script_params(dir_q, Script::SetTencentKey, Lang::En, &[]);
+        assert!(p2.contains(r"'D:\odd''name\set-tencent-key.ps1'"), "{p2}");
     }
 
     // ── 低频工具派发（run_tool 契约，T15）──────────────────────────────
@@ -1014,7 +1007,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_plan_https_and_client_visibility() {
+    fn tool_plan_https_visibility() {
         let dir = script_dir("tool2");
         // 提权类：install-https / enable-https → runas 可见窗（AC19：结尾手工步骤可读）
         let https = tool_plan(ToolKind::InstallHttps, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR)
@@ -1026,14 +1019,6 @@ mod tests {
             .expect("默认栈目录应可派发");
         assert!(enable.elevated);
         assert!(enable.params.contains("enable-https.ps1"));
-
-        // install-client：非 UAC 可见交互窗（spec §4.3 交互式脚本）
-        let client = tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR)
-            .expect("默认栈目录应可派发");
-        assert!(!client.elevated);
-        assert!(client.params.contains("install-client.ps1"));
-        assert!(client.params.contains("-NoExit"), "交互脚本窗口结束后保留：{}", client.params);
-        assert!(!client.params.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive");
     }
 
     #[test]
@@ -1153,7 +1138,7 @@ mod tests {
         let dir = script_dir("esc");
         let p = visible_script_params(
             &dir,
-            Script::InstallClient,
+            Script::SetHttpsAccount,
             Lang::En,
             &["-StackDir", r"D:\od'd"],
         );
@@ -1183,7 +1168,7 @@ mod tests {
         // 非盘符形态同样拒绝（相对路径 / UNC / 裸盘符）
         for bad in ["no\\drive", "\\\\srv\\share", "E:"] {
             assert!(
-                tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh, bad).is_err(),
+                tool_plan(ToolKind::SetMeshSecret, ToolOpts::default(), &dir, Lang::Zh, bad).is_err(),
                 "非盘符栈目录应拒绝：{bad}"
             );
         }

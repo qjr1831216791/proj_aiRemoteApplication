@@ -75,9 +75,8 @@ function Show-Menu {
     Write-Host (T '  3. 查看各端访问地址' '  3. Show access URLs for every device')
     Write-Host (T '  4. 安装/重装服务端（管理员）' '  4. Install/reinstall server (admin)')
     Write-Host (T '  5. HTTPS 环境配置：443 白名单/hosts（管理员）' '  5. HTTPS setup: 443 whitelist/hosts (admin)')
-    Write-Host (T '  6. 客户端配置（本机验证 + 桌面快捷方式）' '  6. Client setup (verify + desktop shortcut)')
-    Write-Host (T '  7. 开机自启：全部开启' '  7. Autostart: enable all')
-    Write-Host (T '  8. 开机自启：全部关闭' '  8. Autostart: disable all')
+    Write-Host (T '  6. 开机自启：全部开启' '  6. Autostart: enable all')
+    Write-Host (T '  7. 开机自启：全部关闭' '  7. Autostart: disable all')
     Write-Host (T '  0. 退出' '  0. Exit')
     Write-Host ''
     Write-Host (T '请输入选项: ' 'Choose an option: ') -NoNewline -ForegroundColor Yellow
@@ -129,12 +128,9 @@ while ($true) {
             Invoke-Elevated (Join-Path $PSScriptRoot 'enable-https.ps1')
         }
         '6' {
-            powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'install-client.ps1')
-        }
-        '7' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'setup-autostart.ps1')
         }
-        '8' {
+        '7' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'setup-autostart.ps1') -Remove
         }
         '0' {

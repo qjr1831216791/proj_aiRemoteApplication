@@ -156,12 +156,12 @@ export type ExternalKind =
   | "easytier_releases";
 
 /** run_tool 工具类别（ddns/frp 四类已随直连/穿透通道退役——spec 008；
+ * install_client 已随 spec 012 退役；
  * set_https_account = 访问账号 add/set/remove，spec 011 T6） */
 export type ToolKind =
   | "install_server"
   | "install_https"
   | "enable_https"
-  | "install_client"
   | "set_tencent_key"
   | "set_mesh_secret"
   | "set_https_account";

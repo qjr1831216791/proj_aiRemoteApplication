@@ -18,9 +18,7 @@
 | 脚本 | 用途 |
 |------|------|
 | [sprint0/install-server.ps1](./sprint0/bin/install-server.ps1) | Sprint 0 服务端一键安装：CloudCLI on Windows（局域网版，需管理员） |
-| [sprint0/install-client.ps1](./sprint0/bin/install-client.ps1) | Sprint 0 客户端：连通性验证 + 桌面快捷方式（浏览器即客户端，无需安装其他软件） |
 | [sprint0/install-server.bat](./sprint0/bin/install-server.bat) | 服务端双击启动器：自动弹 UAC 提权并调用同名 .ps1（纯 ASCII，避免 cmd 编码问题） |
-| [sprint0/install-client.bat](./sprint0/bin/install-client.bat) | 客户端双击启动器：顶部编辑 `SERVER_URL` 后双击即用（为空时运行中输入亦可） |
 | [sprint0/start-server.bat](./sprint0/bin/start-server.bat) | 服务端双击启动 CloudCLI：已在运行则直接打开浏览器 |
 | [sprint0/run-server-hidden.ps1](./sprint0/bin/run-server-hidden.ps1) | 幂等后台启动 CloudCLI（计划任务与 SessionStart hook 共用；日志 `%TEMP%\cloudcli.log`） |
 | [sprint0/setup-autostart.ps1](./sprint0/bin/setup-autostart.ps1) | 注册/移除 CloudCLI + Caddy 两个登录自启计划任务（`-Remove` 全关；推荐的常驻方式） |

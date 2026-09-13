@@ -51,8 +51,6 @@ export const en = {
   "tools.updateCloudcli": "Update CloudCLI",
   "tools.updateCloudcliDesc": "install-server.ps1 -Update (admin)",
   "tools.useMirror": "Use China npm mirror",
-  "tools.installClient": "Client Setup",
-  "tools.installClientDesc": "install-client.ps1 (other PC/phone, interactive)",
   "tools.scriptsUnavailable": "Scripts directory unavailable, related actions disabled:",
   "tools.uacHint": "Actions marked (admin) show a UAC prompt",
   "tools.dispatched": "Dispatched: follow the prompts in the opened window",
