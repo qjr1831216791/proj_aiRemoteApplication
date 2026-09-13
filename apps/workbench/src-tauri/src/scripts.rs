@@ -333,11 +333,18 @@ pub fn visible_script_params(
 ) -> String {
     // PowerShell 单引号字面量：含空格天然安全，内部单引号按规则翻倍
     let script_path = dir.join(script.file_name());
-    let path = format!("'{}'", script_path.to_string_lossy().replace('\'', "''"));
+    let path = crate::lan_guard::ps_quote(&script_path.to_string_lossy());
     let mut inner = format!("& {path} -Lang {}", lang_arg(lang));
     for arg in extra_args {
+        // spec 011 T1 sink 包裹：值参数（非 `-` 开头 token）一律单引号字面量
+        // 包裹——注入兜底；参数名 token 保持裸，引号会让 PowerShell 把
+        // `'-Update'` 绑成位置实参（评审实证其会进 $StackDir）
         inner.push(' ');
-        inner.push_str(arg);
+        if arg.starts_with('-') {
+            inner.push_str(arg);
+        } else {
+            inner.push_str(&crate::lan_guard::ps_quote(arg));
+        }
     }
     inner.push_str("; Write-Host ''; Write-Host '");
     inner.push_str(finished_hint(lang));
@@ -406,6 +413,70 @@ pub fn open_dir(path: &Path) -> Result<(), isize> {
     shell_execute(Some("open"), &path.to_string_lossy(), "")
 }
 
+// ── 输入校验双闸（spec 011 T1：派发层 + 设置源头，AC1/AC2）──────────────────
+
+/// domain 白名单校验（spec 011 AC1/AC2）：DNS 主机名形态——总长 ≤253；按 `.`
+/// 分段，每段 1~63 字符、字符仅 ASCII 字母/数字/连字符、不以连字符起止；
+/// 拒绝任何非 ASCII 与空段。错误文案中文、指明非法类别。
+pub fn validate_domain(domain: &str) -> Result<(), String> {
+    if domain.is_empty() {
+        return Err("domain 非法：不能为空（不设置域名请传 null，勿传空串）".into());
+    }
+    if domain.len() > 253 {
+        return Err(format!("domain 非法：总长 {} 超过 253 字符上限", domain.len()));
+    }
+    if !domain.is_ascii() {
+        return Err("domain 非法：含非 ASCII 字符（仅允许英文字母、数字、连字符与点）".into());
+    }
+    for label in domain.split('.') {
+        if label.is_empty() {
+            return Err("domain 非法：存在空段（连续的点或首尾的点）".into());
+        }
+        if label.len() > 63 {
+            return Err(format!("domain 非法：段「{label}」超过 63 字符上限"));
+        }
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(format!(
+                "domain 非法：段「{label}」含非法字符（仅允许英文字母、数字、连字符）"
+            ));
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err(format!("domain 非法：段「{label}」以连字符开头或结尾"));
+        }
+    }
+    Ok(())
+}
+
+/// stack_dir 拒绝的 PowerShell 元字符（spec 011 AC1）：值参数虽有 sink 包裹
+/// 兜底，源头仍拒绝——纵深而非单点。空格不在列（合法路径成分，由包裹兜安全）。
+const STACK_DIR_FORBIDDEN: [char; 11] = ['\'', '"', ';', '`', '$', '(', ')', '|', '&', '<', '>'];
+
+/// stack_dir 白名单校验（spec 011 AC1/AC2）：必须是绝对盘符路径（`X:\...`
+/// 形态，分隔符亦容忍 `/`）；拒绝 PowerShell 元字符、非 ASCII 与控制字符；
+/// 空格允许（由 sink 单引号包裹兜底安全）。
+pub fn validate_stack_dir(dir: &str) -> Result<(), String> {
+    let bytes = dir.as_bytes();
+    if bytes.len() < 3
+        || !bytes[0].is_ascii_alphabetic()
+        || bytes[1] != b':'
+        || (bytes[2] != b'\\' && bytes[2] != b'/')
+    {
+        return Err(format!(
+            "stack_dir 非法：必须是绝对盘符路径（如 D:\\apps\\stack），当前「{dir}」"
+        ));
+    }
+    if !dir.is_ascii() {
+        return Err("stack_dir 非法：含非 ASCII 字符（中文等目录名请改用英文）".into());
+    }
+    if let Some(c) = dir.chars().find(|c| STACK_DIR_FORBIDDEN.contains(c)) {
+        return Err(format!("stack_dir 非法：含 PowerShell 元字符「{c}」"));
+    }
+    if dir.chars().any(|c| c.is_control()) {
+        return Err("stack_dir 非法：含控制字符".into());
+    }
+    Ok(())
+}
+
 // ── 低频工具派发（run_tool，plan §5.1 / AC19-20）────────────────────────────
 
 /// 工具类别（前端序列化：snake_case 字符串）
@@ -462,14 +533,22 @@ pub struct ToolDispatch {
     pub elevated: bool,
 }
 
-/// 构造派发计划：可见窗参数 + 提权判定（按脚本契约表 Visibility 推导）
+/// 构造派发计划：可见窗参数 + 提权判定（按脚本契约表 Visibility 推导）。
+/// spec 011 AC1 双闸之一：构造任何命令行之前先过 domain/stack_dir 白名单——
+/// 非法 → Err（中文、指明字段与非法类别），不产出 ToolDispatch、不启动进程。
 pub fn tool_plan(
     kind: ToolKind,
     opts: ToolOpts,
     dir: &Path,
     lang: Lang,
     stack_dir: &str,
-) -> ToolDispatch {
+) -> Result<ToolDispatch, String> {
+    // spec 011 AC1 双闸之一：构造任何命令行之前先过白名单——前端被攻破时
+    // 校验依然生效（不信任前端）；非法 → Err，不产出 ToolDispatch
+    if let Some(domain) = opts.domain.as_deref() {
+        validate_domain(domain)?;
+    }
+    validate_stack_dir(stack_dir)?;
     let script = Script::from(kind);
     let mut extra: Vec<&str> = Vec::new();
     if matches!(kind, ToolKind::InstallServer) {
@@ -495,11 +574,11 @@ pub fn tool_plan(
             extra.push(domain);
         }
     }
-    ToolDispatch {
+    Ok(ToolDispatch {
         script,
         params: visible_script_params(dir, script, lang, &extra),
         elevated: script.visibility() == Visibility::Elevated,
-    }
+    })
 }
 
 // ── 退出码 → UI 语义（AC20）────────────────────────────────────────────────
@@ -848,7 +927,8 @@ mod tests {
     fn tool_plan_install_server_default_and_options() {
         let dir = script_dir("tool");
         // 默认安装/重装：UAC 提权 + -Lang + -NoExit，无 -Update/-UseMirror
-        let plan = tool_plan(ToolKind::InstallServer, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
+        let plan = tool_plan(ToolKind::InstallServer, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect("默认栈目录应可派发");
         assert_eq!(plan.script, Script::InstallServer);
         assert!(plan.elevated, "install-server 需 UAC");
         assert!(plan.params.contains("install-server.ps1"), "{}", plan.params);
@@ -857,7 +937,8 @@ mod tests {
 
         // 升级 + 镜像源：两个开关透传
         let opts = ToolOpts { update: true, mirror: true, domain: None };
-        let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::En, DEFAULT_STACK_DIR);
+        let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::En, DEFAULT_STACK_DIR)
+            .expect("默认栈目录应可派发");
         assert!(plan.params.contains("-Update"), "{}", plan.params);
         assert!(plan.params.contains("-UseMirror"), "{}", plan.params);
         assert!(plan.params.contains("-Lang en"), "{}", plan.params);
@@ -867,16 +948,19 @@ mod tests {
     fn tool_plan_https_and_client_visibility() {
         let dir = script_dir("tool2");
         // 提权类：install-https / enable-https → runas 可见窗（AC19：结尾手工步骤可读）
-        let https = tool_plan(ToolKind::InstallHttps, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
+        let https = tool_plan(ToolKind::InstallHttps, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect("默认栈目录应可派发");
         assert!(https.elevated);
         assert!(https.params.contains("install-https.ps1") && https.params.contains("-NoExit"));
 
-        let enable = tool_plan(ToolKind::EnableHttps, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
+        let enable = tool_plan(ToolKind::EnableHttps, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect("默认栈目录应可派发");
         assert!(enable.elevated);
         assert!(enable.params.contains("enable-https.ps1"));
 
         // install-client：非 UAC 可见交互窗（spec §4.3 交互式脚本）
-        let client = tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
+        let client = tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect("默认栈目录应可派发");
         assert!(!client.elevated);
         assert!(client.params.contains("install-client.ps1"));
         assert!(client.params.contains("-NoExit"), "交互脚本窗口结束后保留：{}", client.params);
@@ -887,13 +971,180 @@ mod tests {
     fn tool_plan_set_tencent_key_passes_stack_dir() {
         // spec 008：set-tencent-key 为栈 .env 凭证唯一写入通道，须带 -StackDir
         let dir = script_dir("tool3");
-        let plan = tool_plan(ToolKind::SetTencentKey, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR);
+        let plan = tool_plan(ToolKind::SetTencentKey, ToolOpts::default(), &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect("默认栈目录应可派发");
         assert_eq!(plan.script, Script::SetTencentKey);
         assert!(!plan.elevated, "密钥写入为用户级交互操作，无 UAC");
         assert!(plan.params.contains("set-tencent-key.ps1"), "{}", plan.params);
         assert!(plan.params.contains("-StackDir"), "感知栈目录：{}", plan.params);
         assert!(plan.params.contains("-Lang zh"), "-Lang 对齐程序语言：{}", plan.params);
         assert!(!plan.params.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive：{}", plan.params);
+    }
+
+    // ── spec 011 T1：输入校验双闸 + sink 包裹（AC1/AC2）─────────────────
+
+    /// AC1：domain 注入元字符逐个拒绝 + 形态类拒绝（空段/超长/连字符起止/非 ASCII）
+    #[test]
+    fn validate_domain_rejects_injection_and_bad_shapes() {
+        for c in [';', '\'', '"', '`', '$', '(', ')', '|', '&', '<', '>', ' ', '中'] {
+            let bad = format!("ai.jackqi{c}cn");
+            let err =
+                validate_domain(&bad).expect_err(&format!("domain 元字符「{c}」应拒绝：{bad}"));
+            assert!(err.contains("domain"), "「{c}」文案应指明字段：{err}");
+        }
+        // 空串 / 空段（连续、首、尾点）/ 单段超 63 / 总长超 253 / 连字符起止
+        assert!(validate_domain("").is_err(), "空串拒绝");
+        assert!(validate_domain("ai..cn").is_err(), "连续点空段拒绝");
+        assert!(validate_domain(".ai.cn").is_err(), "首点空段拒绝");
+        assert!(validate_domain("ai.cn.").is_err(), "尾点空段拒绝");
+        assert!(
+            validate_domain(&format!("{}.example.com", "a".repeat(64))).is_err(),
+            "段超 63 拒绝"
+        );
+        assert!(
+            validate_domain(&format!("{}.com", "a".repeat(251))).is_err(),
+            "总长超 253 拒绝"
+        );
+        assert!(validate_domain("-ai.cn").is_err(), "段以连字符开头拒绝");
+        assert!(validate_domain("ai-.cn").is_err(), "段以连字符结尾拒绝");
+        assert!(validate_domain("中文.cn").is_err(), "非 ASCII 拒绝");
+    }
+
+    /// AC2：合法 DNS 主机名放行（多级域名、单标签、段内连字符、边界长度、大小写）
+    #[test]
+    fn validate_domain_accepts_legal_hostnames() {
+        validate_domain("ai.jackqi.cn").expect("多级域名应放行");
+        validate_domain("localhost").expect("单标签应放行");
+        validate_domain("a-b.example.com").expect("段内连字符应放行");
+        validate_domain(&format!("{}.example.com", "a".repeat(63)))
+            .expect("63 字符段边界应放行");
+        // 253 总长边界：63+1+63+1+62+1+62 = 253
+        let boundary = format!(
+            "{}.{}.{}.{}",
+            "a".repeat(63),
+            "b".repeat(63),
+            "c".repeat(62),
+            "d".repeat(62)
+        );
+        assert_eq!(boundary.len(), 253);
+        validate_domain(&boundary).expect("总长 253 边界应放行");
+        validate_domain("AI.Example.COM").expect("大小写应放行");
+    }
+
+    /// AC1：stack_dir 注入元字符逐个拒绝 + 非盘符形态拒绝
+    #[test]
+    fn validate_stack_dir_rejects_injection_and_bad_shapes() {
+        for c in [';', '\'', '"', '`', '$', '(', ')', '|', '&', '<', '>'] {
+            let bad = format!("D:\\my{c}stack");
+            let err = validate_stack_dir(&bad)
+                .expect_err(&format!("stack_dir 元字符「{c}」应拒绝：{bad}"));
+            assert!(err.contains("stack_dir"), "「{c}」文案应指明字段：{err}");
+        }
+        assert!(validate_stack_dir("D:\\我的栈").is_err(), "非 ASCII 拒绝");
+        for bad in ["", "stack\\dir", "\\\\server\\share", "D:", "D:relative", "/unix/abs"] {
+            assert!(validate_stack_dir(bad).is_err(), "非盘符形态应拒绝：{bad}");
+        }
+    }
+
+    /// AC2：合法绝对盘符路径放行（含空格、正斜杠、小写盘符）
+    #[test]
+    fn validate_stack_dir_accepts_drive_paths_with_spaces() {
+        validate_stack_dir(r"D:\Software\cloudcli-https").expect("默认栈目录应放行");
+        validate_stack_dir(r"D:\my stack\cloudcli-https").expect("含空格应放行");
+        validate_stack_dir("E:/fwd/slash").expect("正斜杠分隔应放行");
+        validate_stack_dir(r"d:\lower\case").expect("小写盘符应放行");
+    }
+
+    /// AC2 sink 包裹形态：值参数单引号字面量包裹（含空格不破形）；
+    /// 参数名 token（-Update）保持裸——引号会让 PowerShell 绑成位置实参
+    /// （评审实证 '-Update' 会进 $StackDir）
+    #[test]
+    fn visible_params_wrap_values_but_keep_switch_tokens_bare() {
+        let dir = script_dir("wrap");
+        let p = visible_script_params(
+            &dir,
+            Script::InstallHttps,
+            Lang::Zh,
+            &["-StackDir", r"D:\my stack\https", "-Update"],
+        );
+        assert!(
+            p.contains(r"-StackDir 'D:\my stack\https'"),
+            "值参数应单引号包裹：{p}"
+        );
+        assert!(
+            p.contains(" -Update") && !p.contains("'-Update'"),
+            "参数名保持裸 token：{p}"
+        );
+    }
+
+    /// sink 兜底（纵深）：值内单引号按 PowerShell 规则翻倍——即使双闸漏放，
+    /// 包裹形态也不破形
+    #[test]
+    fn visible_params_double_embedded_single_quotes_in_values() {
+        let dir = script_dir("esc");
+        let p = visible_script_params(
+            &dir,
+            Script::InstallClient,
+            Lang::En,
+            &["-StackDir", r"D:\od'd"],
+        );
+        assert!(p.contains(r"-StackDir 'D:\od''d'"), "内部单引号应翻倍：{p}");
+    }
+
+    /// AC1 派发闸：domain/stack_dir 非法 → Err（类型上即不产出命令行构造）；
+    /// 文案中文且指明字段
+    #[test]
+    fn tool_plan_rejects_injection_before_building_params() {
+        let dir = script_dir("gate");
+        for c in [';', '\'', '"', '`', '$', '(', ')', '|', '&', '<', '>', '中'] {
+            let opts = ToolOpts {
+                update: false,
+                mirror: false,
+                domain: Some(format!("ai.jackqi{c}cn")),
+            };
+            let err = tool_plan(ToolKind::InstallHttps, opts, &dir, Lang::Zh, DEFAULT_STACK_DIR)
+                .expect_err(&format!("domain 元字符「{c}」应拒绝派发"));
+            assert!(err.contains("domain"), "「{c}」文案应指明字段：{err}");
+        }
+        for c in [';', '\'', '"', '`', '$', '(', ')', '|', '&', '<', '>'] {
+            let bad = format!("D:\\evil{c}stack");
+            let err = tool_plan(ToolKind::SetTencentKey, ToolOpts::default(), &dir, Lang::Zh, &bad)
+                .expect_err(&format!("stack_dir 元字符「{c}」应拒绝派发"));
+            assert!(err.contains("stack_dir"), "「{c}」文案应指明字段：{err}");
+        }
+        // 非盘符形态同样拒绝（相对路径 / UNC / 裸盘符）
+        for bad in ["no\\drive", "\\\\srv\\share", "E:"] {
+            assert!(
+                tool_plan(ToolKind::InstallClient, ToolOpts::default(), &dir, Lang::Zh, bad).is_err(),
+                "非盘符栈目录应拒绝：{bad}"
+            );
+        }
+    }
+
+    /// AC2：合法输入正常透传——多级域名与含空格栈目录以单引号包裹形态进命令行
+    #[test]
+    fn tool_plan_accepts_legal_inputs_with_wrapped_values() {
+        let dir = script_dir("ok");
+        let opts = ToolOpts {
+            update: false,
+            mirror: false,
+            domain: Some("ai.jackqi.cn".into()),
+        };
+        let plan = tool_plan(
+            ToolKind::InstallHttps,
+            opts,
+            &dir,
+            Lang::Zh,
+            r"D:\my stack\cloudcli-https",
+        )
+        .expect("合法输入应放行");
+        assert!(plan.params.contains("-Domain 'ai.jackqi.cn'"), "{}", plan.params);
+        assert!(
+            plan.params.contains(r"-StackDir 'D:\my stack\cloudcli-https'"),
+            "{}",
+            plan.params
+        );
+        assert!(plan.elevated, "install_https 仍为提权可见窗");
     }
 
     /// spec 008：已退役工具种类不得再被前端唤起（serde 反序列化拒绝）

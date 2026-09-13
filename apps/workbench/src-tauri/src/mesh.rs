@@ -526,9 +526,9 @@ pub fn service_action_params(
     stack_dir: &str,
     lang: crate::lang::Lang,
 ) -> String {
-    // PS 单引号字面量（栈目录含空格安全，autostart::ps_quote 同规则）
-    let quoted_stack = format!("'{}'", stack_dir.replace('\'', "''"));
-    let args: Vec<&str> = vec!["-Action", action, "-StackDir", &quoted_stack];
+    // 栈目录传裸值：单引号包裹统一由 visible_script_params sink 承担
+    // （spec 011 T1 值参数收口——调用方预加引号会与 sink 包裹叠成 ''xxx'' 坏实参）
+    let args: Vec<&str> = vec!["-Action", action, "-StackDir", stack_dir];
     crate::scripts::visible_script_params(
         scripts_dir,
         crate::scripts::Script::MeshService,
@@ -1579,7 +1579,7 @@ mod tests {
         let dir = Path::new(r"C:\app\resources\bin");
         let stack = r"D:\Software\cloudcli-https";
         let params = service_action_params(dir, "install", stack, crate::lang::Lang::Zh);
-        assert!(params.contains("-Action install"), "{params}");
+        assert!(params.contains("-Action 'install'"), "{params}");
         assert!(!params.contains("-BinPath"), "binPath 必须由脚本自建：{params}");
         // binPath 内容不得经命令行传递（外层 -Command "..." 的包裹引号除外）
         assert!(
@@ -1606,7 +1606,7 @@ mod tests {
             crate::lang::Lang::Zh,
         )
         .unwrap();
-        assert!(p.contains("mesh-service.ps1") && p.contains("-Action restart"), "{p}");
+        assert!(p.contains("mesh-service.ps1") && p.contains("-Action 'restart'"), "{p}");
         assert!(p.contains("lan-guard.ps1") && p.contains("-Action ensure-whitelist"), "{p}");
         assert!(p.contains("-Cidr '10.126.126.0/24'"), "{p}");
         assert!(p.contains("-VirtualIp '10.126.126.1'"), "{p}");
@@ -1939,7 +1939,8 @@ mod tests {
             crate::lang::Lang::Zh,
         );
         assert!(params.contains("mesh-service.ps1"), "{params}");
-        assert!(params.contains("-Action stop"), "{params}");
+        // 动作值为字面量（sink 统一单引号包裹，spec 011 T1）
+        assert!(params.contains("-Action 'stop'"), "{params}");
         // 栈目录单引号字面量（含空格安全，内部单引号翻倍）
         assert!(params.contains("-StackDir 'D:\\My Stack\\cloudcli-https'"), "{params}");
         assert!(params.contains("-Lang zh"), "{params}");

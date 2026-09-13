@@ -122,16 +122,18 @@ pub async fn run_tool(
         .clone()
         .unwrap_or_else(|| crate::consts::DEFAULT_STACK_DIR.to_string());
     tauri::async_runtime::spawn_blocking(move || {
-        let plan = scripts::tool_plan(kind, opts, &dir, lang, &stack_dir);
-        if plan.elevated {
+        // spec 011 AC1：校验失败在此短路——不构造命令行、不弹 UAC，
+        // 中文错误经前端 toast 呈现
+        let plan = scripts::tool_plan(kind, opts, &dir, lang, &stack_dir)?;
+        let outcome = if plan.elevated {
             scripts::shell_execute(Some("runas"), "powershell.exe", &plan.params)
         } else {
             scripts::open_visible("powershell.exe", &plan.params)
-        }
+        };
+        outcome.map_err(|code| lang::shell_error_text(code, lang))
     })
     .await
     .map_err(|e| lang::err_texts(lang).tool_join_failed(&e.to_string()))?
-    .map_err(|code| lang::shell_error_text(code, lang))
 }
 
 /// 脚本可用性（spec §4.5：按钮禁用 + 原因透传）
@@ -702,7 +704,7 @@ mod tests {
             "10.126.126.1",
             crate::lang::Lang::Zh,
         );
-        assert!(p.contains("mesh-service.ps1") && p.contains("-Action restart"), "{p}");
+        assert!(p.contains("mesh-service.ps1") && p.contains("-Action 'restart'"), "{p}");
         assert!(p.contains("-Action ensure-whitelist"), "{p}");
         assert!(p.contains("-WaitTun 20"), "{p}");
         assert_eq!(p.matches("-Command \"").count(), 1, "单窗单次 UAC：{p}");
@@ -717,7 +719,7 @@ mod tests {
             "10.0.0.1",
             crate::lang::Lang::Zh,
         );
-        assert!(fallback.contains("-Action install"), "{fallback}");
+        assert!(fallback.contains("-Action 'install'"), "{fallback}");
         assert!(
             !fallback.contains("ensure-whitelist"),
             "白名单段构造失败不阻断服务段（plan §3.5）：{fallback}"
