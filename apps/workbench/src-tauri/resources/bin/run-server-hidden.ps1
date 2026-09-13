@@ -53,6 +53,11 @@ $urlLine = "==== URLs $(T '本机' 'Local'): http://localhost:$Port"
 foreach ($ip in $ips) { $urlLine += " | $(T '局域网' 'LAN'): http://${ip}:$Port" }
 $urlLine | Add-Content -Path $log -Encoding UTF8
 
+# spec 011 单门模式：以官方平台模式拉起 CloudCLI（VITE_IS_PLATFORM=true 是官方
+# 对托管部署的开关：服务端注入首个用户、跳过自身 token 认证；443 入口
+# caddy basic_auth 是唯一认证门）。经 cmd 分离的子进程继承本进程环境。
+$env:VITE_IS_PLATFORM = 'true'
+
 # 经 cmd 分离启动：不阻塞本脚本，输出与错误重定向到日志
 Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' `
     -ArgumentList "/c cloudcli 1>>`"%TEMP%\cloudcli.log`" 2>&1"
