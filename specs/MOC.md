@@ -11,7 +11,7 @@
 - （暂无）
 
 ### 🟠 实现中（in-progress）
-- （暂无）
+- [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) — 攻击面加固：工作台命令面硬化（domain/stack_dir 双闸校验 + SHA256 去短路 + CSP）+ Caddy 下载指纹锁定 + 443 入口 basic_auth + 傻瓜式组件升级脚本（依据 [2026-09 安全审查报告](../docs/research/security-audit-2026-09.md)；双子代理评审修订后实施，分支 spec011-attack-surface-hardening）
 
 ### ✅ 已完成（done）
 - [001-desktop-console](./001-desktop-console/spec.md) — Windows 桌面控制台：sprint0 能力 GUI 化 + 自启托管与一键收摊（控制面/数据面分离，Tauri 2；v0.2.0 已发布，GUI 手工验收回填记录见其 acceptance-manual.md）
@@ -42,11 +42,13 @@
 | Sprint 6 | [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) | 旧通道彻底移除（直连+frp 退役，双方案收敛；2026-09-11 需求方签收 done，随 v0.4.0 发布） |
 | Sprint 7 | [009-mesh-subnet-guard](./009-mesh-subnet-guard/spec.md) | v0.5.0 调优：网段冲突检测接线 + 成员入网配置展示 + 发版校验脚本 + 真机旧通道清理（2026-09-11 验收 done） |
 | Sprint 8 | [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md) | **v0.6.0**：局域网边界收口（443/3001 源网段白名单 + 直访默认退役 + 例外开关；2026-09-13 验收 done，发布 v0.6.0） |
+| Sprint 9 | [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) | 攻击面加固（P1 命令面硬化 / P2 Caddy 指纹锁定 / P3 basic_auth + 升级脚本；in-progress） |
 
 ## 按主题导航
 
 - 桌面工作台：[001-desktop-console](./001-desktop-console/spec.md)
 - 网络环境：[002-network-profile](./002-network-profile/spec.md) · [007-mesh-access](./007-mesh-access/spec.md) · [008-legacy-channel-removal](./008-legacy-channel-removal/spec.md) · [010-lan-boundary-hardening](./010-lan-boundary-hardening/spec.md)
+- 安全硬化：[011-attack-surface-hardening](./011-attack-surface-hardening/spec.md)
 - 装机体验：[006-foolproof-install](./006-foolproof-install/spec.md)
 
 <!-- 功能域增多后按主题分区，例如：-->
