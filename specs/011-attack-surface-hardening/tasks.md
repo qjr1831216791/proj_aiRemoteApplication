@@ -3,7 +3,7 @@
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
 - **状态**: 进行中
-- **最后更新**: 2026-09-13（T1/T2 完成，T3 配置半完成）
+- **最后更新**: 2026-09-13（T1/T2/T4 完成，T3 配置半完成）
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
@@ -16,7 +16,7 @@
 
 ## 阶段 2: 供应链指纹锁定（P2）
 
-- [ ] T4 **首步门控**：caddyserver.com 版本参数与字节可复现性实证（URL 断言 + 两次独立下载比对），当次定 A/B；install-https.ps1 加 `$CaddyCoreVersion`/`$CaddySha256` 常量、**校验严格先于落位**、拒装引导与 `-CaddyZip` 信任转移提示（resources 副本同步归 T8，不在本任务手写）（验收: AC5/AC6）
+- [x] T4 **首步门控**：caddyserver.com 版本参数与字节可复现性实证（URL 断言 + 两次独立下载比对），当次定 A/B；install-https.ps1 加 `$CaddyCoreVersion`/`$CaddySha256` 常量、**校验严格先于落位**、拒装引导与 `-CaddyZip` 信任转移提示（resources 副本同步归 T8，不在本任务手写）（验收: AC5/AC6）→ 5818743，**门控通过定方案 A**：钉版方式 `p=github.com/caddyserver/caddy/v2@版本`（v2.11.4），三次下载哈希恒定；隔离演练四场景全过；上游只伺服最新版的风险已记 plan §7
 - [ ] T5 `tools/upgrade-component.ps1`：caddy/easytier 双组件一条命令升级（下载→预检→按行锚定改写锁定值→cargo test→新旧对照输出 + 官方校验和来源打印）；consts.rs 折行感知正则；真机演练一次（依赖: T4——改写其引入的常量对）（验收: AC7）
 
 ## 阶段 3: 443 入口账号密码（P3）
