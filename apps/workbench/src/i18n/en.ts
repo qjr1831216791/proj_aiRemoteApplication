@@ -64,8 +64,11 @@ export const en = {
   "net.confirmPrivate": "Confirm: set Private",
   "net.confirmPublic": "Confirm: set Public",
   "net.cancel": "Cancel",
-  "net.riskPrivate": "On a Private network this PC becomes discoverable in the current LAN (wider discovery/sharing surface). Only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
-  "net.riskPublic": "Switching back to Public reduces LAN exposure; the 3001 exception (if enabled) only applies on Private networks, so other devices will be unable to reach this PC over the LAN (domain/mesh access is unaffected).",
+  // Private/Public consequences (spec 010 acceptance-phase copy backfill): the Private
+  // consequence now points at the port-3001 exception (the retired "more discoverable"
+  // wording belonged to the retired 443 profile semantics); Public = recommended default
+  "net.riskPrivate": "Private = if the port-3001 exception is enabled, unkeyed devices on the same subnet will be able to open the dashboard directly (auto-reverts after 12h); only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
+  "net.riskPublic": "Public = only devices holding the mesh key can reach this server (the recommended secure default), so switching back to Public narrows the LAN exposure; the port-3001 exception (if enabled) has no effect on a Public network and other devices will be unable to reach this PC over the LAN (domain/mesh access is unaffected).",
   "net.catPublic": "Public",
   "net.catPrivate": "Private",
   "net.catDomain": "Domain",
@@ -95,6 +98,7 @@ export const en = {
   "languard.riskBody":
     "While enabled, any device on the same subnet can reach port 3001 on this PC with zero authentication — effectively a potential shell on this host. For trusted networks and emergencies only.",
   "languard.riskTtl": "The exception auto-reverts after 12 hours; reverting asks for admin approval again.",
+  "languard.riskProfile": "This allowance only takes effect while the current network is Private; on a Public network this switch grants no access.",
   "languard.riskConfirm": "Enable (admin)",
   "languard.publicBlocks": "A Public network is active: the exception only applies on Private networks, so direct access is inactive for now (set it Private in the Network card)",
   "languard.addrOff": "Not directly reachable (locked down)",

@@ -10,7 +10,7 @@
  * - DNS 指引：常态轮询权威检测，对齐即消失；判 A=虚拟 IP，
  *   CNAME 残留按旁路暴露面提示（spec 007 体检口径延续）
  * - 访问白名单（spec 010 T6）：健康 chip（正常/休眠/待修复）+ 失配「修复白名单」
- *   + 旧规则迁移横幅「一键收口」+ 3001 例外开关（风险确认模态 + 12h 回落如实呈现）
+ *   + 旧规则迁移横幅「一键收口」+ 3001 例外开关（风险确认模态含归类前提 + 12h 回落如实呈现）
  * - 通道体检：DNS / 网络归类（组网不适用）/ 组网客户端 / 本机组件 / 域名全链路
  * 通道与配置数据源：settings（App 持有）；白名单健康：languard://changed 事件
  * （60s 监视 + 动作后即时复测经 MainView 下沉的回调）。
@@ -398,6 +398,10 @@ export function MeshCard(props: MeshCardProps) {
             {t("languard.riskBody", lang)}
             <br />
             {t("languard.riskTtl", lang)}
+            <br />
+            {/* 归类前提（spec 010 验收期文案回填）：例外 × 网络归类两把锁——
+                仅「例外开 + 专用」才放行，公用下例外完全不生效 */}
+            {t("languard.riskProfile", lang)}
           </p>
           <button
             class="btn btn--sm btn--primary"
