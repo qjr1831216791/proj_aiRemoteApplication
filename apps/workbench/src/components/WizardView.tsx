@@ -326,14 +326,20 @@ export function WizardView(props: WizardViewProps) {
             >
               {t("wizard.channel.meshDownloadBtn", lang)}
             </button>
+            {/* 组网参数键值对（spec 010 验收期第 5 项）：标签+值两行对齐，
+                沿「访问域名」行的 wizard__label 排版惯例（原三元素裸排无标签） */}
             <div class="wizard__row">
+              <span class="wizard__label">{t("settings.meshName", lang)}</span>
               <code class="wizard__url">{settings?.mesh.networkName}</code>
               <CopyButton
                 text={settings?.mesh.networkName ?? ""}
                 lang={lang}
                 onToast={onToast}
               />
-              <span class="muted">{settings?.mesh.virtualIp}</span>
+            </div>
+            <div class="wizard__row">
+              <span class="wizard__label">{t("mesh.virtualIpLabel", lang)}</span>
+              <code class="wizard__url">{settings?.mesh.virtualIp}</code>
             </div>
             <button
               class="btn btn--sm"

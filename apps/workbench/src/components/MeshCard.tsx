@@ -6,7 +6,9 @@
  * - 常驻操作（向导组网分支同款能力下沉）：写入组网密钥 / 安装·刷新服务 /
  *   同步 DNS（CNAME 全删 + A → 虚拟 IP）——装机后日常维护不再依赖向导
  * - 成员入网配置（spec 009 US4）：折叠区展示官方 TOML 对照清单（密钥占位
- *   符 + 指引文案），移动端 App 逐项输入避免漏项错配
+ *   符 + 指引文案），移动端 App 逐项输入避免漏项错配；验收期第 3 项显眼化
+ *   （整行可点 + 副标题 + 大 chevron 旋转 + hover），密钥/同步 DNS 操作区
+ *   间距加大（验收期第 1/2 项，需求方截图反馈）
  * - DNS 指引：常态轮询权威检测，对齐即消失；判 A=虚拟 IP，
  *   CNAME 残留按旁路暴露面提示（spec 007 体检口径延续）
  * - 访问白名单（spec 010 T6）：健康 chip（正常/休眠/待修复）+ 失配「修复白名单」
@@ -449,8 +451,9 @@ export function MeshCard(props: MeshCardProps) {
       {/* DNS 指引：仅异常时显示，对齐后自动隐藏 */}
       {dns ? <DnsNotice dns={dns} virtualIp={meshCfg?.virtualIp ?? ""} lang={lang} /> : null}
 
-      {/* 常驻操作（向导同款能力下沉）：密钥写入 / 同步 DNS */}
-      <div class="master__actions">
+      {/* 常驻操作（向导同款能力下沉）：密钥写入 / 同步 DNS；间距对齐卡片区块节奏
+          （spec 010 验收期第 1/2 项：按钮行与说明行上下留白加大） */}
+      <div class="master__actions mesh-ops__actions">
         <button
           class="btn btn--sm"
           disabled={busy !== null}
@@ -468,17 +471,26 @@ export function MeshCard(props: MeshCardProps) {
           {busy === "syncDns" ? t("tunnel.dnsChecking", lang) : t("mesh.syncDnsBtn", lang)}
         </button>
       </div>
-      <p class="muted">{t("mesh.syncDnsHint", lang)}</p>
+      <p class="muted mesh-ops__hint">{t("mesh.syncDnsHint", lang)}</p>
 
-      {/* 成员入网配置（spec 009 US4）：折叠区默认收起，展开拉取；
+      {/* 成员入网配置（spec 009 US4；验收期第 3 项显眼化）：折叠区默认收起，展开拉取；
+          整行可点（aria-expanded）+ 副标题 + 大号 chevron 随展开旋转 + hover 反馈；
           密钥为占位符 + 指引文案，真实密钥不出现（spec 007 AC8 延续） */}
       <button
-        class="tools__toggle"
+        class="mesh-member__toggle"
         aria-expanded={memberCfgOpen}
         onClick={() => openMemberCfg(!memberCfgOpen)}
       >
-        <h3 class="card__title mesh-member__title">{t("mesh.memberConfig", lang)}</h3>
-        <span class={`tools__chev${memberCfgOpen ? " tools__chev--open" : ""}`}>▸</span>
+        <span class="mesh-member__head">
+          <span class="mesh-member__title">{t("mesh.memberConfig", lang)}</span>
+          <span class="mesh-member__sub">{t("mesh.memberConfigSub", lang)}</span>
+        </span>
+        <span
+          class={`mesh-member__chev${memberCfgOpen ? " mesh-member__chev--open" : ""}`}
+          aria-hidden="true"
+        >
+          ▾
+        </span>
       </button>
       {memberCfgOpen ? (
         <div class="tools__body">

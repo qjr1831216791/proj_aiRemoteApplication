@@ -235,6 +235,8 @@ export const en = {
     "Sync = delete leftover CNAMEs + point the A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
   "mesh.syncDnsDone": "DNS synced ({n} record operations)",
   "mesh.memberConfig": "Member onboarding config",
+  // Collapsed-row subtitle (spec 010 acceptance polish #3: make it obviously expandable)
+  "mesh.memberConfigSub": "View onboarding steps and the TOML config for member devices",
   "mesh.memberConfigHint":
     "After installing the EasyTier client on a phone/PC, enter each field in the app following the comment beside it; for the \"network password\", type the secret you set when running set-mesh-secret.ps1 (the real secret is never shown here)",
   "mesh.memberClientRec":

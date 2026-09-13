@@ -233,6 +233,8 @@ export const zh = {
     "同步 = 删除残留 CNAME + 把 A 记录指向虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
   "mesh.syncDnsDone": "DNS 同步完成（{n} 条记录操作）",
   "mesh.memberConfig": "成员入网配置",
+  // 折叠区副标题（spec 010 验收期第 3 项：显眼化——让用户知道可展开）
+  "mesh.memberConfigSub": "查看成员设备接入步骤与 TOML 配置",
   "mesh.memberConfigHint":
     "手机/电脑安装 EasyTier 客户端后，按下方各字段旁的注释在 App 内逐项输入即可入网；「网络密码」填入运行 set-mesh-secret.ps1 时设定的密钥（真实密钥不显示在此处）",
   "mesh.memberClientRec":

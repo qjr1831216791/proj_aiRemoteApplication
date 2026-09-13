@@ -5,13 +5,15 @@
  * - 两组件状态卡：五态色、端口、当前态耗时（since）、失败/port-held 原因、
  *   组件级重试（AC6）
  * - 地址区：本机/局域网/域名三行，一键复制 + 打开（AC19 地址区）；
- *   局域网行按白名单健康三态如实措辞（spec 010 AC5/AC8）
+ *   局域网行按白名单健康三态如实措辞（spec 010 AC5/AC8）+ 前置绿/红二值豆
+ *   （验收期第 4 项：判定纯函数 lanDot.ts，例外规则在 ∧ 归类专用 → 绿）
  * 状态数据流：status://changed 事件（App 订阅）+ 启动时 get_status 兜底；
  * 白名单健康（spec 010）：languard://changed 事件 + 启动 lan_guard_status 兜底。
  */
 
 import { useEffect, useState } from "preact/hooks";
 import { api, onLanGuardChanged } from "../api";
+import { lanDotOk } from "../lanDot";
 import { t, type DictKey, type Lang } from "../i18n";
 import type {
   AccessUrls,
@@ -121,6 +123,14 @@ export function MainView(props: MainViewProps) {
   // 两组件全部运行中：启动无事可做，禁用并明示（避免"点了没反应"的静默无操作）
   const allRunning = statuses.length > 0 && statuses.every((s) => s.state === "running");
   const busy = starting || stopping;
+
+  // 局域网行绿豆（spec 010 验收期第 4 项）：绿 = 例外规则实况存在（on/expired）
+  // ∧ 活动网络归类专用；红 = 其余（off/pending/无数据/含公用）。判定纯函数在
+  // lanDot.ts（附单测）；网络归类数据沿网络卡同源（netStatus 轮询 + net://changed）
+  const lanDotGreen = lanDotOk(
+    lanHealth?.exception ?? null,
+    netStatus?.networks.map((n) => n.category) ?? [],
+  );
 
   return (
     <>
@@ -277,8 +287,15 @@ export function MainView(props: MainViewProps) {
                 </span>
                 <code class="addr__url">{urls[k]}</code>
                 {/* 局域网行三态措辞（spec 010 AC5/AC8）：off/pending → 已收口、
-                    on → 临时放行剩余时长、expired → 回落未完成（get_urls 语义不动） */}
-                {k === "lan" ? <LanAddrChip health={lanHealth} lang={lang} /> : null}
+                    on → 临时放行剩余时长、expired → 回落未完成（get_urls 语义不动）；
+                    前置绿/红二值豆（验收期第 4 项，与域名行心跳同色语义：
+                    绿=此路通 / 红=此路不通，默认收口态也红） */}
+                {k === "lan" ? (
+                  <>
+                    <span class={`hb-dot ${lanDotGreen ? "hb-dot--ok" : "hb-dot--fail"}`} />
+                    <LanAddrChip health={lanHealth} lang={lang} />
+                  </>
+                ) : null}
                 <span class="addr__actions">
                   <CopyButton text={urls[k]} lang={lang} onToast={onToast} />
                   <button
