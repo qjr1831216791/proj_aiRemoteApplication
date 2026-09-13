@@ -120,7 +120,7 @@ resources/bin 的 ps1 副本与 manifest.json 不在升级脚本内同步——�
 |------|------|--------|
 | install-https.ps1 头部常量 | `$CaddyCoreVersion` + `$CaddySha256` 成对出现（升级脚本按行锚定改写） | install-https.ps1 / upgrade-component.ps1 |
 | 栈目录 `auth-accounts.json` | `{accounts:[{username,hash}]}`，仅 bcrypt 哈希无明文；用户名字符白名单 `[a-zA-Z0-9_-]{1,32}`（工作台派发侧校验），密码最小长度 8（脚本侧 Read-Host 后校验） | set-https-account.ps1（执行者）/ https_auth_list（只读展示） |
-| Caddyfile 标记段 | `# BEGIN workbench-auth` 与 `# END workbench-auth` 之间：空注释（未启用）或多账号 `basic_auth { <u1> <h1> <u2> <h2> ... }`；**再生产物**——每次账号变更由 auth-accounts.json 重新生成，不手改 | caddy / https_auth 再生逻辑 |
+| Caddyfile 标记段 | `# BEGIN workbench-auth` 与 `# END workbench-auth` 之间：空注释（未启用）或 `@noBearer not header_regexp Authorization ^Bearer\s` + 多账号 `basic_auth @noBearer { <u1> <h1> ... }`（**Bearer 直通**：CloudCLI 前端 API 调用自带 Bearer 令牌，跳过 caddy 门由其自身 token 认证把关——2026-09-13 真机死循环实证修复）；**再生产物**——每次账号变更由 auth-accounts.json 重新生成，不手改 | caddy / set-https-account.ps1 再生逻辑 |
 
 `.env` 不动（仅既有腾讯云双钥）。
 
@@ -155,6 +155,7 @@ resources/bin 的 ps1 副本与 manifest.json 不在升级脚本内同步——�
 | 值参数包裹遗漏某条路径（如新的 extra 参数未走结构化） | 注入面复活 | sink 单测断言包裹形态 + 派发层双字段校验兜底；新参数必须走结构化通道（代码走查项） |
 | 升级脚本改写 consts.rs/ps1 的正则误伤 | 锁定值错位 → 校验失败 | 常量名锚定 + rustfmt 折行感知（跨行取 64-hex）；改写后必跑 cargo test |
 | basic_auth 与 CloudCLI 的 WebSocket 不兼容 | 终端页连接中断 | 浏览器原生凭证缓存下同源 WS 自动带 Authorization 头；AC8 真机专项测 WS 重连；异常则评估特定子路径放行（变更记录） |
+| ~~basic_auth 与 CloudCLI Bearer 令牌冲突~~（**2026-09-13 真机命中**） | CloudCLI 前端 API 调用带 `Authorization: Bearer <token>`，caddy 拒并回 401+WWW-Authenticate → 浏览器反复弹窗死循环 | 已修复：标记段 `@noBearer` 匹配器放行 Bearer 请求，交由 CloudCLI 自带 token 认证（注册端点实证关闭）；四态真机矩阵（无头 401 挑战/Basic 对错/Bearer 直通）验证通过 |
 | kill/reload 期间 443 短暂中断或 admin API 不可达 | 成员瞬时掉线 | reload 零停机为常态；caddy 未运行/2019 不可达时降级为「下次启动生效」提示，不阻塞密码设置 |
 | 前端被攻破时可滥用派发能力（移除账号 = 锁定攻击；反复弹脚本窗口骚扰） | 恶作剧式锁定/诱导输入 | 移除仅影响新请求且管理员可重新添加；脚本窗口为独立进程，前端无法代输密码（密码在脚本窗口键盘输入）；派发参数全程校验+包裹，无法借道注入命令 | 需求方 2026-09-13 恢复「工作台不接触密码」后，前端可滥用的上限从「植入后门账号」降为「锁定/骚扰」 |
 | 移除账号后既有 WS 长连接残留至断开 | 被移除成员的已开终端短期续命 | 文案注明；必要时重启 caddy 彻底断开（AC8 口径） |
