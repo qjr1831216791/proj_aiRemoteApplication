@@ -99,6 +99,12 @@ export function MeshCard(props: MeshCardProps) {
     }
   };
 
+  /** 外链必须走 open_external：WebView2 吞掉 target=_blank 新窗口请求，
+      裸 <a href> 点击无反应（需求方 2026-09-13 实测）；MainView「打开」同款 */
+  const openReleases = () => {
+    void api.openExternal("easytier_releases").catch((e) => onToast(String(e), "error"));
+  };
+
   /** 脚本/命令派发统一收口（沿向导 dispatch 模式） */
   const dispatch = async (key: string, action: () => Promise<unknown>, doneHint = false) => {
     setBusy(key);
@@ -499,11 +505,19 @@ export function MeshCard(props: MeshCardProps) {
               第三方 Orbit 因移动端隧道在系统网络切换/重启后易失效已撤销推荐 */}
           <p class="muted">
             {t("mesh.memberClientRec", lang)}{" "}
+            {/* 下载页外链走 open_external（地址由后端 urls.rs 统一持有）；
+                裸 <a target=_blank> 会被 WebView2 吞掉，点击无反应——勿回退 */}
             <a
               class="mesh-member__link"
-              href="https://github.com/EasyTier/EasyTier/releases"
-              target="_blank"
-              rel="noreferrer"
+              role="button"
+              tabIndex={0}
+              onClick={openReleases}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openReleases();
+                }
+              }}
             >
               GitHub Releases
             </a>

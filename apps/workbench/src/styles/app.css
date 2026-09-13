@@ -601,6 +601,9 @@
 
 .mesh-member__link {
   color: var(--c-primary);
+  /* 无 href 的 a（外链改走 open_external，WebView2 吞 target=_blank）失去
+     UA 指针光标，此处补回以保持与原链接一致的手型悬停反馈 */
+  cursor: pointer;
 }
 
 .mesh-member__link:hover {
