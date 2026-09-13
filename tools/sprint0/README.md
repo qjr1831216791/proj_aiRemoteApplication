@@ -56,13 +56,10 @@ powershell -ExecutionPolicy Bypass -File .\bin\setup-autostart.ps1              
 powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1   # 立即启动一次（不等重新登录）
 ```
 
-## 客户端上路（2 步）
+## 客户端上路（1 步）
 
-1. 把整个 `sprint0/` 文件夹拷到客户端电脑，**双击 `bin\install-client.bat`**：
-   - 首次运行会提示输入服务端地址（组网成员填 `https://ai.jackqi.cn`；纯局域网填 `http://192.168.x.x:3001`），输入回车即可；
-   - 连接成功后自动记住（存于脚本同目录 `.last-server-url`），之后每次双击**直接回车**确认；
-   - 想预填固定地址：右键编辑 `bin\install-client.bat`，顶部 `set "SERVER_URL=https://ai.jackqi.cn"`。
-2. 脚本会：验证服务端可达（不通会按顺序告诉你查什么）→ 桌面生成"AI 远程工作台"快捷方式 → 自动打开浏览器。
+- 客户端电脑安装 EasyTier 客户端并加入组网（同网络名/密钥；工作台装机向导的组网分支有成员指引），然后用浏览器打开 **`https://ai.jackqi.cn`** 即可——浏览器即客户端，无需在客户端安装任何本项目软件；想要桌面图标就用浏览器自带的「创建快捷方式」。
+- （install-client 已随 spec 012 退役：局域网直访默认收口（spec 010）后，旧「连通性验证 + 快捷方式」脚本指向的是默认被拦的地址。）
 
 ## 手机上路（0 步）
 
@@ -87,7 +84,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 |------|----------|------------|
 | `menu.ps1` | 服务端 | start-here.bat 的实际实现 |
 | `install-server.bat` / `.ps1` | 服务端 | 装机**一次**（双击 .bat） |
-| `install-client.bat` / `.ps1` | 客户端 | 每台客户端**一次**（首次输地址；换地址时重跑） |
 | `start-server.bat` / `.ps1` | 服务端 | 手动启动服务（双击；打印本机/移动端地址；已在运行则直接开浏览器） |
 | `stop-server.bat` / `.ps1` | 服务端 | 停止后台服务（双击；前台窗口直接 Ctrl+C 即可） |
 | `run-server-hidden.ps1` | 服务端 | 后台静默启动（自启任务/hook 内部调用，一般不直接碰；地址记入日志） |
@@ -100,6 +96,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 | `install-https.bat` / `.ps1` | 服务端 | **HTTPS 栈装机**（一次）：下载 caddy.exe（caddyserver.com 插件构建；直连失败用 `-CaddyZip` 指手动下载的文件，升级加 `-Update`）+ 生成 Caddyfile + 跑 enable-https |
 | `mesh-service.ps1` | 服务端 | **EasyTier 组网服务管理**（spec 007）：install / uninstall / start / stop / restart / status 六动作（变更动作需管理员，status 只读免提权） |
 | `set-mesh-secret.ps1` | 服务端 | 组网密钥写入 `easytier\network-secret`（spec 007；成员设备加入同一网络时输入相同密钥，输入不回显） |
+| `set-https-account.ps1` | 服务端 | **443 访问账号管理**（spec 011）：add / set（改密）/ remove 三动作——密码在工作台派发的控制台窗口 `Read-Host` 隐藏回显输入两次并校验一致，bcrypt 哈希落栈目录 `auth-accounts.json`（无明文），Caddyfile 标记段随之再生（存量装机首插；写前备份 + `caddy validate` 自检失败回滚 + `caddy reload` 零停机）。日常入口在工作台设置区「访问账号」卡，一般不手点 |
 | `uninstall-legacy.ps1` | 服务端 | **旧通道一次性卸载**（spec 008）：清 frp / ddns-go 残留进程、自启任务、文件与 .env 密钥行（前置闸门：组网服务 EasyTierMesh 在线——卸掉旧通道前组网是唯一远程兜底；`-Force` 仅供演练） |
 
 ## 常见问题
@@ -115,7 +112,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 | 想完全卸载 | `npm uninstall -g @cloudcli-ai/cloudcli` + `bin\autostart-off.bat` + 删防火墙白名单规则（`Remove-NetFirewallRule -DisplayName 'CloudCLI Mesh HTTPS 443'`，详见部署文档 §8） |
 | 想换端口 | `install-server.ps1 -Port 3002` 重跑，客户端 URL 同步改（防火墙默认不放行新端口——局域网直访收口是 spec 010 设计使然，经域名/组网访问不受影响） |
 | 想升级/重装 CloudCLI | 服务端编辑 `install-server.bat`，`set "PS_ARGS=-Update"` 后重跑 |
-| 想换服务端地址 | 客户端双击 `install-client.bat`，提示处输入新地址（旧记录自动覆盖） |
 | npm install 报 npm.taobao.org 证书错误（ERR_TLS_CERT_ALTNAME_INVALID） | 机器残留了停服的旧淘宝镜像变量；重跑 `install-server.bat`，步骤 3 会检测并提示一键迁移 npmmirror |
 | `install-https` 下载 Caddy 失败（构建站直连不稳） | 浏览器手动下载 exe / zip（失败提示里带了下载页链接），编辑 `install-https.bat` 设 `set "PS_ARGS=-CaddyZip <文件路径>"` 后重跑 |
 

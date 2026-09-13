@@ -526,9 +526,9 @@ pub fn service_action_params(
     stack_dir: &str,
     lang: crate::lang::Lang,
 ) -> String {
-    // PS 单引号字面量（栈目录含空格安全，autostart::ps_quote 同规则）
-    let quoted_stack = format!("'{}'", stack_dir.replace('\'', "''"));
-    let args: Vec<&str> = vec!["-Action", action, "-StackDir", &quoted_stack];
+    // 栈目录传裸值：单引号包裹统一由 visible_script_params sink 承担
+    // （spec 011 T1 值参数收口——调用方预加引号会与 sink 包裹叠成 ''xxx'' 坏实参）
+    let args: Vec<&str> = vec!["-Action", action, "-StackDir", stack_dir];
     crate::scripts::visible_script_params(
         scripts_dir,
         crate::scripts::Script::MeshService,
@@ -805,7 +805,10 @@ pub fn run_diagnostics(cfg: &MeshConfig, stack_dir: &str, domain: &str) -> Vec<D
 
 /// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
 /// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
-/// 写 config.toml → `--check-config` 办后校验。返回 (config 路径, core exe)。
+/// **无条件 SHA256 办后校验**（spec 011 AC3：旧「exe 已存在即跳过」的短路
+/// 使预置篡改文件直达执行面，现落位/既有一律校验，不符 → Err 含
+/// 「疑似被篡改」，先于 config 写盘与 `--check-config`）→ 写 config.toml →
+/// `--check-config` 办后校验。返回 (config 路径, core exe)。
 /// 校验失败时 config 已写盘——调用方不得派发重启，旧配置继续服务，修好再 apply。
 pub fn prepare_stack(
     cfg: &MeshConfig,
@@ -827,6 +830,9 @@ pub fn prepare_stack(
         })?;
         stage_easytier_binaries(src, stack_dir)?;
     }
+    // spec 011 AC3 去短路：exe 已存在时同样校验五文件哈希（staging 分支自带
+    // 办后校验，此处重复执行为毫秒级，换「预置恶意 exe」链路失效）
+    verify_easytier_binaries(&et_dir)?;
     std::fs::create_dir_all(&et_dir)
         .map_err(|e| format!("创建 {} 失败：{e}", et_dir.display()))?;
     let config_path = et_dir.join(CONFIG_FILE);
@@ -1579,7 +1585,7 @@ mod tests {
         let dir = Path::new(r"C:\app\resources\bin");
         let stack = r"D:\Software\cloudcli-https";
         let params = service_action_params(dir, "install", stack, crate::lang::Lang::Zh);
-        assert!(params.contains("-Action install"), "{params}");
+        assert!(params.contains("-Action 'install'"), "{params}");
         assert!(!params.contains("-BinPath"), "binPath 必须由脚本自建：{params}");
         // binPath 内容不得经命令行传递（外层 -Command "..." 的包裹引号除外）
         assert!(
@@ -1606,7 +1612,7 @@ mod tests {
             crate::lang::Lang::Zh,
         )
         .unwrap();
-        assert!(p.contains("mesh-service.ps1") && p.contains("-Action restart"), "{p}");
+        assert!(p.contains("mesh-service.ps1") && p.contains("-Action 'restart'"), "{p}");
         assert!(p.contains("lan-guard.ps1") && p.contains("-Action ensure-whitelist"), "{p}");
         assert!(p.contains("-Cidr '10.126.126.0/24'"), "{p}");
         assert!(p.contains("-VirtualIp '10.126.126.1'"), "{p}");
@@ -1669,6 +1675,55 @@ mod tests {
         assert!(cfg_path.is_file() && core_exe.is_file());
         let content = std::fs::read_to_string(&cfg_path).unwrap();
         assert!(content.contains("network_name = \"office-net\""), "{content}");
+        let _ = std::fs::remove_dir_all(&stack);
+    }
+
+    /// spec 011 AC3：预置五文件其一被篡改 → prepare_stack 拒绝（文案含
+    /// 「疑似被篡改」），且先于 config 写盘——旧短路只看 core exe 是否存在，
+    /// 预置的篡改文件不经哈希检查直达执行面（core 被 --check-config 执行、
+    /// cli 被诊断执行）。五文件逐一覆盖。
+    #[test]
+    fn prepare_stack_rejects_tampered_preset_binaries() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources").join("bin");
+        for tampered in MESH_BIN_FILES {
+            let stack = std::env::temp_dir().join("et-apply-tampered");
+            let _ = std::fs::remove_dir_all(&stack);
+            let et = stack.join(MESH_DIR);
+            std::fs::create_dir_all(&et).unwrap();
+            std::fs::write(et.join(NETWORK_SECRET_FILE), "it-is-a-secret\n").unwrap();
+            for name in MESH_BIN_FILES {
+                std::fs::copy(src.join(name), et.join(name)).unwrap();
+            }
+            std::fs::write(et.join(tampered), b"tampered-payload").unwrap();
+            // src_bin=None：core exe 已存在 → 旧代码跳过落位与全部校验
+            let err = prepare_stack(&sample_config(), stack.to_str().unwrap(), None)
+                .expect_err(&format!("预置 {tampered} 被篡改应拒绝"));
+            assert!(err.contains("疑似被篡改"), "{tampered}: {err}");
+            assert!(err.contains(tampered), "文案应点名文件：{err}");
+            assert!(
+                !et.join(CONFIG_FILE).exists(),
+                "拒绝必须先于 config 写盘（不派发服务重启语义）"
+            );
+            let _ = std::fs::remove_dir_all(&stack);
+        }
+    }
+
+    /// AC3 对照面：预置五文件完好 → 校验通过、正常产出 config——旧「已存在
+    /// 即跳过」路径现在同样走哈希校验，不误伤正常装机
+    #[test]
+    fn prepare_stack_verifies_intact_preset_binaries() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources").join("bin");
+        let stack = std::env::temp_dir().join("et-apply-intact");
+        let _ = std::fs::remove_dir_all(&stack);
+        let et = stack.join(MESH_DIR);
+        std::fs::create_dir_all(&et).unwrap();
+        std::fs::write(et.join(NETWORK_SECRET_FILE), "it-is-a-secret\n").unwrap();
+        for name in MESH_BIN_FILES {
+            std::fs::copy(src.join(name), et.join(name)).unwrap();
+        }
+        let (cfg_path, core_exe) = prepare_stack(&sample_config(), stack.to_str().unwrap(), None)
+            .expect("完好的预置五文件应通过办后校验");
+        assert!(cfg_path.is_file() && core_exe.is_file());
         let _ = std::fs::remove_dir_all(&stack);
     }
 
@@ -1939,7 +1994,8 @@ mod tests {
             crate::lang::Lang::Zh,
         );
         assert!(params.contains("mesh-service.ps1"), "{params}");
-        assert!(params.contains("-Action stop"), "{params}");
+        // 动作值为字面量（sink 统一单引号包裹，spec 011 T1）
+        assert!(params.contains("-Action 'stop'"), "{params}");
         // 栈目录单引号字面量（含空格安全，内部单引号翻倍）
         assert!(params.contains("-StackDir 'D:\\My Stack\\cloudcli-https'"), "{params}");
         assert!(params.contains("-Lang zh"), "{params}");

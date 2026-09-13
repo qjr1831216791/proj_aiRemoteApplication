@@ -51,8 +51,6 @@ export const en = {
   "tools.updateCloudcli": "Update CloudCLI",
   "tools.updateCloudcliDesc": "install-server.ps1 -Update (admin)",
   "tools.useMirror": "Use China npm mirror",
-  "tools.installClient": "Client Setup",
-  "tools.installClientDesc": "install-client.ps1 (other PC/phone, interactive)",
   "tools.scriptsUnavailable": "Scripts directory unavailable, related actions disabled:",
   "tools.uacHint": "Actions marked (admin) show a UAC prompt",
   "tools.dispatched": "Dispatched: follow the prompts in the opened window",
@@ -64,11 +62,11 @@ export const en = {
   "net.confirmPrivate": "Confirm: set Private",
   "net.confirmPublic": "Confirm: set Public",
   "net.cancel": "Cancel",
-  // Private/Public consequences (spec 010 acceptance-phase copy backfill): the Private
-  // consequence now points at the port-3001 exception (the retired "more discoverable"
-  // wording belonged to the retired 443 profile semantics); Public = recommended default
-  "net.riskPrivate": "Private = if the port-3001 exception is enabled, unkeyed devices on the same subnet will be able to open the dashboard directly (auto-reverts after 12h); only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
-  "net.riskPublic": "Public = only devices holding the mesh key can reach this server (the recommended secure default), so switching back to Public narrows the LAN exposure; the port-3001 exception (if enabled) has no effect on a Public network and other devices will be unable to reach this PC over the LAN (domain/mesh access is unaffected).",
+  // Private/Public consequences (spec 010 acceptance-phase copy backfill; spec 011 copy
+  // consolidation aligned them with the exception's main clause — "password-free", not
+  // "unkeyed devices", matching the enable-confirmation modal)
+  "net.riskPrivate": "Private = while the \"LAN exception (3001)\" is enabled, any device on the same subnet can reach this PC's dashboard and terminal without a password; only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
+  "net.riskPublic": "Public = only devices holding the mesh key can reach this PC (the recommended secure default); the exception switch has no effect on a Public network, so other devices cannot reach this PC over the LAN. Domain/mesh access is unaffected.",
   "net.catPublic": "Public",
   "net.catPrivate": "Private",
   "net.catDomain": "Domain",
@@ -92,19 +90,27 @@ export const en = {
   "languard.exceptionLabel": "LAN exception (3001)",
   "languard.excOffChip": "Locked down",
   "languard.exceptionOnBtn": "Enable exception…",
+  // The ellipsis means "clicking opens a dialog", so the label itself is incomplete — the
+  // button's title carries the full description (the global auto-title can only echo the
+  // visible text, so these must be written by hand).
+  "languard.exceptionOnBtnHint": "Enable the port-3001 LAN exception: a risk confirmation appears first, then admin approval is requested",
   "languard.exceptionOffBtn": "Disable exception",
-  "languard.exceptionRemaining": "Open · {h}h left",
-  "languard.exceptionExpired": "Expired; revert unfinished (still open)",
+  "languard.exceptionRemaining": "Password-free · {h}h left",
+  "languard.exceptionExpired": "Overdue; still password-free (revert unfinished)",
   "languard.exceptionPending": "Exception requested but rule not active: try enabling again",
   "languard.riskTitle": "Enable the LAN exception (port 3001)?",
+  // Main clause (spec 011 copy consolidation): state "password-free" and that the domain
+  // side's password gate does not cover this path — after 011 this is the only credential-free
+  // entrance. Cost, precondition and timeout are split into their own lines instead of four
+  // sentences run together.
   "languard.riskBody":
-    "While enabled, any device on the same subnet can reach port 3001 on this PC with zero authentication — effectively a potential shell on this host. For trusted networks and emergencies only.",
-  "languard.riskTtl": "The exception auto-reverts after 12 hours; reverting asks for admin approval again.",
-  "languard.riskProfile": "This allowance only takes effect while the current network is Private; on a Public network this switch grants no access.",
+    "While enabled, any device on the same subnet can reach this PC's dashboard and terminal with no password at all, with the same rights as you. Domain access is guarded by the \"Access account\" password; this path is not — while the exception is on it is this PC's only password-free entrance.",
+  "languard.riskMeta":
+    "Applies only while the network is Private (enabling it on a Public network grants nothing); it auto-reverts after 12 hours, and reverting asks for admin approval again.",
   "languard.riskConfirm": "Enable (admin)",
-  "languard.publicBlocks": "A Public network is active: the exception only applies on Private networks, so direct access is inactive for now (set it Private in the Network card)",
+  "languard.publicBlocks": "The network is Public: the exception only applies on Private networks, so direct access is inactive right now (set it Private in the Network card).",
   "languard.addrOff": "Not directly reachable (locked down)",
-  "languard.addrOn": "Temporarily open · {h}h left",
+  "languard.addrOn": "Password-free · {h}h left",
   "languard.addrExpired": "Expired; revert unfinished",
 
   // Settings
@@ -118,8 +124,6 @@ export const en = {
   "settings.exitAction": "Exit behavior",
   "settings.exitKeep": "Keep services",
   "settings.exitStop": "Stop services",
-  "settings.openPageOnStart": "Open workbench page after start",
-  "settings.openPageOnStartDesc": "Open the workbench in the browser once the app starts",
   "settings.language": "Language",
   "settings.langAuto": "Follow system",
   "settings.langZh": "中文",
@@ -130,7 +134,8 @@ export const en = {
   "settings.portCaddy": "Caddy port",
   "settings.stackDir": "Install directory",
   "settings.domain": "Domain",
-  "settings.openLogs": "Open Logs Directory",
+  // Log directory joins the read-only row list: noun label + shared common.open action
+  "settings.logsDir": "Log directory",
   "settings.tookOver": "Existing autostart tasks were taken over",
   "settings.repaired": "Settings file was corrupted; defaults restored",
 
@@ -162,6 +167,9 @@ export const en = {
   "settings.meshSecretHint":
     "The mesh secret never goes through an app input: click the button on the right and type it in the popped-up console; the script writes it straight into the network-secret file in the stack directory (hidden input, never logged, never in the settings file)",
   "settings.meshSecretBtn": "Write secret…",
+  // The row's own hint already explains the mechanism, so the title only supplies
+  // the unabbreviated name instead of repeating it.
+  "settings.meshSecretBtnTitle": "Write the EasyTier mesh secret",
   "settings.meshSecretDispatched": "Secret setup window opened; please type it in the console",
   "settings.meshServiceHint": "Service management (all actions below need admin approval):",
   "settings.meshInstallBtn": "Install / refresh service",
@@ -170,6 +178,30 @@ export const en = {
   "settings.meshApplyDone": "Mesh config apply dispatched (status refreshes within seconds after UAC approval)",
   "settings.meshUninstallBtn": "Uninstall service",
   "settings.meshUninstallDone": "Mesh service uninstall dispatched",
+
+  // Access accounts (spec 011 T6/AC9/AC11: 443 password gate - the UI only
+  // dispatches and displays; passwords are typed in the popped-up script console)
+  "settings.auth": "Access accounts (443 password gate)",
+  "settings.authDesc":
+    "Username/password for domain access (basic_auth). Member devices should each use their own account (individually revocable); passwords are only typed into the popped-up console (hidden, confirmed twice) - never through the app, never stored in settings or logs.",
+  "settings.authUsername": "Username",
+  "settings.authUserPlaceholder": "e.g. jack (letters/digits/underscore/hyphen, 1-32 chars)",
+  "settings.authAddBtn": "Add account…",
+  // The card description already covers "password is typed in the popped-up console
+  // (hidden input, confirmed twice)", so the title only supplies the full name.
+  "settings.authAddHint": "Add an access account",
+  "settings.authDispatched":
+    "Account setup window opened: complete the input in the popped-up console (password hidden), then press \"Refresh\" to see the result",
+  "settings.authChangeBtn": "Change password",
+  "settings.authRemoveBtn": "Remove",
+  "settings.authRemoveConfirm":
+    "Remove account \"{name}\"? New requests with that credential will be rejected (existing long-lived connections cannot reconnect once they drop; restart Caddy to cut them immediately).",
+  "settings.authRemoveYes": "Confirm",
+  "settings.authRefreshBtn": "Refresh",
+  "settings.authEmptyHint":
+    "No access accounts yet: domain access stays as-is (no password gate; mesh members only). Once an account is added, browsers will prompt for credentials when visiting the domain.",
+  "settings.authNameInvalid": "Username: letters/digits/underscore/hyphen only, 1-32 chars",
+  "common.cancel": "Cancel",
 
   // Domain heartbeat (spec 005)
   "heartbeat.kind.ok": "OK",
@@ -231,6 +263,9 @@ export const en = {
   "mesh.apply": "Apply config & restart service (admin)",
   "mesh.applying": "Dispatching…",
   "mesh.secretBtn": "Write mesh secret…",
+  // Shared by the three "write mesh secret" buttons (Main / Settings / Wizard); the label
+  // carries an ellipsis, so the title spells out what actually happens.
+  "mesh.secretBtnHint": "Write the EasyTier mesh secret: type it in the popped-up console window (hidden input, confirmed twice, never stored by this app)",
   "mesh.installBtn": "Install / refresh service",
   "mesh.syncDnsBtn": "Sync DNS: A record → virtual IP",
   "mesh.syncDnsHint":
@@ -264,7 +299,7 @@ export const en = {
   "wizard.stage.finalize": "Finish",
   "wizard.domainLabel": "Access domain",
   "wizard.domainSave": "Save domain",
-  "wizard.basis.desc": "Installs the CloudCLI service (admin). When done, the local service is ready — LAN direct access is locked down by default (reach this PC via domain/mesh; emergency exception lives in the \"Access Whitelist\" card on Main).",
+  "wizard.basis.desc": "Installs the CloudCLI service (admin). When done, the local service is ready — LAN direct access is locked down by default (reach this PC via domain/mesh; the emergency exception lives in the \"Access Whitelist\" card on Main — enabling it gives same-subnet devices password-free access, auto-reverting in 12h).",
   "wizard.basis.run": "Install now (admin)",
   "wizard.tencent.desc": "Both trusted certificates and DNS record maintenance (mesh A-record sync) rely on the Tencent Cloud key. Do these three steps once.",
   "wizard.tencent.step1": "Open the Tencent Cloud CAM console and create a key:",

@@ -10,6 +10,11 @@
   min-height: 100vh;
 }
 
+/* 设置页放宽（2026-09-13）：左侧目录自成一列，卡片列仍按原宽度节奏排 */
+.app--wide {
+  max-width: 1060px;
+}
+
 /* ── 页头 + 导航 ─────────────────────────────────────────────── */
 .app__header {
   display: flex;
@@ -77,6 +82,19 @@
   font-size: var(--fs-lg);
   margin: 0 0 var(--sp-3);
   color: var(--c-text);
+}
+
+/* 卡片标题行（标题 + 行尾动作）：动作归标题所属的区块，间距由 head 统一给 */
+.card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.card__head .card__title {
+  margin-bottom: 0;
 }
 
 .muted {
@@ -440,6 +458,27 @@
   font-size: var(--fs-sm);
 }
 
+/* 例外确认（spec 011 文案整合）：主句 + 前提/时限次行 + 按钮行，纵向堆叠。
+   归类切换确认仍用单行 flex（句子短），只有例外这条走堆叠变体 */
+.net__confirm--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-2);
+}
+
+.net__confirm--stack .net__risk {
+  flex: none;
+}
+
+.net__riskMeta {
+  margin: 0;
+}
+
+.net__actions {
+  display: flex;
+  gap: var(--sp-3);
+}
+
 /* ── 主界面：地址区 ──────────────────────────────────────────── */
 .addr__row {
   display: flex;
@@ -653,6 +692,72 @@
   flex-direction: column;
 }
 
+/* 设置页左侧目录（2026-09-13 需求方反馈）：常驻跳转入口 + 滚动高亮当前节。
+   卡片列用 minmax(0,1fr) 防长内容把网格撑破；目录 sticky 的容器即其网格区域
+   （与卡片列同一行），因此整页滚动期间它一直可见 */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+.settings-toc {
+  position: sticky;
+  top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-toc__item {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--c-text-secondary);
+  text-align: left;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-toc__item:hover {
+  color: var(--c-primary);
+  background: var(--c-primary-bg);
+}
+
+.settings-toc__item--active {
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
+/* 卡片列：维持 .app 的纵向节奏（16px） */
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+/* 跳转落点留呼吸位：scrollIntoView 后卡片标题不贴视口顶 */
+.settings-sections > .card {
+  scroll-margin-top: var(--sp-4);
+}
+
+/* 窗口窄到装不下两列时（低于 Tauri 最小宽度 800，如浏览器预览），目录让位给内容 */
+@media (max-width: 780px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-toc {
+    display: none;
+  }
+}
+
 .settings__row,
 .switch-row {
   display: flex;
@@ -666,6 +771,117 @@
 .settings__row:last-child,
 .switch-row:last-child {
   border-bottom: none;
+}
+
+/* 行内宽字段（部署目录路径，2026-09-13 需求方反馈「input 太短看不全」）：
+   .settings__row-text 宽度按内容定 → input 的 width:100% 无参照，退回浏览器
+   固有宽（约 170px）。让文本块吃掉行内剩余宽度，输入框再解除 360 上限，
+   按长路径（约 80 字符）给基准宽 */
+.settings__row--field .settings__row-text {
+  flex: 1;
+}
+
+.settings__row--field .form-input {
+  max-width: 560px;
+}
+
+/* 组网设置卡分节（2026-09-13 需求方「不协调」反馈）：线画在"节"的开头，
+   而不是每个说明行自带 border-bottom——原先那条线把「服务管理（…）：」
+   标题和它自己的按钮切开了。用 id 限定，只作用于本卡 */
+#settings-sec-mesh .form-input {
+  max-width: none; /* 三输入与 textarea 同宽：原先输入框各 193px、textarea 360px，右边界参差 */
+}
+
+/* 分节线：线由下一节的 border-top 画，线下方 12px 来自该行自身的 padding-top。
+   线上方的 12px 由「上一节末尾元素的下边距」给——按钮行自身没有下边距，
+   会直接贴线（2026-09-13 需求方反馈），故这两个按钮行显式补上 */
+.settings__row.mesh-start {
+  border-top: 1px solid var(--c-border);
+  border-bottom: none;
+}
+
+.mesh-save-row,
+.mesh-actions {
+  padding-bottom: var(--sp-3);
+}
+
+.mesh-actions {
+  margin-top: 0; /* 紧随其上小节标题，间距由标题行的 padding 提供 */
+}
+
+/* 访问账号名单（spec 011 T6 验收期打磨）：账号是纯名单，通用行距（sp-3 + 动作区
+   margin-top:sp-3）下一行约 66px，几十个账号会把卡片撑得很长——紧凑行距 + 封顶内滚。
+   账号少时 max-height 不触发，外观与其他设置行一致（无滚动条） */
+.settings__rows--compact {
+  max-height: 264px; /* ≈ 5~6 行；超出即内滚，避免几十个账号无限撑长 */
+  overflow-y: auto;
+  scrollbar-gutter: stable; /* 滚动条出现/消失不推动右侧按钮，避免多一个账号时跳一下 */
+}
+
+.settings__rows--compact .settings__row {
+  padding: var(--sp-1) 0;
+}
+
+/* 行内动作改「文字动作」（2026-09-13 需求方反馈「看上去不协调」）：
+   描边按钮让每行的动作比账号名更重——名字成了全行最轻的元素，一列小方框
+   加上分隔线，和卡片里其他轻量区块不是一套语言。去框、次要色、hover 才显色，
+   重量交还给账号名；行高也随之从 33px 降到约 29px。
+   保留透明边框（不删 border）以免 hover 时尺寸跳动 */
+.settings__rows--compact .settings__row .btn:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-text-secondary);
+  padding: 0 var(--sp-2);
+}
+
+.settings__rows--compact .settings__row .btn:hover:not(:disabled) {
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+}
+
+/* 破坏性动作单独留红色标识（同为文字动作，不描边） */
+.settings__rows--compact .settings__row .btn--danger:not(:disabled) {
+  color: var(--c-error);
+}
+
+.settings__rows--compact .settings__row .btn--danger:hover:not(:disabled) {
+  background: var(--c-error-soft);
+  color: var(--c-error);
+}
+
+/* 行内动作区不该吃 margin-top：sp-3 是给「表单下方的操作行」用的（见本文件其余
+   四处 settings__actions），落在列表行里会把行撑高 12px 且让按钮偏离垂直中心。
+   只针对行内的直接子级——确认删除分支里的 actions 在 row-text 内，保留原间距 */
+.settings__rows--compact .settings__row > .settings__actions {
+  margin-top: 0;
+  flex-shrink: 0; /* 不参与收缩：否则行内的长确认文案会把两个按钮挤成两行 */
+  white-space: nowrap;
+}
+
+/* 访问账号「新增」区（2026-09-13 需求方反馈重排）：与名单一条分隔线划清区块；
+   输入框给固定基准宽（沿用 .form-input 的 360 上限）而非撑满整行，按钮紧跟其后。
+   动作区底对齐 + margin-bottom:1px 沿既有 tunnel-form-save 惯例 */
+.auth-add {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  /* 线上方只留 4px（2026-09-13 需求方反馈「最后一行分割线特别高」）：行底 4px +
+     4px = 8px，与账号行之间的 9px 同一节奏；原先 margin-top 也是 12px，
+     合计 16px，线看着从名单里浮起来一大截 */
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--c-border);
+}
+
+/* 标签竖排（需求方 2026-09-13 定：标签与输入各占一行，沿设置页其余表单的竖向语汇）。
+   field 吃满整行剩余宽度 + 输入框解除 360px 上限，否则中间空出一块、
+   「新增账号」浮在行尾看着脱节 */
+.auth-add .tunnel-form-field {
+  flex: 1 1 auto;
+}
+
+.auth-add .form-input {
+  max-width: none;
 }
 
 .settings__row-text,
@@ -683,6 +899,16 @@
 .settings__desc {
   color: var(--c-text-secondary);
   font-size: var(--fs-sm);
+}
+
+/* 组网诊断结果的状态图标（2026-09-13 需求方反馈「排版不协调」）：✓/✗ 取色区分，
+   不再是和标题同色的文本字符 */
+.diag-mark--ok {
+  color: var(--c-ok);
+}
+
+.diag-mark--bad {
+  color: var(--c-error);
 }
 
 .settings__value {

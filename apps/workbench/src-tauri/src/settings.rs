@@ -128,8 +128,6 @@ pub struct Settings {
     pub link_start_services: bool,
     /// 托盘「退出」的行为：保留服务 / 停止服务（AC13~15）
     pub exit_action: ExitAction,
-    /// 启动后自动打开工作台页面
-    pub open_page_on_start: bool,
     /// 脚本目录覆盖：None = 未设置（用内置/开发态路径）
     pub scripts_dir_override: Option<String>,
     /// 访问通道：唯一值 mesh（spec 008 收敛；旧文件缺字段或值为
@@ -157,7 +155,6 @@ impl Default for Settings {
             autostart_app: false,
             link_start_services: true,
             exit_action: ExitAction::Keep,
-            open_page_on_start: false,
             scripts_dir_override: None,
             access_channel: AccessChannel::default(),
             mesh: MeshConfig::default(),
@@ -178,7 +175,6 @@ pub struct SettingsPatch {
     pub autostart_app: Option<bool>,
     pub link_start_services: Option<bool>,
     pub exit_action: Option<ExitAction>,
-    pub open_page_on_start: Option<bool>,
     /// 三态：None 不改 / Some(None) 置空 / Some(Some(dir)) 设置。
     /// 原生 serde 会把「显式 null」与「字段缺省」都塌缩为 None，
     /// 故用 deserialize_with 区分：缺省走 default（None），null → Some(None)。
@@ -263,8 +259,9 @@ fn repair(path: &Path) -> LoadOutcome {
     LoadOutcome::Repaired { settings: Settings::default(), backup_path }
 }
 
-/// 补丁合并（纯函数）：未提交的字段保持原值，version 恒为当前 schema 版本
-pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
+/// 补丁合并（纯函数）：未提交的字段保持原值，version 恒为当前 schema 版本。
+/// spec 011 AC1 源头闸：stack_dir 非法形态 → Err（写入即拒，脏值不落 settings）。
+pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Result<Settings, String> {
     let mut merged = base.clone();
     merged.version = SCHEMA_VERSION;
     if let Some(v) = patch.language {
@@ -282,9 +279,6 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     if let Some(v) = patch.exit_action {
         merged.exit_action = v;
     }
-    if let Some(v) = patch.open_page_on_start {
-        merged.open_page_on_start = v;
-    }
     if let Some(v) = patch.scripts_dir_override.clone() {
         merged.scripts_dir_override = v;
     }
@@ -295,27 +289,29 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
         merged.domain_heartbeat = v;
     }
     if let Some(v) = patch.stack_dir.as_deref() {
-        merged.stack_dir = normalize_stack_dir(v);
+        merged.stack_dir = normalize_stack_dir(v)?;
     }
     if let Some(v) = patch.lan_guard {
         merged.lan_guard = v;
     }
-    merged
+    Ok(merged)
 }
 
 /// 栈目录规整（纯函数）：去首尾空白与尾随分隔符；未以 `cloudcli-https`
 /// 子目录结尾则自动追加（需求方：用户输入安装根，子目录名固定）；
-/// 空输入回落默认值。
-pub fn normalize_stack_dir(input: &str) -> String {
+/// 空输入回落默认值。spec 011 AC1 源头闸：非绝对盘符路径或含 PowerShell
+/// 元字符 → Err（校验于追加子目录之前，错误指向用户输入原貌）。
+pub fn normalize_stack_dir(input: &str) -> Result<String, String> {
     let t = input.trim().trim_end_matches(['\\', '/']);
     if t.is_empty() {
-        return crate::consts::DEFAULT_STACK_DIR.to_string();
+        return Ok(crate::consts::DEFAULT_STACK_DIR.to_string());
     }
+    crate::scripts::validate_stack_dir(t)?;
     let lower = t.to_ascii_lowercase();
     if lower.ends_with("\\cloudcli-https") || lower.ends_with("/cloudcli-https") {
-        t.to_string()
+        Ok(t.to_string())
     } else {
-        format!("{t}\\cloudcli-https")
+        Ok(format!("{t}\\cloudcli-https"))
     }
 }
 
@@ -360,10 +356,11 @@ impl SettingsState {
         self.current.lock().expect("设置锁中毒").clone()
     }
 
-    /// 补丁保存：合并 → 原子写盘 → 更新内存
+    /// 补丁保存：合并（校验失败即拒）→ 原子写盘 → 更新内存。
+    /// spec 011 AC1：stack_dir 非法时 Err 于写盘之前返回，内存与磁盘均不动。
     pub fn patch(&self, patch: &SettingsPatch) -> Result<Settings, String> {
         let mut cur = self.current.lock().expect("设置锁中毒");
-        let merged = apply_patch(&cur, patch);
+        let merged = apply_patch(&cur, patch)?;
         save_to(&self.path, &merged).map_err(|e| format!("保存设置失败：{e}"))?;
         *cur = merged.clone();
         Ok(merged)
@@ -416,7 +413,7 @@ mod tests {
     fn defaults_match_plan_schema() {
         // plan §4：version=1 / language=auto / autostartServices=true /
         // autostartApp=false / linkStartServices=true / exitAction=keep /
-        // openPageOnStart=false / scriptsDirOverride=null
+        // scriptsDirOverride=null（openPageOnStart 已移除，见 spec 001 §7 v2.10）
         // spec 007 §4.1：MeshConfig 全默认；spec 008：单通道 mesh
         let d = Settings::default();
         assert_eq!(d.version, 1);
@@ -425,7 +422,6 @@ mod tests {
         assert!(!d.autostart_app);
         assert!(d.link_start_services);
         assert_eq!(d.exit_action, ExitAction::Keep);
-        assert!(!d.open_page_on_start);
         assert_eq!(d.scripts_dir_override, None);
         assert_eq!(d.access_channel, AccessChannel::Mesh, "唯一通道 mesh（008 收敛）");
         assert_eq!(d.mesh, MeshConfig::default());
@@ -485,7 +481,8 @@ mod tests {
     fn apply_patch_lan_guard_block_write() {
         let base = Settings::default();
         // 空补丁：原样
-        let untouched = apply_patch(&base, &SettingsPatch::default());
+        let untouched =
+            apply_patch(&base, &SettingsPatch::default()).expect("空补丁应通过");
         assert_eq!(untouched.lan_guard, LanGuardSettings::default());
 
         // 整块写入：on 态
@@ -493,7 +490,8 @@ mod tests {
         let merged = apply_patch(
             &base,
             &SettingsPatch { lan_guard: Some(on), ..Default::default() },
-        );
+        )
+        .expect("空 stack_dir 补丁应通过");
         assert_eq!(merged.lan_guard, on, "例外标记整块写入");
         assert_eq!(merged.mesh, base.mesh, "未提交字段不变");
 
@@ -502,7 +500,8 @@ mod tests {
         let merged = apply_patch(
             &merged,
             &SettingsPatch { lan_guard: Some(off), ..Default::default() },
-        );
+        )
+        .expect("空 stack_dir 补丁应通过");
         assert_eq!(merged.lan_guard, off);
 
         // JSON 侧：camelCase 对象可解析
@@ -519,17 +518,91 @@ mod tests {
     #[test]
     fn stack_dir_normalization() {
         // 需求方 2026-09-10：输入安装根，自动追加 cloudcli-https 子目录
-        assert_eq!(normalize_stack_dir("D:\\Software\\"), "D:\\Software\\cloudcli-https");
-        assert_eq!(normalize_stack_dir(" D:\\Software "), "D:\\Software\\cloudcli-https");
+        assert_eq!(
+            normalize_stack_dir("D:\\Software\\").expect("规整应通过"),
+            "D:\\Software\\cloudcli-https"
+        );
+        assert_eq!(
+            normalize_stack_dir(" D:\\Software ").expect("规整应通过"),
+            "D:\\Software\\cloudcli-https"
+        );
         // 完整路径原样（大小写/尾斜杠容忍）
         assert_eq!(
-            normalize_stack_dir("d:\\software\\CloudCLI-HTTPS\\"),
+            normalize_stack_dir("d:\\software\\CloudCLI-HTTPS\\").expect("规整应通过"),
             "d:\\software\\CloudCLI-HTTPS"
         );
-        assert_eq!(normalize_stack_dir("E:\\MyStack"), "E:\\MyStack\\cloudcli-https");
+        assert_eq!(
+            normalize_stack_dir("E:\\MyStack").expect("规整应通过"),
+            "E:\\MyStack\\cloudcli-https"
+        );
+        // 含空格安装根同样规整（spec 011 AC2：空格合法）
+        assert_eq!(
+            normalize_stack_dir("D:\\My Stack").expect("含空格应通过"),
+            "D:\\My Stack\\cloudcli-https"
+        );
         // 空输入回落默认
-        assert_eq!(normalize_stack_dir(""), crate::consts::DEFAULT_STACK_DIR);
-        assert_eq!(normalize_stack_dir("   "), crate::consts::DEFAULT_STACK_DIR);
+        assert_eq!(
+            normalize_stack_dir("").expect("空输入回落默认"),
+            crate::consts::DEFAULT_STACK_DIR
+        );
+        assert_eq!(
+            normalize_stack_dir("   ").expect("空白输入回落默认"),
+            crate::consts::DEFAULT_STACK_DIR
+        );
+    }
+
+    /// spec 011 AC1 源头闸：stack_dir 注入面写入即拒——元字符逐个 +
+    /// 非 ASCII + 非盘符形态；空输入仍回落默认（非注入形态）
+    #[test]
+    fn normalize_stack_dir_rejects_injection_at_source() {
+        for c in [';', '\'', '"', '`', '$', '(', ')', '|', '&', '<', '>'] {
+            let bad = format!("D:\\my{c}stack");
+            let err = normalize_stack_dir(&bad)
+                .expect_err(&format!("stack_dir 元字符「{c}」应拒绝：{bad}"));
+            assert!(err.contains("stack_dir"), "「{c}」文案应指明字段：{err}");
+        }
+        assert!(normalize_stack_dir("D:\\我的栈").is_err(), "非 ASCII 拒绝");
+        // 非盘符形态：相对路径 / UNC / 裸盘符（trim 后失格）
+        for bad in ["stack\\dir", "\\\\server\\share", "D:", "D:relative"] {
+            assert!(normalize_stack_dir(bad).is_err(), "非盘符形态应拒绝：{bad}");
+        }
+    }
+
+    /// spec 011 AC1：非法 stack_dir 经 apply_patch / SettingsState::patch
+    /// 写入即拒——Err 透出，内存与磁盘均为旧值
+    #[test]
+    fn state_patch_rejects_bad_stack_dir_and_keeps_old_value() {
+        let base = Settings::default();
+        let patch = SettingsPatch {
+            stack_dir: Some("D:\\evil'stack".into()),
+            ..Default::default()
+        };
+        let err = apply_patch(&base, &patch).expect_err("注入形态应拒绝");
+        assert!(err.contains("stack_dir"), "文案应指明字段：{err}");
+
+        // SettingsState 层：Err 于写盘之前，旧值不动（含落盘文件）
+        let path = temp_settings_path("inject");
+        let (state, _) = SettingsState::load_at(path.clone());
+        assert!(
+            state.patch(&SettingsPatch {
+                stack_dir: Some("D:\\a;b".into()),
+                ..Default::default()
+            })
+            .is_err(),
+            "写入即拒"
+        );
+        assert_eq!(
+            state.current().stack_dir,
+            crate::consts::DEFAULT_STACK_DIR,
+            "内存旧值不动"
+        );
+        let (state2, _) = SettingsState::load_at(path.clone());
+        assert_eq!(
+            state2.current().stack_dir,
+            crate::consts::DEFAULT_STACK_DIR,
+            "磁盘未被写脏"
+        );
+        cleanup(&path);
     }
 
     #[test]
@@ -543,7 +616,6 @@ mod tests {
             "\"autostartApp\":false",
             "\"linkStartServices\":true",
             "\"exitAction\":\"keep\"",
-            "\"openPageOnStart\":false",
             "\"scriptsDirOverride\":null",
             "\"accessChannel\":\"mesh\"",
             "\"mesh\":{",
@@ -658,7 +730,8 @@ mod tests {
         base.scripts_dir_override = Some("D:\\old".into());
 
         // 空补丁：原样返回（仅 version 规整）；base 默认通道随 007 改为 mesh
-        let untouched = apply_patch(&base, &SettingsPatch::default());
+        let untouched = apply_patch(&base, &SettingsPatch::default())
+            .expect("空补丁应通过");
         assert_eq!(untouched, base);
         assert_eq!(untouched.access_channel, AccessChannel::Mesh);
 
@@ -668,7 +741,7 @@ mod tests {
             scripts_dir_override: Some(Some("D:\\new".into())),
             ..Default::default()
         };
-        let merged = apply_patch(&base, &patch);
+        let merged = apply_patch(&base, &patch).expect("不含 stack_dir 应通过");
         assert_eq!(merged.exit_action, ExitAction::Stop);
         assert_eq!(merged.scripts_dir_override.as_deref(), Some("D:\\new"));
         assert_eq!(merged.language, LanguageSetting::Zh, "未提交字段不变");
@@ -681,13 +754,14 @@ mod tests {
         let mut base = Settings::default();
         base.scripts_dir_override = Some("D:\\old".into());
 
-        let keep = apply_patch(&base, &SettingsPatch::default());
+        let keep = apply_patch(&base, &SettingsPatch::default()).expect("空补丁应通过");
         assert_eq!(keep.scripts_dir_override.as_deref(), Some("D:\\old"));
 
         let cleared = apply_patch(
             &base,
             &SettingsPatch { scripts_dir_override: Some(None), ..Default::default() },
-        );
+        )
+        .expect("不含 stack_dir 应通过");
         assert_eq!(cleared.scripts_dir_override, None, "Some(None) 应显式置空");
 
         // JSON 侧语义验证：null → 置空；缺字段 → 不改
@@ -702,14 +776,14 @@ mod tests {
     fn apply_patch_stack_dir_normalizes_input() {
         // spec 004：栈目录补丁合并 + 规整；空补丁不动其余字段
         let base = Settings::default();
-        let untouched = apply_patch(&base, &SettingsPatch::default());
+        let untouched = apply_patch(&base, &SettingsPatch::default()).expect("空补丁应通过");
         assert_eq!(untouched, base);
 
         let patch = SettingsPatch {
             stack_dir: Some("D:\\Software\\".into()),
             ..Default::default()
         };
-        let merged = apply_patch(&base, &patch);
+        let merged = apply_patch(&base, &patch).expect("合法栈目录应通过");
         // 栈目录输入安装根 → 规整追加子目录（需求方 2026-09-10）
         assert_eq!(merged.stack_dir, "D:\\Software\\cloudcli-https");
         assert_eq!(merged.language, base.language, "未提交字段不变");
@@ -718,7 +792,9 @@ mod tests {
     #[test]
     fn old_settings_file_without_channel_fields_loads_as_mesh() {
         // 向后兼容（spec 008 D1）：004 之前的 settings.json（无 accessChannel 字段）
-        // → serde default → Mesh，其余字段原样
+        // → serde default → Mesh，其余字段原样。
+        // 夹具里故意留着已移除的 openPageOnStart（spec 001 §7 v2.10）——旧文件带这个键
+        // 仍须正常加载（结构体无 deny_unknown_fields，未知键忽略）
         let path = temp_settings_path("legacy");
         fs::write(
             &path,
@@ -829,11 +905,11 @@ mod tests {
             mesh: Some(custom.clone()),
             ..Default::default()
         };
-        let merged = apply_patch(&base, &patch);
+        let merged = apply_patch(&base, &patch).expect("不含 stack_dir 应通过");
         assert_eq!(merged.mesh, custom, "组网配置整块写入");
 
         // 空补丁不动既有值
-        let again = apply_patch(&merged, &SettingsPatch::default());
+        let again = apply_patch(&merged, &SettingsPatch::default()).expect("空补丁应通过");
         assert_eq!(again.mesh, custom);
 
         // JSON 侧：mesh 对象 camelCase 可解析

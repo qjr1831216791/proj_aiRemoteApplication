@@ -26,7 +26,8 @@ pub const FAILURE_THRESHOLD: u32 = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthKind {
-    /// HTTPS 2xx/3xx
+    /// HTTPS 2xx/3xx，或 401/403（服务器已应答——basic_auth 认证墙本身证明
+    /// 通道存活，见 classify_status）
     Ok,
     /// DNS 解析失败
     Dns,
@@ -100,19 +101,13 @@ pub fn probe_once(url: &str) -> ProbeOutcome {
             let code = resp.status();
             // 立即关闭 body（只关心可达性，不读内容）
             let _ = resp.into_string();
-            if (200..400).contains(&code) {
-                ProbeOutcome { kind: HealthKind::Ok, code: None, latency_ms: latency }
-            } else {
-                ProbeOutcome { kind: HealthKind::Status, code: Some(code), latency_ms: latency }
-            }
+            let (kind, code_out) = classify_status(code);
+            ProbeOutcome { kind, code: code_out, latency_ms: latency }
         }
         Err(ureq::Error::Status(code, resp)) => {
             let _ = resp.into_string();
-            if (200..400).contains(&code) {
-                ProbeOutcome { kind: HealthKind::Ok, code: None, latency_ms: latency }
-            } else {
-                ProbeOutcome { kind: HealthKind::Status, code: Some(code), latency_ms: latency }
-            }
+            let (kind, code_out) = classify_status(code);
+            ProbeOutcome { kind, code: code_out, latency_ms: latency }
         }
         Err(_) => {
             // Transport 细分：字符串匹配超时特征（ureq 的 TransportKind 不含 Timeout 变体）
@@ -133,6 +128,20 @@ pub fn probe_once(url: &str) -> ProbeOutcome {
 
 fn elapsed(started: std::time::Instant) -> u64 {
     started.elapsed().as_millis() as u64
+}
+
+/// HTTP 状态码 → 健康分类（纯函数供测试）。
+/// 401/403 判 Ok 并保留状态码：spec 011 起 443 入口有 basic_auth 认证墙，
+/// 不带凭证的探测拿到 401 是预期行为——服务器已应答即证明通道存活
+/// （2026-09-13 真机反馈：旧口径把 401 误报成「HTTP 状态异常」红标）
+fn classify_status(code: u16) -> (HealthKind, Option<u16>) {
+    if (200..400).contains(&code) {
+        (HealthKind::Ok, None)
+    } else if code == 401 || code == 403 {
+        (HealthKind::Ok, Some(code))
+    } else {
+        (HealthKind::Status, Some(code))
+    }
 }
 
 /// 事件出口（装配层接 Tauri emit）
@@ -263,5 +272,18 @@ mod tests {
         failures = 0;
         healthy = failures < FAILURE_THRESHOLD;
         assert!(healthy);
+    }
+
+    #[test]
+    fn classify_status_treats_auth_wall_as_alive() {
+        // 2xx/3xx 正常
+        assert_eq!(classify_status(200), (HealthKind::Ok, None));
+        assert_eq!(classify_status(302), (HealthKind::Ok, None));
+        // 401/403：basic_auth 认证墙 = 通道存活（spec 011 后预期应答），保留码供诊断
+        assert_eq!(classify_status(401), (HealthKind::Ok, Some(401)));
+        assert_eq!(classify_status(403), (HealthKind::Ok, Some(403)));
+        // 其余 4xx/5xx 仍是「服务在但行为异常」
+        assert_eq!(classify_status(404), (HealthKind::Status, Some(404)));
+        assert_eq!(classify_status(500), (HealthKind::Status, Some(500)));
     }
 }

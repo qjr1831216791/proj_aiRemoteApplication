@@ -75,9 +75,8 @@ function Show-Menu {
     Write-Host (T '  3. 查看各端访问地址' '  3. Show access URLs for every device')
     Write-Host (T '  4. 安装/重装服务端（管理员）' '  4. Install/reinstall server (admin)')
     Write-Host (T '  5. HTTPS 环境配置：443 白名单/hosts（管理员）' '  5. HTTPS setup: 443 whitelist/hosts (admin)')
-    Write-Host (T '  6. 客户端配置（本机验证 + 桌面快捷方式）' '  6. Client setup (verify + desktop shortcut)')
-    Write-Host (T '  7. 开机自启：全部开启' '  7. Autostart: enable all')
-    Write-Host (T '  8. 开机自启：全部关闭' '  8. Autostart: disable all')
+    Write-Host (T '  6. 开机自启：全部开启' '  6. Autostart: enable all')
+    Write-Host (T '  7. 开机自启：全部关闭' '  7. Autostart: disable all')
     Write-Host (T '  0. 退出' '  0. Exit')
     Write-Host ''
     Write-Host (T '请输入选项: ' 'Choose an option: ') -NoNewline -ForegroundColor Yellow
@@ -91,7 +90,17 @@ while ($true) {
         '1' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'run-server-hidden.ps1')
             if (-not (Test-PortListening $httpsPort)) {
-                Start-Process -FilePath (Join-Path $StackDir 'caddy.exe') -ArgumentList 'run', '--config', (Join-Path $StackDir 'Caddyfile') -WindowStyle Hidden
+                # spec 011 T6 顺手修（既有 bug）：此处原为直启 caddy.exe，不注入栈 .env 的
+                # 腾讯云凭证——与 install-https.ps1 文案「总控菜单会自动注入」不符（tls dns
+                # 引用 {env.*} 为空会致证书签发失败）。改道 run-caddy-hidden.ps1（与自启任务
+                # 同款链：白名单注入 TENCENT_* + 前台长驻 run，§9.5-⑩）；凭证只进该专用
+                # 隐藏子进程环境，不进菜单进程本身，比在菜单内注入暴露面更小
+                $hidden = Join-Path $PSScriptRoot 'run-caddy-hidden.ps1'
+                Start-Process powershell -WindowStyle Hidden -ArgumentList @(
+                    '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                    '-File', ('"{0}"' -f $hidden),
+                    '-StackDir', ('"{0}"' -f $StackDir)
+                )
                 Write-Host (T '[OK] Caddy 已启动。' '[OK] Caddy started.') -ForegroundColor Green
             }
             Start-Process "http://localhost:$port"
@@ -119,12 +128,9 @@ while ($true) {
             Invoke-Elevated (Join-Path $PSScriptRoot 'enable-https.ps1')
         }
         '6' {
-            powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'install-client.ps1')
-        }
-        '7' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'setup-autostart.ps1')
         }
-        '8' {
+        '7' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'setup-autostart.ps1') -Remove
         }
         '0' {

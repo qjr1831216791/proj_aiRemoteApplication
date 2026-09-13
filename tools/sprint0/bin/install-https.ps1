@@ -9,8 +9,9 @@
        为「运行账户 + SYSTEM + Administrators」（断开 D:\ 的默认继承——该继承把
        Authenticated Users 授为可修改，本机任何登录用户都能读写 .env 与 caddy.exe）
     2. 下载 caddy.exe（caddyserver.com 按需构建，内置 tencentcloud DNS 插件，ADR-0003；
+       核心版本 + 产物 SHA256 指纹锁定，不符拒装——spec 011 供应链加固（AC5/AC6）；
        已存在则跳过，-Update 升级；失败可 -CaddyZip 指向手动下载的文件——
-       接受构建站下载的裸 .exe 或自行压缩的 zip）
+       接受构建站下载的裸 .exe 或自行压缩的 zip；该兜底不经锁定校验（人工信任转移））
     3. 生成插件式 Caddyfile（已存在则保持不动）：域名:443 TLS 终结 -> 127.0.0.1:3001，
        证书经 DNS-01 自动签发/续期（凭证以 {env.*} 引用不落明文，ADR-0003）
     4. 调用同目录 enable-https.ps1：443 白名单规则（经 lan-guard.ps1，spec 010——源 ∈ 组网网段 + TUN 接口，不再做网络归类改专用）+ hosts 钉定
@@ -63,10 +64,14 @@ function Write-Bad  { param([string]$Message) Write-Host "    [X ] $Message"  -F
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $ProgressPreference = 'SilentlyContinue'
 
-# Caddy 插件构建（ADR-0003）：caddyserver.com 按需编译，插件版本锁定；
-# 升级 = 显式改这里（构建参数随 manifest 登记，见 specs/006）
+# Caddy 插件构建（ADR-0003 + spec 011 P2）：caddyserver.com 按需编译，核心版本 +
+# 插件版本 + 产物 SHA256 三重锁定（供应链指纹锁定，AC5/AC6）；升级 = 成对显式改这里
+# （tools/upgrade-component.ps1 按常量名锚定改写，勿改常量名；构建参数随 manifest 登记，见 specs/006）
+$CaddyCoreVersion  = 'v2.11.4'        # 锁定核心版（2026-09-13 实证：构建站仅履行当时最新版，旧版 400 拒绝）
+$CaddyCoreModule   = "github.com/caddyserver/caddy/v2@${CaddyCoreVersion}"
+$CaddySha256       = '78E189B550A6A03089388F56885368DC720DC7C1ABC10D998C5351C436083815'  # 锁定组合产物指纹（2026-09-13 三次独立下载一致）
 $CaddyPluginModule = 'github.com/caddy-dns/tencentcloud@v0.4.3'
-$CaddyBuildUrl = "https://caddyserver.com/api/download?os=windows&arch=amd64&p=$([uri]::EscapeDataString($CaddyPluginModule))"
+$CaddyBuildUrl = "https://caddyserver.com/api/download?os=windows&arch=amd64&p=$([uri]::EscapeDataString($CaddyCoreModule))&p=$([uri]::EscapeDataString($CaddyPluginModule))"
 $CaddyManualPage = 'https://caddyserver.com/download'
 
 # ---------- 0. 管理员检查 ----------
@@ -93,6 +98,7 @@ function Install-CaddyPluginBuild {
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
         $downloaded = ''
+        $fromNetwork = $false
         if ($LocalPkg) {
             if (-not (Test-Path $LocalPkg)) { throw (T "找不到 $LocalPkg" "Not found: $LocalPkg") }
             if ([IO.Path]::GetExtension($LocalPkg) -ieq '.exe') {
@@ -104,10 +110,13 @@ function Install-CaddyPluginBuild {
                 if (-not $found) { throw "no $ExeName inside the archive" }
                 $downloaded = $found.FullName
             }
+            Write-Warn (T "-CaddyZip 手动兜底：该文件不经 SHA256 指纹锁定校验（人工信任转移），请自行确认来源可信" "-CaddyZip manual fallback: this file bypasses the SHA256 fingerprint lock (manual trust transfer); make sure its origin is trusted")
         } else {
-            Write-Info (T "请求按需构建（$CaddyPluginModule，云端编译需数分钟、下载较慢，请耐心等待）..." "Requesting on-demand build ($CaddyPluginModule; cloud compilation takes minutes and the download is slow, please wait)...")
+            Write-Info (T "请求按需构建（核心 $CaddyCoreVersion + 插件 $CaddyPluginModule，云端编译需数分钟、下载较慢，请耐心等待）..." "Requesting on-demand build (core $CaddyCoreVersion + plugin $CaddyPluginModule; cloud compilation takes minutes and the download is slow, please wait)...")
+            Write-Info "    $CaddyBuildUrl"
             $downloaded = Join-Path $tmp 'caddy-build.exe'
             Invoke-WebRequest -Uri $CaddyBuildUrl -OutFile $downloaded -TimeoutSec 1800 -UseBasicParsing
+            $fromNetwork = $true
         }
         # 完整性粗检：必须是 Windows PE（MZ 头）且体积合理，防止把错误页当 exe 落位
         if ((Get-Item $downloaded).Length -lt 10MB) { throw 'downloaded file is too small to be caddy.exe' }
@@ -117,6 +126,25 @@ function Install-CaddyPluginBuild {
             $null = $fs.Read($head, 0, 2)
             if ([Text.Encoding]::ASCII.GetString($head) -ne 'MZ') { throw 'downloaded file is not a Windows executable' }
         } finally { $fs.Close() }
+        # 供应链指纹锁定（spec 011 AC5）：SHA256 比对严格先于任何向目标路径的复制——
+        # 不符即删下载的临时文件并失败退出，栈目录既有 caddy.exe 不被覆盖。
+        # 仅约束在线构建下载；-CaddyZip 手动兜底不在此列（人工信任转移，入口处已提示）。
+        if ($fromNetwork) {
+            # 纯 .NET 计算哈希而非 Get-FileHash：后者依赖 Utility 模块自动加载，
+            # PSModulePath 被 PowerShell 7 路径污染的 5.1 会话里会不可用（2026-09-13 实测）——
+            # 安全闸门不赌运行环境
+            $sha256 = [System.Security.Cryptography.SHA256]::Create()
+            try {
+                $stream = [IO.File]::OpenRead($downloaded)
+                try { $actualHash = [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '') }
+                finally { $stream.Close() }
+            } finally { $sha256.Dispose() }
+            if ($actualHash -ine $CaddySha256) {
+                Remove-Item -Path $downloaded -Force -ErrorAction SilentlyContinue
+                throw (T "SHA256 校验失败：在线构建产物指纹与锁定值不符（实际 $actualHash，期望 $CaddySha256）。已删除下载文件、未落位——下载源可能被污染。可改用 -CaddyZip 指向手动下载的文件兜底，但该路径不经哈希锁定校验，属人工信任转移" "SHA256 mismatch: the downloaded build does not match the locked fingerprint (actual $actualHash, expected $CaddySha256). Downloaded file deleted, nothing installed - the download source may be compromised. You may fall back to -CaddyZip with a manually downloaded file, but that path skips the hash lock check (manual trust transfer)")
+            }
+            Write-Ok (T "SHA256 指纹校验通过（$CaddyCoreVersion 锁定组合）" "SHA256 fingerprint verified (locked $CaddyCoreVersion combo)")
+        }
         Copy-Item -Path $downloaded -Destination $dest -Force
         Write-Ok (T "Caddy（tencentcloud 插件版）-> $dest（$([math]::Round((Get-Item $dest).Length / 1MB, 1)) MB）" "Caddy (tencentcloud plugin build) -> $dest ($([math]::Round((Get-Item $dest).Length / 1MB, 1)) MB)")
         return $true
@@ -195,19 +223,27 @@ if (Test-Path $caddyfile) {
     # 位置参数形式 validate 报 wrong argument count（2026-09-10 实证）
     # 注意：数组字面量元素不可用 'str' + $var 拼接（PS 5.1 会把逗号解析为
     # + 的右操作数，导致值被拆分）——一律用 "${var}" 插值（2026-09-10 实证）
+    # 注意：缩进一律制表符（`t）——caddy fmt 的规范形态，避免每次 validate/adapt
+    # 打出 "Caddyfile input is not formatted" 警告（2026-09-13 真机实证）
     $lines = @(
         '{',
-        '    auto_https disable_redirects',
+        "`tauto_https disable_redirects",
         '}',
         '',
         "${Domain}:443 {",
-        '    tls {',
-        '        dns tencentcloud {',
-        '            secret_id {env.TENCENT_SECRET_ID}',
-        '            secret_key {env.TENCENT_SECRET_KEY}',
-        '        }',
-        '    }',
-        "    reverse_proxy 127.0.0.1:${Port}",
+        "`ttls {",
+        "`t`tdns tencentcloud {",
+        "`t`t`tsecret_id {env.TENCENT_SECRET_ID}",
+        "`t`t`tsecret_key {env.TENCENT_SECRET_KEY}",
+        "`t`t}",
+        "`t}",
+        "`treverse_proxy 127.0.0.1:${Port}",
+        # 访问账号标记段（spec 011 AC9/AC11）：新装机即带空段——未设账号=空注释，
+        # caddy 正常启动；set-https-account.ps1 以此为锚点原地再生 basic_auth 块
+        # （内容保持 ASCII：本文件以 -Encoding ascii 落盘）
+        "`t# BEGIN workbench-auth",
+        "`t#   (no access accounts configured - add via the workbench or set-https-account.ps1)",
+        "`t# END workbench-auth",
         '}'
     )
     Set-Content -Path $caddyfile -Value $lines -Encoding ascii

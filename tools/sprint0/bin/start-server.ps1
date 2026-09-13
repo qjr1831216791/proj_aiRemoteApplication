@@ -54,6 +54,10 @@ if ($listening) {
 Write-Host (T "正在端口 $Port 上启动 CloudCLI ..." "Starting CloudCLI server on port $Port ...")
 Write-Host (T '保持本窗口开启，按 Ctrl+C 停止服务。' 'Keep this window OPEN. Press Ctrl+C to stop.')
 Write-Host ''
+
+# spec 011 单门模式：官方平台模式开关（语义见 run-server-hidden.ps1 注释），
+# 前台启动同样生效——cloudcli 作为子进程继承本进程环境
+$env:VITE_IS_PLATFORM = 'true'
 & cloudcli
 
 Write-Host ''

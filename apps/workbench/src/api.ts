@@ -42,6 +42,8 @@ export const api = {
   runTool: (kind: ToolKind, opts: ToolOpts) => invoke<void>("run_tool", { kind, opts }),
   scriptsAvailability: () => invoke<ScriptsAvailability>("scripts_availability"),
   openLogsDir: () => invoke<void>("open_logs_dir"),
+  /** 访问账号用户名列表（spec 011 T6）：只读展示——哈希不出 Rust 侧 */
+  httpsAuthList: () => invoke<string[]>("https_auth_list"),
 
   setAutostartServices: (enable: boolean) =>
     invoke<TookOverPayload>("set_autostart_services", { enable }),

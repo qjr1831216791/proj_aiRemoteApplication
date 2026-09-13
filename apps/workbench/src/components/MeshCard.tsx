@@ -193,7 +193,12 @@ export function MeshCard(props: MeshCardProps) {
         {t("languard.exceptionOffBtn", lang)}
       </button>
     ) : (
-      <button class="btn btn--sm" disabled={busy !== null} onClick={() => setConfirmExc(true)}>
+      <button
+        class="btn btn--sm"
+        disabled={busy !== null}
+        title={t("languard.exceptionOnBtnHint", lang)}
+        onClick={() => setConfirmExc(true)}
+      >
         {t("languard.exceptionOnBtn", lang)}
       </button>
     );
@@ -408,31 +413,30 @@ export function MeshCard(props: MeshCardProps) {
         <p class="notice notice--warn">{t("languard.publicBlocks", lang)}</p>
       ) : null}
       {confirmExc ? (
-        <div class="net__confirm">
+        <div class="net__confirm net__confirm--stack">
+          {/* 代价主句（spec 011 文案整合）：免密直连 + 域名侧密码门不覆盖这条路。
+              前提与时限降为次行，不再是四句并列 */}
           <p class="net__risk">
-            {t("languard.riskTitle", lang)}
+            <strong>{t("languard.riskTitle", lang)}</strong>
             <br />
             {t("languard.riskBody", lang)}
-            <br />
-            {t("languard.riskTtl", lang)}
-            <br />
-            {/* 归类前提（spec 010 验收期文案回填）：例外 × 网络归类两把锁——
-                仅「例外开 + 专用」才放行，公用下例外完全不生效 */}
-            {t("languard.riskProfile", lang)}
           </p>
-          <button
-            class="btn btn--sm btn--primary"
-            disabled={busy !== null}
-            onClick={() => {
-              setConfirmExc(false);
-              void runLan("excOn", () => api.lanGuardSetException(true));
-            }}
-          >
-            {t("languard.riskConfirm", lang)}
-          </button>
-          <button class="btn btn--sm" onClick={() => setConfirmExc(false)}>
-            {t("net.cancel", lang)}
-          </button>
+          <p class="muted net__riskMeta">{t("languard.riskMeta", lang)}</p>
+          <div class="net__actions">
+            <button
+              class="btn btn--sm btn--primary"
+              disabled={busy !== null}
+              onClick={() => {
+                setConfirmExc(false);
+                void runLan("excOn", () => api.lanGuardSetException(true));
+              }}
+            >
+              {t("languard.riskConfirm", lang)}
+            </button>
+            <button class="btn btn--sm" onClick={() => setConfirmExc(false)}>
+              {t("net.cancel", lang)}
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -472,6 +476,7 @@ export function MeshCard(props: MeshCardProps) {
         <button
           class="btn btn--sm"
           disabled={busy !== null}
+          title={t("mesh.secretBtnHint", lang)}
           onClick={() =>
             dispatch(
               "secret",

@@ -1,7 +1,8 @@
 /**
  * 运维工具区（spec 006 AC13 瘦身 + spec 008 收敛：仅保留存活通道的运维项）。
- * - 折叠区（默认收起）：升级 CloudCLI / 客户端配置
+ * - 折叠区（默认收起）：升级 CloudCLI
  * - ddns-go 密码重置/管理页已随直连通道退役删除（spec 008）
+ * - 客户端配置（install-client）已随 spec 012 退役删除
  * - 脚本缺失 → 对应按钮禁用 + ScriptLocator 禁用原因透传（spec §4.5）
  * - 派发失败/UAC 拒绝 → run_tool 返回 Err，toast 明确提示不崩溃（AC20）
  */
@@ -43,13 +44,6 @@ export function ToolsSection(props: ToolsSectionProps) {
       desc: "tools.updateCloudcliDesc",
       needsScripts: true,
       run: () => runTool("install_server", true),
-    },
-    {
-      id: "install_client",
-      label: "tools.installClient",
-      desc: "tools.installClientDesc",
-      needsScripts: true,
-      run: () => runTool("install_client", false),
     },
   ];
 

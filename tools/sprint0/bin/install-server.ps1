@@ -218,6 +218,41 @@ if ($cloudcliInstalled -and -not $Update) {
     }
 }
 
+# ---------- 步骤 3 子步骤：平台模式前端补丁（spec 011 单门模式，无条件执行，幂等）----------
+# 单门模式：CloudCLI 以官方平台模式运行（启动脚本注入 VITE_IS_PLATFORM=true，
+# 服务端跳过自身 token 认证；443 入口 caddy basic_auth 是唯一认证门）。
+# 前端 bundle 打补丁让自动登录生效：minified 代码锚点 'CV={}' 单点替换为
+# 'CV={VITE_IS_PLATFORM:"true"}'。bundle 文件名带构建哈希，升级后本段自动重打。
+Write-Info (T '平台模式前端补丁（spec 011 单门模式）...' 'Platform-mode frontend patch (spec 011 single-gate mode) ...')
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Info (T '未找到 npm，跳过补丁（重跑本脚本即可补打）' 'npm not found, patch skipped (re-run this script to apply)')
+} else {
+    $npmRoot = ((npm root -g) | Select-Object -First 1).Trim()
+    $bundle = @(Get-ChildItem -Path (Join-Path $npmRoot '@cloudcli-ai\cloudcli\dist\assets') -Filter 'index-*.js' -File -ErrorAction SilentlyContinue)
+    if ($bundle.Count -ne 1) {
+        Write-Info (T "前端 bundle 定位失败（找到 $($bundle.Count) 个），单门模式未生效，请反馈" "Frontend bundle not located ($($bundle.Count) found); single-gate mode NOT in effect, please report")
+    } else {
+        # 读写走 .NET（UTF-8 无 BOM）：避开 PS 5.1 默认编码坑，bundle 不允许被改写编码
+        $text = [System.IO.File]::ReadAllText($bundle[0].FullName)
+        if ($text.Contains('VITE_IS_PLATFORM:"true"')) {
+            Write-Ok (T '补丁已存在，跳过（幂等）' 'Patch already applied, skipped (idempotent)')
+        } else {
+            $anchor = 'CV={}'
+            $hits = [regex]::Matches($text, [regex]::Escape($anchor)).Count
+            if ($hits -eq 1) {
+                $bak = $bundle[0].FullName + '.bak-platform'
+                if (-not (Test-Path $bak)) { [System.IO.File]::Copy($bundle[0].FullName, $bak) }
+                $patched = $text.Replace($anchor, 'CV={VITE_IS_PLATFORM:"true"}')
+                [System.IO.File]::WriteAllText($bundle[0].FullName, $patched, (New-Object System.Text.UTF8Encoding($false)))
+                Write-Ok (T "平台模式补丁已写入 $($bundle[0].Name)（备份：$([IO.Path]::GetFileName($bak))）" "Platform-mode patch written to $($bundle[0].Name) (backup: $([IO.Path]::GetFileName($bak)))")
+            } else {
+                # 0 次或多次 = CloudCLI 构建已变，锚点失效；只警告不中断安装
+                Write-Info (T "补丁锚点未命中（出现 $hits 次），单门模式未生效，请反馈" "Patch anchor not matched ($hits occurrence(s)); single-gate mode NOT in effect, please report")
+            }
+        }
+    }
+}
+
 # ---------- 4. 电源常开 ----------
 Write-Step (T '步骤 4/5：电源设置（插电状态永不睡眠）' 'Step 4/5: Power settings (never sleep on AC power)')
 powercfg /change standby-timeout-ac 0
@@ -249,6 +284,7 @@ Write-Host (T '  手动收尾（脚本覆盖不到的两步）：' '  Manual fol
 Write-Host (T '    1) 浏览器打开上面的地址 -> 设置 -> 开启需要的工具（默认全禁用）' '    1) Open the URL above -> Settings -> enable the tools you need (all disabled by default)')
 Write-Host (T '    2) 确认 CC Switch 当前供应商可用（终端跑一次 claude）' "    2) Confirm the current CC Switch provider works (run 'claude' once in a terminal)")
 Write-Host (T '  局域网直访自 spec 010 起默认收口：http://<IP>:3001 仅本机可访问。' '  LAN direct access is closed by default since spec 010: http://<IP>:3001 works on this PC only.')
-Write-Host (T '    临时放行：工作台「局域网例外」开关（12h 自动回落）；跨网访问：组网域名 https://ai.jackqi.cn/' '    Temporary access: the workbench "LAN exception" switch (auto-reverts in 12h); cross-network: the mesh domain https://ai.jackqi.cn/')
+Write-Host (T '    临时放行：工作台「局域网例外」开关——开启后同网段设备免密直连看板与终端，12h 自动回落。' '    Temporary access: the workbench "LAN exception" switch — same-subnet devices get password-free access to the dashboard and terminal; auto-reverts in 12h.')
+Write-Host (T '  跨网访问：组网域名 https://ai.jackqi.cn/' '  Cross-network: the mesh domain https://ai.jackqi.cn/')
 Write-Host (T '  排障：docs/research/sprint0-cloudcli-lan-deploy.md §6' '  Troubleshooting: docs/research/sprint0-cloudcli-lan-deploy.md §6')
 Write-Host '=======================================================' -ForegroundColor Magenta

@@ -95,6 +95,8 @@ pub fn run() {
             commands::run_tool,
             commands::scripts_availability,
             commands::open_logs_dir,
+            // spec 011 T6：访问账号只读列表（哈希不出 Rust 侧）
+            commands::https_auth_list,
             // spec 002：网络环境反馈与归类调整
             commands::get_net_status,
             commands::set_network_category,

@@ -50,8 +50,6 @@ export const zh = {
   "tools.updateCloudcli": "升级 CloudCLI",
   "tools.updateCloudcliDesc": "install-server.ps1 -Update（管理员）",
   "tools.useMirror": "使用国内镜像源",
-  "tools.installClient": "客户端配置",
-  "tools.installClientDesc": "install-client.ps1（其他电脑/手机，交互式）",
   "tools.scriptsUnavailable": "脚本目录不可用，相关操作已禁用：",
   "tools.uacHint": "带「管理员」标记的操作会弹出 UAC 授权窗口",
   "tools.dispatched": "已派发：请在弹出的窗口中按提示完成操作",
@@ -63,10 +61,10 @@ export const zh = {
   "net.confirmPrivate": "确认改为专用",
   "net.confirmPublic": "确认改为公用",
   "net.cancel": "取消",
-  // 专用/公用后果（spec 010 验收期文案回填）：专用后果精确指向 3001 例外
-  //（443 归类「更易被发现」旧表述随其语义退役）；公用 = 推荐的安全默认
-  "net.riskPrivate": "专用 = 若 3001 例外开关开启，同网段未持密钥的设备将可直访看板（12h 自动收回）；请仅在信任的网络（如个人热点、家庭网络）这样做。",
-  "net.riskPublic": "公用 = 仅持组网密钥的设备可访问本服务端（推荐的安全默认），改回公用将收窄局域网暴露面；3001 例外（若开启）在公用网络下不生效，其他设备将无法经局域网直访（域名/组网访问不受影响）。",
+  // 专用/公用后果（spec 010 验收期文案回填；spec 011 文案整合对齐例外主句口径——
+  //「免密直连」而非「未持密钥的设备」，与例外确认模态同词）
+  "net.riskPrivate": "专用 = 若「3001 局域网例外」处于开启状态，同网段任何设备无需密码即可直连本机看板与终端；请仅在信任的网络（如个人热点、家庭网络）这样做。",
+  "net.riskPublic": "公用 = 仅持组网密钥的设备可访问本机（推荐的安全默认）；例外开关在公用网络下不生效，其他设备无法经局域网直访，域名/组网访问不受影响。",
   "net.catPublic": "公用",
   "net.catPrivate": "专用",
   "net.catDomain": "域网络",
@@ -90,20 +88,26 @@ export const zh = {
   "languard.exceptionLabel": "3001 局域网例外",
   "languard.excOffChip": "已收口",
   "languard.exceptionOnBtn": "开启例外…",
+  // 省略号是「点了会弹窗」的约定，标签本身不完整——按钮 title 给完整说明
+  // （全局自动提示只能回显可见文案，这里必须手写）
+  "languard.exceptionOnBtnHint": "开启 3001 局域网例外：先弹出风险确认，通过后需管理员授权",
+
   "languard.exceptionOffBtn": "关闭例外",
-  "languard.exceptionRemaining": "放行中 · 剩余 {h}h",
-  "languard.exceptionExpired": "已到期，回落未完成（仍放行）",
+  "languard.exceptionRemaining": "免密放行中 · 剩余 {h}h",
+  "languard.exceptionExpired": "已超期，仍在免密放行（回落未完成）",
   "languard.exceptionPending": "例外已请求但规则未生效：可重新开启",
   "languard.riskTitle": "开启 3001 局域网例外？",
+  // 主句（spec 011 文案整合）：点明「免密 + 域名侧密码门不覆盖这条路」——例外是 011
+  // 之后本机唯一的无凭证入口；代价、前提、时限分层，不再四句并列
   "languard.riskBody":
-    "开启后，同网段任何设备都可零认证直访本机 3001 服务——等于潜在拿到宿主机 shell。仅限信任网络的应急使用。",
-  "languard.riskTtl": "例外开启满 12 小时将自动回落关闭；回落时会再次请求管理员权限。",
-  "languard.riskProfile": "仅当当前网络为「专用」时本放行才生效；公用网络下本开关不产生任何放行。",
+    "开启后，同网段任何设备无需任何密码即可直连本机看板与终端，权限等同于你本人。域名访问有「访问账号」密码把守，这条路没有——例外期间它是本机唯一的免密入口。",
+  "languard.riskMeta":
+    "前提：仅「专用」网络生效（公用下开了也不通）；满 12 小时自动收回，收回同样需要管理员授权。",
   "languard.riskConfirm": "确认开启（管理员）",
-  "languard.publicBlocks": "当前有公用网络：例外放行仅对专用网络生效，直访暂不生效（可在网络环境卡改为专用）",
+  "languard.publicBlocks": "当前网络为「公用」：例外只在「专用」网络下放行，此刻并不通（可在「网络环境」卡改为专用）。",
   "languard.addrOff": "不可直访（已收口）",
-  "languard.addrOn": "临时放行中 · 剩余 {h}h",
-  "languard.addrExpired": "已到期，回落未完成",
+  "languard.addrOn": "免密放行中 · 剩余 {h}h",
+  "languard.addrExpired": "已超期，仍在免密放行（回落未完成）",
 
   // 设置页
   "settings.behavior": "行为设置",
@@ -116,8 +120,6 @@ export const zh = {
   "settings.exitAction": "退出行为",
   "settings.exitKeep": "保留服务",
   "settings.exitStop": "停止服务",
-  "settings.openPageOnStart": "启动后打开工作台页面",
-  "settings.openPageOnStartDesc": "程序启动完成后自动用浏览器打开工作台",
   "settings.language": "界面语言",
   "settings.langAuto": "跟随系统",
   "settings.langZh": "中文",
@@ -128,7 +130,8 @@ export const zh = {
   "settings.portCaddy": "Caddy 端口",
   "settings.stackDir": "安装目录",
   "settings.domain": "域名",
-  "settings.openLogs": "打开日志目录",
+  // 日志目录并入只读行列表：行标签用名词、动作复用 common.open（2026-09-13）
+  "settings.logsDir": "日志目录",
   "settings.tookOver": "已接管已存在的开机自启任务",
   "settings.repaired": "设置文件损坏，已恢复默认值",
 
@@ -160,6 +163,8 @@ export const zh = {
   "settings.meshSecretHint":
     "组网密钥不经程序输入框：点右侧按钮在弹出的控制台输入，脚本直写栈目录 network-secret 文件（不回显、不落日志、不进设置文件）",
   "settings.meshSecretBtn": "写入密钥…",
+  // 本行左侧已有 settings.meshSecretHint 讲清机制，title 只补完整名称、不复述
+  "settings.meshSecretBtnTitle": "写入 EasyTier 组网密钥",
   "settings.meshSecretDispatched": "密钥设置窗口已打开，请在弹出的控制台中输入",
   "settings.meshServiceHint": "服务管理（以下操作均需管理员授权）：",
   "settings.meshInstallBtn": "安装/刷新服务",
@@ -168,6 +173,29 @@ export const zh = {
   "settings.meshApplyDone": "组网配置应用已派发（UAC 通过后数秒内状态自动刷新）",
   "settings.meshUninstallBtn": "卸载服务",
   "settings.meshUninstallDone": "组网服务卸载已派发",
+
+  // 访问账号（spec 011 T6/AC9/AC11：443 密码门——界面只发起与展示，
+  // 密码在派发的脚本窗口输入，界面不出现任何密码框）
+  "settings.auth": "访问账号（443 密码门）",
+  "settings.authDesc":
+    "域名访问的账号密码（basic_auth）。不同成员设备建议各持一个账号，可单独移除吊销；密码只在弹出的控制台窗口输入（不回显、两次确认），不经程序、不落设置与日志。",
+  "settings.authUsername": "用户名",
+  "settings.authUserPlaceholder": "如 jack（字母/数字/下划线/连字符，1~32 字符）",
+  "settings.authAddBtn": "新增账号…",
+  // 本卡描述已讲清"密码只在弹出的控制台窗口输入（不回显、两次确认）"，title 只补完整名称
+  "settings.authAddHint": "新增访问账号",
+  "settings.authDispatched":
+    "账号设置窗口已打开：请在弹出的控制台中完成输入（密码不回显），完成后点「刷新」查看",
+  "settings.authChangeBtn": "改密",
+  "settings.authRemoveBtn": "移除",
+  "settings.authRemoveConfirm":
+    "确定移除账号「{name}」？移除后该凭证的新请求将被拒绝（既有长连接断开后无法重连；必要时重启 Caddy 彻底断开）。",
+  "settings.authRemoveYes": "确认",
+  "settings.authRefreshBtn": "刷新",
+  "settings.authEmptyHint":
+    "尚未设置任何访问账号：域名访问维持现状（无密码门，仅组网成员可达）。添加账号后，浏览器访问域名将要求输入账号密码。",
+  "settings.authNameInvalid": "用户名仅限字母/数字/下划线/连字符，长度 1~32",
+  "common.cancel": "取消",
 
   // 域名心跳（spec 005）
   "heartbeat.kind.ok": "正常",
@@ -229,6 +257,8 @@ export const zh = {
   "mesh.apply": "应用配置并重启服务（管理员）",
   "mesh.applying": "派发中…",
   "mesh.secretBtn": "写入组网密钥…",
+  // 三处「写入组网密钥」按钮共用（主界面/设置页/向导），标签带省略号，title 给完整说明
+  "mesh.secretBtnHint": "写入 EasyTier 组网密钥：在弹出的控制台窗口输入（不回显、两次确认，密钥不落本程序）",
   "mesh.installBtn": "安装/刷新服务",
   "mesh.syncDnsBtn": "同步 DNS：A 记录 → 虚拟 IP",
   "mesh.syncDnsHint":
@@ -262,7 +292,7 @@ export const zh = {
   "wizard.stage.finalize": "收尾",
   "wizard.domainLabel": "访问域名",
   "wizard.domainSave": "保存域名",
-  "wizard.basis.desc": "安装 CloudCLI 服务（管理员）。完成后本机服务即就绪——局域网直访默认已收口（跨设备访问走域名/组网，应急例外见主界面「访问白名单」）。",
+  "wizard.basis.desc": "安装 CloudCLI 服务（管理员）。完成后本机服务即就绪——局域网直访默认已收口（跨设备访问走域名/组网；应急例外在主界面「访问白名单」，开启后同网段免密直连，12h 自动收回）。",
   "wizard.basis.run": "开始安装（管理员）",
   "wizard.tencent.desc": "签发可信证书与维护域名解析（组网 A 记录同步）都依赖腾讯云密钥。以下三步只需做一次。",
   "wizard.tencent.step1": "打开腾讯云 CAM 控制台，新建密钥：",

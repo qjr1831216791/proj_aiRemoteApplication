@@ -1,17 +1,17 @@
 ﻿{
-    "appVersion":  "0.5.0",
+    "appVersion":  "0.7.0",
     "source":  "tools/sprint0/bin",
     "files":  {
-                  "run-server-hidden.ps1":  "95f18e832c4e8eed909027db41106ab0acb5c78b8a2cb72bf76c9340f781deb0",
+                  "run-server-hidden.ps1":  "d7573d4c9e41adb46fde4dafc606f197ee158278e8791ac84b523edde0701195",
                   "run-caddy-hidden.ps1":  "918b85714a1c215502da7f57ead2c942743482422cad4d7827109ead988b74d8",
                   "setup-autostart.ps1":  "a9e16c9b480b8d9185968c2695e5f8deb1edc1b08cc6293231ca018c30cdc319",
-                  "install-server.ps1":  "cdbf8c031ac1a4134a22bee043b4c65a7a954d088ad3a173eb3ca9e4fcf7330d",
-                  "install-https.ps1":  "731bbf4ba94393112dd21109e3439e395476027bb3850f9d1778101ebb130552",
+                  "install-server.ps1":  "667963a52f1801cd4b6c8ce8521a6f0fd93181d91ddfa994cce8b5505827c1fa",
+                  "install-https.ps1":  "a5d388bd90e43215b5d2c07c117c7818b3f2dc35655ac1364bbce061087fbb1a",
                   "enable-https.ps1":  "23bcbfb760ff7585a85b6df223092547c18d65b1fee2b4636c5d72b0ef445fce",
-                  "install-client.ps1":  "a9f89c31da37f43d844b72853041a45c2cffb9121a746b0de2a220ce869fbfa6",
                   "set-tencent-key.ps1":  "9968e22c2079b4e129f0eb48cadc5446e72bc072ae963cbb996b55f28b0a3fc9",
                   "mesh-service.ps1":  "f263b3ee9e587de7cfd6186058d00f1ecde7a2d997e33bdef9cae2c8de1bddca",
                   "set-mesh-secret.ps1":  "440c92efa1a8628639216ddd035da3549ededa9ff1c91a546a1bfe7c2161e8c8",
+                  "set-https-account.ps1":  "53b00f174c4e53721397f9fe62762beec85cdddaca74cf69b48634468b41bbe7",
                   "uninstall-legacy.ps1":  "99591dc40a6e83b7aada0e35360a8af3eec62935903584b91315b1079a8ecdad",
                   "lan-guard.ps1":  "44687e656456d7cf295471f320d2040173be90ffd9e846c9e00feb8ad995b077"
               }
