@@ -3,7 +3,7 @@
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
 - **状态**: 进行中
-- **最后更新**: 2026-09-13（T1/T2/T4/T5 完成，T3 配置半完成，T6 实施中）
+- **最后更新**: 2026-09-13（T1~T6 完成，T3 配置半完成；余 T7~T10 真机与收尾）
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
@@ -21,7 +21,7 @@
 
 ## 阶段 3: 443 入口账号密码（P3）
 
-- [ ] T6 访问账号多账号管理（测试先行，工作台发起 + 脚本执行）：新增 `tools/sprint0/bin/set-https-account.ps1`（add/set/remove 三动作：Read-Host 隐藏回显取密两次+一致/长度校验 → 栈目录 caddy.exe hash-password stdin → `auth-accounts.json` 读写 → 标记段再生（存量首插/多账号形态/空列表回空段）+ .bak 备份回滚 + caddy validate/reload）；Rust 侧 `https_auth_list`（只读用户名）+ `ToolKind::SetHttpsAccount` 派发（ToolOpts 非敏感 `auth_action`/`auth_user` 白名单校验+值包裹，单测）；前端设置区「访问账号」界面（列表展示/发起新增或改密（界面只收用户名）/移除确认）；install-https.ps1 生成端带空标记段；build.ps1 $ScriptSubset 登记；menu.ps1 直启 .env 注入缺失顺手修；未设账号引导提示（验收: AC9/AC11）
+- [x] T6 访问账号多账号管理（测试先行，工作台发起 + 脚本执行）：新增 `tools/sprint0/bin/set-https-account.ps1`（add/set/remove 三动作：Read-Host 隐藏回显取密两次+一致/长度校验 → 栈目录 caddy.exe hash-password stdin → `auth-accounts.json` 读写 → 标记段再生（存量首插/多账号形态/空列表回空段）+ .bak 备份回滚 + caddy validate/reload）；Rust 侧 `https_auth_list`（只读用户名）+ `ToolKind::SetHttpsAccount` 派发（ToolOpts 非敏感 `auth_action`/`auth_user` 白名单校验+值包裹，单测）；前端设置区「访问账号」界面（列表展示/发起新增或改密（界面只收用户名）/移除确认）；install-https.ps1 生成端带空标记段；build.ps1 $ScriptSubset 登记；menu.ps1 直启 .env 注入缺失顺手修；未设账号引导提示（验收: AC9/AC11）→ 2353b92，隔离演练六场景全过（add×2/set/remove/空段/存量首插/validate 失败自动回滚）；**演练中发现并修复 caddy reload 跨栈污染**（reload 固定打 localhost:2019 与栈无关，已加「本栈进程匹配守卫」）；menu.ps1 直启改道 run-caddy-hidden.ps1（比进程内注入暴露面更小）；新增 8 单测，253 绿 + npm build 通过
 - [ ] T7 真机验证：多账号各自凭证 401/进入（含 WS 终端重连专项）、移除账号后新请求 401 且重连被拒、存量装机（v0.6.0 升级形态）首次管理自动插入标记段且重启后仍生效、localhost:3001 不受影响（依赖: T6）（验收: AC8/AC10 真机半）
 
 ## 阶段 4: 收尾
