@@ -3,16 +3,16 @@
 > 导航：[spec.md](./spec.md) · [plan.md](./plan.md) · 返回 [MOC](../MOC.md)
 
 - **状态**: 进行中
-- **最后更新**: 2026-09-13（评审修订版）
+- **最后更新**: 2026-09-13（T1/T2 完成，T3 配置半完成）
 
 > 拆解原则：每个任务可在一天内完成、有明确完成标志、可追溯到验收标准（AC）。
 > 任务状态标记：`[ ]` 待办 · `[~]` 进行中 · `[x]` 完成
 
 ## 阶段 1: 工作台命令面硬化（P1）
 
-- [~] T1 输入校验双闸 + sink 包裹（测试先行）：`validate_domain`/`validate_stack_dir` 纯函数 + `tool_plan` Result 化接线 + `normalize_stack_dir` 写入即拒 + `visible_script_params` 值参数单引号包裹（参数名裸 token，包裹形态单测断言）（验收: AC1/AC2）
-- [ ] T2 `prepare_stack` 去短路：exe 已存在同样走 `verify_easytier_binaries`（测试先行：预置篡改文件拒绝 apply）（验收: AC3）
-- [ ] T3 CSP 基线：tauri.conf.json 设置指令集，dev/build 双启动功能回归（dev 受拦走 devCsp 出口，见 plan §7）（验收: AC4）
+- [x] T1 输入校验双闸 + sink 包裹（测试先行）：`validate_domain`/`validate_stack_dir` 纯函数 + `tool_plan` Result 化接线 + `normalize_stack_dir` 写入即拒 + `visible_script_params` 值参数单引号包裹（参数名裸 token，包裹形态单测断言）（验收: AC1/AC2）→ 763d261，新增 10 测试；附带修正 `service_action_params` 双重包裹隐患
+- [x] T2 `prepare_stack` 去短路：exe 已存在同样走 `verify_easytier_binaries`（测试先行：预置篡改文件拒绝 apply）（验收: AC3）→ a9c24eb，新增 2 测试（逐文件篡改拒绝 + 完好不误伤）
+- [~] T3 CSP 基线：tauri.conf.json 设置指令集 ✅ 521dddd（cargo check 编译期解析通过）；**余 dev/build 双启动功能回归**（dev 受拦走 devCsp 出口，见 plan §7）——并入 T7 真机清单执行（验收: AC4）
 
 ## 阶段 2: 供应链指纹锁定（P2）
 
