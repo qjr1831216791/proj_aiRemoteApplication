@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-13
+
+Sprint 9 交付（Spec 011 攻击面加固 + Spec 012 install-client 退役，同迭代交付）：**工作台命令面硬化**（`domain`/`stack_dir` 双闸校验 + 值参数单引号包裹、EasyTier 二进制 SHA256 校验去短路、CSP 基线）、**Caddy 下载指纹锁定**（方案 A：URL 钉版 + 下载后哈希校验**严格先于落位**）、**443 入口 basic_auth 多账号门**（工作台发起 + 可见窗脚本取密，bcrypt 哈希落 `auth-accounts.json`、Caddyfile 标记段再生），以及傻瓜式组件升级脚本 `upgrade-component.ps1`。验收期真机发现并修复**登录死循环**（CloudCLI 前端 Bearer 头与 basic_auth 冲突 → `@noBearer` 匹配器）与**心跳探测 401 误判红标**，并固化**单门模式**（CloudCLI 官方平台模式运行，443 入口为唯一认证门）。另含设置页整批 UI 打磨与「启动后打开工作台页面」冗余选项移除。011 于 2026-09-13 验收 done（AC1~AC11 全勾，真机实测 / 自动化背书 / 未单独实测子项三分陈述，记录见其 acceptance-manual）。
+
+交付: specs/011-attack-surface-hardening、specs/012-install-client-retirement
+
 ### Added
 
 - **按钮悬停显示全文**：所有按钮鼠标悬停时显示完整文案（原生 `title` 提示）——窄窗口下按钮文字不折行（`.btn` 的 `white-space: nowrap`），被压窄时看不出全文，现由全局机制自动补齐：无手写 `title` 的按钮一律以可见文案作提示，文案换词的按钮（如「加载中…」→「保存」）随之刷新；组件零改动，后续新增按钮自动纳入（`src/autoTitle.ts` + App 根一次性装配）
