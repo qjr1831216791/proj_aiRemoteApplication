@@ -4,12 +4,13 @@
  *   --hidden 启动（登录自启，AC10）时保持隐藏
  * - 状态数据流：启动 get_status 兜底 + `status://changed` 事件（前端不做轮询，AC4）
  * - 设置加载失败/损坏恢复（settings://repaired）→ 非阻塞 toast（AC24）
- * - openPageOnStart && 非隐藏启动 → 自动用浏览器打开工作台（AC22 行为项）
+ * - 「启动后打开工作台页面」选项已移除（spec 001 §7 v2.10，2026-09-13 需求方定）
  * - 语言切换走 Rust set_language（托盘同源重建 + 脚本 -Lang 对齐，AC25），前端随之换词典
  */
 
 import { useEffect, useState } from "preact/hooks";
 import { api, onDomainHealth, onMeshStatus, onNetChanged, onSettingsRepaired, onStatusChanged, onWizardChanged } from "./api";
+import { installAutoTitles } from "./autoTitle";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
   AccessUrls,
@@ -78,9 +79,6 @@ export function App() {
         const s = await api.getSettings();
         setSettings(s);
         setLang(resolveLang(s.language));
-        if (s.openPageOnStart && !hidden) {
-          api.openExternal("workbench").catch(() => {});
-        }
       } catch (e) {
         pushToast(`${t("toast.loadFailed", lang)}: ${String(e)}`, "error");
       }
@@ -114,6 +112,11 @@ export function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── 按钮悬停全文提示（2026-09-13 需求方反馈）────────────────────────────
+  // 全局装配：没有手写 title 的按钮一律以可见文案作 title，后续渲染的按钮
+  // （视图切换/模态）自动纳入；文案换词随之刷新（见 autoTitle.ts）
+  useEffect(() => installAutoTitles(), []);
 
   // ── 操作 ──────────────────────────────────────────────────────────────────
   const startAll = () =>
@@ -149,8 +152,10 @@ export function App() {
     }
   };
 
+  // 设置页放宽（2026-09-13）：左侧目录自成一列，不靠挤压卡片腾位置——
+  // 960 默认窗口下卡片反而比 760 上限时更宽
   return (
-    <main class="app">
+    <main class={`app${view === "settings" ? " app--wide" : ""}`}>
       <header class="app__header">
         <div>
           <h1 class="app__title">{t("app.title", lang)}</h1>

@@ -4,9 +4,9 @@
 //!   浏览器（AC10）。Rust 侧持 hidden 标志，前端页面就绪后经 `is_hidden_startup`
 //!   查询决定是否 show（T1 的"就绪后显形"由此受 Rust 门控）。
 //! - 登录联动（AC11）：`linkStartServices` 开 → `start_all()` 补齐未运行服务
-//!   （幂等，已在运行组件由守卫跳过；不自动开浏览器，openPageOnStart 与此
-//!   独立且默认 false）；关 → 仅探测展示（AC12）。**手动双击（无 --hidden）
-//!   同样适用联动**（决策 7）。
+//!   （幂等，已在运行组件由守卫跳过；不自动开浏览器——「启动后打开工作台页面」
+//!   选项已于 spec 001 §7 v2.10 移除）；关 → 仅探测展示（AC12）。**手动双击
+//!   （无 --hidden）同样适用联动**（决策 7）。
 
 use crate::orchestrator::Orchestrator;
 
@@ -50,7 +50,7 @@ pub fn should_show_main_window(plan: &StartupPlan) -> bool {
 
 /// 执行联动（装配层在 setup 末尾调用一次）：
 /// link_start=true → start_all（AC1/AC3 等价补齐，幂等）；false → 不拉起。
-/// 不在此处开浏览器——openPageOnStart 与联动独立且默认 false（T15 前端接入）。
+/// 不在此处开浏览器——开浏览器选项已随 spec 001 §7 v2.10 移除。
 pub fn apply_link_start(orch: &Orchestrator, plan: &StartupPlan) {
     if plan.link_start {
         log::info!("启动联动开启：补齐未运行的服务（AC11/AC12，决策 7）");

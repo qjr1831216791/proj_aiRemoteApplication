@@ -46,7 +46,6 @@ export interface Settings {
   autostartApp: boolean;
   linkStartServices: boolean;
   exitAction: ExitAction;
-  openPageOnStart: boolean;
   scriptsDirOverride: string | null;
   accessChannel: AccessChannel;
   mesh: MeshConfig;
@@ -62,7 +61,6 @@ export interface SettingsPatch {
   autostartApp?: boolean;
   linkStartServices?: boolean;
   exitAction?: ExitAction;
-  openPageOnStart?: boolean;
   accessChannel?: AccessChannel;
   mesh?: MeshConfig;
   domainHeartbeat?: boolean;

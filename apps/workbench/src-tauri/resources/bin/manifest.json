@@ -5,7 +5,7 @@
                   "run-server-hidden.ps1":  "d7573d4c9e41adb46fde4dafc606f197ee158278e8791ac84b523edde0701195",
                   "run-caddy-hidden.ps1":  "918b85714a1c215502da7f57ead2c942743482422cad4d7827109ead988b74d8",
                   "setup-autostart.ps1":  "a9e16c9b480b8d9185968c2695e5f8deb1edc1b08cc6293231ca018c30cdc319",
-                  "install-server.ps1":  "6652b326844e83ee9d568c41a01c01a16f101e2a40e1786bfeaa9358002bd83b",
+                  "install-server.ps1":  "667963a52f1801cd4b6c8ce8521a6f0fd93181d91ddfa994cce8b5505827c1fa",
                   "install-https.ps1":  "a5d388bd90e43215b5d2c07c117c7818b3f2dc35655ac1364bbce061087fbb1a",
                   "enable-https.ps1":  "23bcbfb760ff7585a85b6df223092547c18d65b1fee2b4636c5d72b0ef445fce",
                   "set-tencent-key.ps1":  "9968e22c2079b4e129f0eb48cadc5446e72bc072ae963cbb996b55f28b0a3fc9",

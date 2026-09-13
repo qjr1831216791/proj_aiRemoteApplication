@@ -284,6 +284,7 @@ Write-Host (T '  手动收尾（脚本覆盖不到的两步）：' '  Manual fol
 Write-Host (T '    1) 浏览器打开上面的地址 -> 设置 -> 开启需要的工具（默认全禁用）' '    1) Open the URL above -> Settings -> enable the tools you need (all disabled by default)')
 Write-Host (T '    2) 确认 CC Switch 当前供应商可用（终端跑一次 claude）' "    2) Confirm the current CC Switch provider works (run 'claude' once in a terminal)")
 Write-Host (T '  局域网直访自 spec 010 起默认收口：http://<IP>:3001 仅本机可访问。' '  LAN direct access is closed by default since spec 010: http://<IP>:3001 works on this PC only.')
-Write-Host (T '    临时放行：工作台「局域网例外」开关（12h 自动回落）；跨网访问：组网域名 https://ai.jackqi.cn/' '    Temporary access: the workbench "LAN exception" switch (auto-reverts in 12h); cross-network: the mesh domain https://ai.jackqi.cn/')
+Write-Host (T '    临时放行：工作台「局域网例外」开关——开启后同网段设备免密直连看板与终端，12h 自动回落。' '    Temporary access: the workbench "LAN exception" switch — same-subnet devices get password-free access to the dashboard and terminal; auto-reverts in 12h.')
+Write-Host (T '  跨网访问：组网域名 https://ai.jackqi.cn/' '  Cross-network: the mesh domain https://ai.jackqi.cn/')
 Write-Host (T '  排障：docs/research/sprint0-cloudcli-lan-deploy.md §6' '  Troubleshooting: docs/research/sprint0-cloudcli-lan-deploy.md §6')
 Write-Host '=======================================================' -ForegroundColor Magenta

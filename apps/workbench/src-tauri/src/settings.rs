@@ -128,8 +128,6 @@ pub struct Settings {
     pub link_start_services: bool,
     /// 托盘「退出」的行为：保留服务 / 停止服务（AC13~15）
     pub exit_action: ExitAction,
-    /// 启动后自动打开工作台页面
-    pub open_page_on_start: bool,
     /// 脚本目录覆盖：None = 未设置（用内置/开发态路径）
     pub scripts_dir_override: Option<String>,
     /// 访问通道：唯一值 mesh（spec 008 收敛；旧文件缺字段或值为
@@ -157,7 +155,6 @@ impl Default for Settings {
             autostart_app: false,
             link_start_services: true,
             exit_action: ExitAction::Keep,
-            open_page_on_start: false,
             scripts_dir_override: None,
             access_channel: AccessChannel::default(),
             mesh: MeshConfig::default(),
@@ -178,7 +175,6 @@ pub struct SettingsPatch {
     pub autostart_app: Option<bool>,
     pub link_start_services: Option<bool>,
     pub exit_action: Option<ExitAction>,
-    pub open_page_on_start: Option<bool>,
     /// 三态：None 不改 / Some(None) 置空 / Some(Some(dir)) 设置。
     /// 原生 serde 会把「显式 null」与「字段缺省」都塌缩为 None，
     /// 故用 deserialize_with 区分：缺省走 default（None），null → Some(None)。
@@ -282,9 +278,6 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Result<Settings, S
     }
     if let Some(v) = patch.exit_action {
         merged.exit_action = v;
-    }
-    if let Some(v) = patch.open_page_on_start {
-        merged.open_page_on_start = v;
     }
     if let Some(v) = patch.scripts_dir_override.clone() {
         merged.scripts_dir_override = v;
@@ -420,7 +413,7 @@ mod tests {
     fn defaults_match_plan_schema() {
         // plan §4：version=1 / language=auto / autostartServices=true /
         // autostartApp=false / linkStartServices=true / exitAction=keep /
-        // openPageOnStart=false / scriptsDirOverride=null
+        // scriptsDirOverride=null（openPageOnStart 已移除，见 spec 001 §7 v2.10）
         // spec 007 §4.1：MeshConfig 全默认；spec 008：单通道 mesh
         let d = Settings::default();
         assert_eq!(d.version, 1);
@@ -429,7 +422,6 @@ mod tests {
         assert!(!d.autostart_app);
         assert!(d.link_start_services);
         assert_eq!(d.exit_action, ExitAction::Keep);
-        assert!(!d.open_page_on_start);
         assert_eq!(d.scripts_dir_override, None);
         assert_eq!(d.access_channel, AccessChannel::Mesh, "唯一通道 mesh（008 收敛）");
         assert_eq!(d.mesh, MeshConfig::default());
@@ -624,7 +616,6 @@ mod tests {
             "\"autostartApp\":false",
             "\"linkStartServices\":true",
             "\"exitAction\":\"keep\"",
-            "\"openPageOnStart\":false",
             "\"scriptsDirOverride\":null",
             "\"accessChannel\":\"mesh\"",
             "\"mesh\":{",
@@ -801,7 +792,9 @@ mod tests {
     #[test]
     fn old_settings_file_without_channel_fields_loads_as_mesh() {
         // 向后兼容（spec 008 D1）：004 之前的 settings.json（无 accessChannel 字段）
-        // → serde default → Mesh，其余字段原样
+        // → serde default → Mesh，其余字段原样。
+        // 夹具里故意留着已移除的 openPageOnStart（spec 001 §7 v2.10）——旧文件带这个键
+        // 仍须正常加载（结构体无 deny_unknown_fields，未知键忽略）
         let path = temp_settings_path("legacy");
         fs::write(
             &path,
