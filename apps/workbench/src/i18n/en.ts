@@ -280,7 +280,7 @@ export const en = {
   "wizard.channel.meshServiceHint":
     "The service runs as a Windows service (starts at logon); click this if not installed yet or needs repair",
   "wizard.channel.meshPeerGuide":
-    "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases (button above). Configure: network name \"{name}\", the same secret as here, peers as listed above; set the virtual IP MANUALLY to a static address — first member 10.126.126.2, then increment (do NOT use auto/DHCP: this host uses a static config and the network has no DHCP; do NOT use 10.126.126.1, that's this PC); a hostname (e.g. phone) is recommended. You're joined only when the device list shows ai-remote-workbench — \"connected to server\" alone doesn't count. Then reach this PC via the virtual network",
+    "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases (link above). Configure: network name \"{name}\", the same secret as here, peers as listed above; set the virtual IP MANUALLY to a static address — first member 10.126.126.2, then increment (do NOT use auto/DHCP: this host uses a static config and the network has no DHCP; do NOT use 10.126.126.1, that's this PC); a hostname (e.g. phone) is recommended. You're joined only when the device list shows ai-remote-workbench — \"connected to server\" alone doesn't count. Then reach this PC via the virtual network",
   "wizard.channel.meshDownloadBtn": "Open EasyTier download page (GitHub Releases)",
   "mesh.diag.desc": "Mesh diagnostics: six checks — service, secret, peer reachability, members, local NIC, domain chain (self-troubleshoot when members can't reach this PC)",
   "mesh.diag.runBtn": "Run diagnostics",

@@ -203,6 +203,14 @@ export function WizardView(props: WizardViewProps) {
       </p>
     ) : null;
 
+  /** 下载页入口为超链接形态（需求方 2026-09-13，沿 MeshCard 同款先例）；
+      外链仍走 open_external（WebView2 吞 target=_blank），调用逻辑与原按钮一致 */
+  const openReleases = () => {
+    void api.openExternal("easytier_releases").catch((e) =>
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"),
+    );
+  };
+
   const stagePanel = (id: WizardStageId) => {
     const s = stageOf(id);
     switch (id) {
@@ -315,17 +323,22 @@ export function WizardView(props: WizardViewProps) {
                 settings?.mesh.networkName ?? "",
               )}
             </p>
-            <button
-              class="btn"
-              disabled={busy !== null}
-              onClick={() =>
-                void api.openExternal("easytier_releases").catch((e) =>
-                  onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error"),
-                )
-              }
+            {/* 下载页入口改超链接形态（需求方要求，调用逻辑不变）：
+                外链必须走 open_external——WebView2 吞裸 <a target=_blank>，勿回退 */}
+            <a
+              class="wizard__link"
+              role="button"
+              tabIndex={0}
+              onClick={openReleases}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openReleases();
+                }
+              }}
             >
               {t("wizard.channel.meshDownloadBtn", lang)}
-            </button>
+            </a>
             {/* 组网参数键值对（spec 010 验收期第 5 项）：标签+值两行对齐，
                 沿「访问域名」行的 wizard__label 排版惯例（原三元素裸排无标签） */}
             <div class="wizard__row">

@@ -278,7 +278,7 @@ export const zh = {
   "wizard.channel.meshServiceHint":
     "服务以 Windows 服务形态常驻（登录自启）；未安装或需修复时点此按钮",
   "wizard.channel.meshPeerGuide":
-    "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端（上方按钮可直达）。配置：网络名称「{name}」、密钥与本机相同、对端同本机节点列表；虚拟 IP 手动填静态地址——第一台成员填 10.126.126.2、之后逐台递增（勿用「自动获取」：本机为静态配置形态，网内无 DHCP 分配；勿填 10.126.126.1，那是本机）；建议填写主机名（如 phone）便于辨认。入网成功的标志：App 设备列表出现 ai-remote-workbench——仅显示「已连接服务器」不算入网。完成后即可经虚拟网络访问本机",
+    "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端（上方链接可直达）。配置：网络名称「{name}」、密钥与本机相同、对端同本机节点列表；虚拟 IP 手动填静态地址——第一台成员填 10.126.126.2、之后逐台递增（勿用「自动获取」：本机为静态配置形态，网内无 DHCP 分配；勿填 10.126.126.1，那是本机）；建议填写主机名（如 phone）便于辨认。入网成功的标志：App 设备列表出现 ai-remote-workbench——仅显示「已连接服务器」不算入网。完成后即可经虚拟网络访问本机",
   "wizard.channel.meshDownloadBtn": "打开 EasyTier 下载页（GitHub Releases）",
   "mesh.diag.desc": "组网诊断：服务、密钥、节点可达性、成员、本机网卡、域名链路六项检查（成员访问异常时自查断点）",
   "mesh.diag.runBtn": "运行诊断",

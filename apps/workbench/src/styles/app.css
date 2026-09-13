@@ -599,14 +599,18 @@
   margin: 0 0 var(--sp-2);
 }
 
-.mesh-member__link {
+/* open_external 外链的链接形态（无 href 的 a）：MeshCard 成员指引与
+   向导「打开 EasyTier 下载页」共用同一交互形态（需求方 2026-09-13） */
+.mesh-member__link,
+.wizard__link {
   color: var(--c-primary);
   /* 无 href 的 a（外链改走 open_external，WebView2 吞 target=_blank）失去
      UA 指针光标，此处补回以保持与原链接一致的手型悬停反馈 */
   cursor: pointer;
 }
 
-.mesh-member__link:hover {
+.mesh-member__link:hover,
+.wizard__link:hover {
   text-decoration: underline;
 }
 
