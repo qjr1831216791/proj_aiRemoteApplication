@@ -229,7 +229,8 @@ pub async fn mesh_apply_config(
 }
 
 /// mesh 生效内核：磁盘段（prepare_stack，spawn_blocking）→ 服务实况选动作
-/// → UAC 派发。任一步 Err 均含可读指引且不含密钥值（AC8/AC9）。
+/// → UAC 组合派发（服务动作 + ensure-whitelist 同窗，spec 010 AC9）。任一步
+/// Err 均含可读指引且不含密钥值（AC8/AC9）。
 async fn apply_mesh_effective(
     ctx: &tauri::State<'_, AutostartContext>,
     settings: &tauri::State<'_, crate::settings::SettingsState>,
@@ -241,13 +242,40 @@ async fn apply_mesh_effective(
     let Some(dir) = ctx.scripts_dir.clone() else {
         return Err("脚本目录不可用：无法派发组网服务动作（mesh-service.ps1）".into());
     };
-    let stack = settings.current().stack_dir;
+    let cur = settings.current();
+    let stack = cur.stack_dir;
     let ops = crate::mesh::WindowsMeshOps::new(ctx.scripts_dir.clone(), stack.clone());
-    let params = match crate::mesh::apply_service_action(ops.service_state()) {
-        "install" => crate::mesh::service_install_params(&dir, &stack, lang),
-        _ => crate::mesh::service_action_params(&dir, "restart", &stack, lang),
-    };
+    let action = crate::mesh::apply_service_action(ops.service_state());
+    // spec 010 AC9：prepare 通过后组合派发（校验失败路径在上面 ？ 处整体短路，
+    // 不产生任何派发——白名单不会被未过校验的网段刷新）
+    let params = combined_apply_params(
+        std::path::Path::new(&dir),
+        action,
+        &stack,
+        &cur.mesh.virtual_cidr,
+        &cur.mesh.virtual_ip,
+        lang,
+    );
     dispatch_elevated(params).await
+}
+
+/// apply/install 的组合派发参数（AC9 构造面，纯函数可单测）：服务动作 +
+/// ensure-whitelist 段同窗顺序、单次 UAC、`-WaitTun 20`。白名单段构造失败
+/// （设置异常的防御分支）→ 回退仅服务段并记日志——白名单失败不阻断服务段
+/// （plan §3.5/§7-R4；失配由健康自检横幅兜底）。
+fn combined_apply_params(
+    scripts_dir: &std::path::Path,
+    action: &str,
+    stack_dir: &str,
+    cidr: &str,
+    virtual_ip: &str,
+    lang: crate::lang::Lang,
+) -> String {
+    crate::mesh::service_with_whitelist_params(scripts_dir, action, stack_dir, cidr, virtual_ip, lang)
+        .unwrap_or_else(|e| {
+            log::warn!("ensure-whitelist 段构造失败（{e}）：回退仅服务动作（失配由健康自检兜底）");
+            crate::mesh::service_action_params(scripts_dir, action, stack_dir, lang)
+        })
 }
 
 /// 生效流水线磁盘段（apply/install 共享前置）：渲染 → 落位 → 写盘 → 校验
@@ -280,8 +308,16 @@ pub async fn mesh_install_service(
     let Some(dir) = ctx.scripts_dir.clone() else {
         return Err("脚本目录不可用：无法安装组网服务（mesh-service.ps1）".into());
     };
-    let stack = settings.current().stack_dir;
-    let params = crate::mesh::service_install_params(&dir, &stack, lang);
+    let cur = settings.current();
+    // spec 010 AC9：install 同样组合派发（新装/重装时白名单一并就位，单 UAC）
+    let params = combined_apply_params(
+        std::path::Path::new(&dir),
+        "install",
+        &cur.stack_dir,
+        &cur.mesh.virtual_cidr,
+        &cur.mesh.virtual_ip,
+        lang,
+    );
     dispatch_elevated(params).await
 }
 
@@ -354,6 +390,173 @@ pub async fn mesh_member_config(
 ) -> Result<String, String> {
     let cfg = settings.current().mesh;
     crate::mesh::render_member_config(&cfg)
+}
+
+// ── 局域网边界守卫（spec 010 T4：plan §5.2 命令层；逻辑在 lan_guard/mesh）──
+
+use crate::lan_guard;
+use crate::lan_guard::{LanGuardAction, LanGuardMonitor, LanHealth};
+
+/// 白名单健康快照（plan §5.2）：即时探测一次（成功同时刷新监视器缓存，变化经
+/// `languard://changed` 去重发声）；探测失败回上次缓存，无缓存 → None
+#[tauri::command]
+pub async fn lan_guard_status(
+    monitor: tauri::State<'_, std::sync::Arc<LanGuardMonitor>>,
+) -> Result<Option<LanHealth>, String> {
+    let m = monitor.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || m.refresh())
+        .await
+        .map_err(|e| format!("白名单探测线程失败：{e}"))
+}
+
+/// 例外开关（AC6/AC7/AC8）：on → UAC 派发 exception-on → **成功后**持久化
+/// {enabled:true, since:now}（规则未生效由 pending 如实呈现，plan §3.4）；off →
+/// UAC 派发 exception-off → 复测无规则再清标记。UAC 拒绝（code 5）→ Err 且
+/// 设置不写、状态原样（AC7）。
+#[tauri::command]
+pub async fn lan_guard_set_exception(
+    ctx: tauri::State<'_, AutostartContext>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    monitor: tauri::State<'_, std::sync::Arc<LanGuardMonitor>>,
+    lang_state: tauri::State<'_, LanguageState>,
+    on: bool,
+) -> Result<(), String> {
+    let lang = lang_state.current();
+    let Some(dir) = ctx.scripts_dir.clone() else {
+        return Err(ctx.scripts_disabled_reason.clone().unwrap_or_else(|| {
+            "脚本目录不可用：无法派发局域网守卫动作".into()
+        }));
+    };
+    let action =
+        if on { LanGuardAction::ExceptionOn } else { LanGuardAction::ExceptionOff };
+    let params =
+        lan_guard::dispatch_params(std::path::Path::new(&dir), action, None, None, None, None, lang)?;
+    // UAC 拒绝/派发失败 → Err 直接返回，以下持久化不执行（AC7）
+    dispatch_elevated(params).await?;
+
+    if on {
+        let patch = crate::settings::SettingsPatch {
+            lan_guard: Some(crate::settings::LanGuardSettings {
+                exception_enabled: true,
+                exception_since_ms: lan_guard::now_ms(),
+            }),
+            ..Default::default()
+        };
+        settings.patch(&patch).map_err(|e| format!("例外标记持久化失败：{e}"))?;
+    } else {
+        // off：提权窗 fire-and-forget，给删除动作一个短复测确认窗——确认「规则
+        // 已不在」才清标记（复测未确认 → Err，标记原样，状态机按实况收敛）
+        let m = monitor.inner().clone();
+        let confirmed = tauri::async_runtime::spawn_blocking(move || {
+            poll_rule_absent(
+                || {
+                    m.refresh().map(|h| {
+                        !matches!(
+                            h.exception,
+                            lan_guard::ExceptionState::Off | lan_guard::ExceptionState::Pending
+                        )
+                    })
+                },
+                6,
+                std::time::Duration::from_millis(400),
+            )
+        })
+        .await
+        .map_err(|e| format!("例外复测线程失败：{e}"))?;
+        if !confirmed {
+            return Err("例外规则删除未确认（设置未改动）：请稍后重试或查看访问白名单健康状态".into());
+        }
+        let patch = crate::settings::SettingsPatch {
+            lan_guard: Some(crate::settings::LanGuardSettings::default()),
+            ..Default::default()
+        };
+        settings.patch(&patch).map_err(|e| format!("例外标记持久化失败：{e}"))?;
+    }
+    // 动作后即时刷新：标记落盘后的最终态推给前端（变化才发声）
+    let m = monitor.inner().clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || m.refresh()).await;
+    Ok(())
+}
+
+/// 复测确认循环（纯逻辑，单测零延时驱动）：闭包返回 Some(规则已不在)，任一次
+/// true 即确认；首次立即探测、其后按 delay 间隔；attempts 耗尽 → 未确认
+fn poll_rule_absent(
+    mut rule_absent: impl FnMut() -> Option<bool>,
+    attempts: u32,
+    delay: std::time::Duration,
+) -> bool {
+    for i in 0..attempts {
+        if i > 0 && !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        if rule_absent() == Some(true) {
+            return true;
+        }
+    }
+    false
+}
+
+/// migrate / ensure-whitelist 的提权派发（plan §5.2）：参数携 CIDR + VirtualIp
+/// （T1 冻结契约）；fire-and-forget，派发成功后即时刷新（真相以 status 复测为
+/// 准，plan R3）。消费方：迁移横幅/向导收尾（T7）、失配修复按钮（T6）。
+async fn dispatch_lan_guard_action(
+    ctx: &tauri::State<'_, AutostartContext>,
+    settings: &tauri::State<'_, crate::settings::SettingsState>,
+    monitor: &tauri::State<'_, std::sync::Arc<LanGuardMonitor>>,
+    lang_state: &tauri::State<'_, LanguageState>,
+    action: LanGuardAction,
+) -> Result<(), String> {
+    let lang = lang_state.current();
+    let Some(dir) = ctx.scripts_dir.clone() else {
+        return Err(ctx.scripts_disabled_reason.clone().unwrap_or_else(|| {
+            "脚本目录不可用：无法派发局域网守卫动作".into()
+        }));
+    };
+    let cur = settings.current();
+    let params = lan_guard::dispatch_params(
+        std::path::Path::new(&dir),
+        action,
+        Some(&cur.mesh.virtual_cidr),
+        Some(&cur.mesh.virtual_ip),
+        None,
+        Some(&cur.stack_dir),
+        lang,
+    )?;
+    dispatch_elevated(params).await?;
+    let m = monitor.inner().clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || m.refresh()).await;
+    Ok(())
+}
+
+/// 存量迁移「一键收口」（AC10）：UAC 派发 migrate（幂等删两条旧规则 →
+/// ensure-whitelist）；横幅/向导收尾页消费（T6/T7 接线）
+#[tauri::command]
+pub async fn lan_guard_migrate(
+    ctx: tauri::State<'_, AutostartContext>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    monitor: tauri::State<'_, std::sync::Arc<LanGuardMonitor>>,
+    lang_state: tauri::State<'_, LanguageState>,
+) -> Result<(), String> {
+    dispatch_lan_guard_action(&ctx, &settings, &monitor, &lang_state, LanGuardAction::Migrate).await
+}
+
+/// 白名单失配修复（AC1/AC9 判定面）：UAC 派发 ensure-whitelist；MeshCard
+/// 「修复白名单」按钮消费（T6 接线）
+#[tauri::command]
+pub async fn lan_guard_ensure_whitelist(
+    ctx: tauri::State<'_, AutostartContext>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    monitor: tauri::State<'_, std::sync::Arc<LanGuardMonitor>>,
+    lang_state: tauri::State<'_, LanguageState>,
+) -> Result<(), String> {
+    dispatch_lan_guard_action(
+        &ctx,
+        &settings,
+        &monitor,
+        &lang_state,
+        LanGuardAction::EnsureWhitelist,
+    )
+    .await
 }
 
 /// DNS 对齐检测（spec 008：组网单通道，AC8：A=虚拟 IP）：权威 NS 上的
@@ -482,5 +685,62 @@ mod tests {
         // 编译期语义：Orchestrator 可跨线程共享（spawn_blocking 前提）
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Arc<Orchestrator>>();
+    }
+
+    // ── spec 010 T4：组合派发构造面 + 例外复测循环 ────────────────────────
+
+    /// AC9 组合派发构造：通过路径（prepare 已过的前提由 apply_mesh_effective 的
+    /// ？ 序序保证——校验失败整体短路，不产生任何派发串）产出「服务动作 +
+    /// ensure-whitelist」同窗单 UAC 参数；白名单段构造失败的防御分支回退仅服务段
+    #[test]
+    fn combined_apply_params_carries_whitelist_segment_single_uac() {
+        let p = combined_apply_params(
+            std::path::Path::new(r"C:\app\resources\bin"),
+            "restart",
+            r"D:\Software\cloudcli-https",
+            "10.126.126.0/24",
+            "10.126.126.1",
+            crate::lang::Lang::Zh,
+        );
+        assert!(p.contains("mesh-service.ps1") && p.contains("-Action restart"), "{p}");
+        assert!(p.contains("-Action ensure-whitelist"), "{p}");
+        assert!(p.contains("-WaitTun 20"), "{p}");
+        assert_eq!(p.matches("-Command \"").count(), 1, "单窗单次 UAC：{p}");
+        assert_eq!(p.matches("-NoExit").count(), 1, "-NoExit 只在外层一次：{p}");
+
+        // 空网段（设置异常防御分支）→ 回退仅服务段：参数串不含 ensure-whitelist
+        let fallback = combined_apply_params(
+            std::path::Path::new(r"C:\app\resources\bin"),
+            "install",
+            r"D:\stack",
+            "  ",
+            "10.0.0.1",
+            crate::lang::Lang::Zh,
+        );
+        assert!(fallback.contains("-Action install"), "{fallback}");
+        assert!(
+            !fallback.contains("ensure-whitelist"),
+            "白名单段构造失败不阻断服务段（plan §3.5）：{fallback}"
+        );
+    }
+
+    /// off 复测确认循环：任一次「规则已不在」即确认；全 false/None 耗尽 → 未确认
+    #[test]
+    fn poll_rule_absent_confirms_only_on_observed_absence() {
+        let mut calls = 0u32;
+        let confirmed = poll_rule_absent(
+            || {
+                calls += 1;
+                Some(calls >= 3)
+            },
+            6,
+            std::time::Duration::ZERO,
+        );
+        assert!(confirmed, "第三次观察到规则不在 → 确认");
+        assert_eq!(calls, 3, "确认即止，不做多余探测");
+
+        assert!(!poll_rule_absent(|| Some(false), 4, std::time::Duration::ZERO), "始终在 → 耗尽未确认");
+        assert!(!poll_rule_absent(|| None, 3, std::time::Duration::ZERO), "探测失败（None）不算确认");
+        assert!(poll_rule_absent(|| Some(true), 1, std::time::Duration::ZERO), "首查即不在 → 立即确认");
     }
 }

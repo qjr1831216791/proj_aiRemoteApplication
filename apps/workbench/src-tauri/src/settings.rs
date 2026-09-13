@@ -92,6 +92,25 @@ impl Default for MeshConfig {
     }
 }
 
+/// 局域网边界守卫设置（spec 010 plan §4.1）：例外开关标记。
+/// 标记是状态机输入，规则实况永远以 lan-guard status 探测为准（plan R8 判定
+/// 口径）；`exception_since_ms` 由后端在派发成功后写入，前端不直写时间戳
+/// （只提交开关意图）。旧版 settings.json 缺字段 → serde default → false/0。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LanGuardSettings {
+    /// 例外开关是否开启（3001 放行标记；12h 回落由 lan_guard watcher 承载）
+    pub exception_enabled: bool,
+    /// 例外开启时点（epoch ms）；0 = 未开启（边界 `now - since == 12h` 即到期）
+    pub exception_since_ms: u64,
+}
+
+impl Default for LanGuardSettings {
+    fn default() -> Self {
+        Self { exception_enabled: false, exception_since_ms: 0 }
+    }
+}
+
 /// 全量设置（plan §4 schema；camelCase 序列化，未知字段忽略、缺失字段回默认，
 /// 兼容旧版/新版文件）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -124,6 +143,9 @@ pub struct Settings {
     /// HTTPS 栈部署目录（spec 004：用户可配置；输入安装根自动追加
     /// `cloudcli-https` 子目录并规整；**重启工作台后生效**）
     pub stack_dir: String,
+    /// 局域网边界守卫（spec 010：例外开关标记，plan §4.1）
+    #[serde(default)]
+    pub lan_guard: LanGuardSettings,
 }
 
 impl Default for Settings {
@@ -141,6 +163,7 @@ impl Default for Settings {
             mesh: MeshConfig::default(),
             domain_heartbeat: true,
             stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
+            lan_guard: LanGuardSettings::default(),
         }
     }
 }
@@ -167,6 +190,8 @@ pub struct SettingsPatch {
     pub domain_heartbeat: Option<bool>,
     /// 栈目录（spec 004：用户输入安装根，保存时自动规整）
     pub stack_dir: Option<String>,
+    /// 局域网边界守卫整块写入（spec 010：开关标记 + since 同块提交，mesh 同款）
+    pub lan_guard: Option<LanGuardSettings>,
 }
 
 /// scriptsDirOverride 三态反序列化（仅字段出现时被调用）：
@@ -271,6 +296,9 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     }
     if let Some(v) = patch.stack_dir.as_deref() {
         merged.stack_dir = normalize_stack_dir(v);
+    }
+    if let Some(v) = patch.lan_guard {
+        merged.lan_guard = v;
     }
     merged
 }
@@ -410,6 +438,82 @@ mod tests {
         );
         assert!(d.domain_heartbeat, "心跳默认开（spec 005 AC1）");
         assert_eq!(d.stack_dir, crate::consts::DEFAULT_STACK_DIR);
+        // spec 010：例外开关标记默认关（AC5 默认收口态）
+        assert_eq!(d.lan_guard, LanGuardSettings { exception_enabled: false, exception_since_ms: 0 });
+    }
+
+    /// spec 010 plan §4.1：例外标记 serde default（旧文件缺字段 → false/0，其余
+    /// 字段不受影响）+ roundtrip + camelCase 键名
+    #[test]
+    fn lan_guard_settings_default_roundtrip_and_compat() {
+        // 旧版文件无 lanGuard 字段：回默认 false/0，其余字段保留（向后兼容）
+        let path = temp_settings_path("languard-legacy");
+        fs::write(
+            &path,
+            r#"{"version":1,"language":"zh","mesh":{"networkName":"kept","virtualIp":"10.9.9.1","virtualCidr":"10.9.9.0/24","peers":["tcp://k:1"]}}"#,
+        )
+        .expect("写入失败");
+        match load_from(&path) {
+            LoadOutcome::Loaded(s) => {
+                assert_eq!(s.lan_guard, LanGuardSettings::default(), "缺字段 → false/0");
+                assert_eq!(s.mesh.network_name, "kept", "其余字段不受影响");
+            }
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        cleanup(&path);
+
+        // roundtrip：开启态（enabled + since）落盘重载保持
+        let path = temp_settings_path("languard-roundtrip");
+        let mut s = Settings::default();
+        s.lan_guard = LanGuardSettings { exception_enabled: true, exception_since_ms: 1_728_000_000_000 };
+        save_to(&path, &s).expect("保存失败");
+        match load_from(&path) {
+            LoadOutcome::Loaded(loaded) => assert_eq!(loaded.lan_guard, s.lan_guard, "roundtrip 保持"),
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        // camelCase 键名（前端 Settings.lanGuard 对齐）
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            json.contains(r#""lanGuard":{"exceptionEnabled":true,"exceptionSinceMs":1728000000000}"#),
+            "{json}"
+        );
+        cleanup(&path);
+    }
+
+    /// spec 010：SettingsPatch.lan_guard 整块写入（mesh 同款）；空补丁不动既有值
+    #[test]
+    fn apply_patch_lan_guard_block_write() {
+        let base = Settings::default();
+        // 空补丁：原样
+        let untouched = apply_patch(&base, &SettingsPatch::default());
+        assert_eq!(untouched.lan_guard, LanGuardSettings::default());
+
+        // 整块写入：on 态
+        let on = LanGuardSettings { exception_enabled: true, exception_since_ms: 42 };
+        let merged = apply_patch(
+            &base,
+            &SettingsPatch { lan_guard: Some(on), ..Default::default() },
+        );
+        assert_eq!(merged.lan_guard, on, "例外标记整块写入");
+        assert_eq!(merged.mesh, base.mesh, "未提交字段不变");
+
+        // 整块写回：off 态（清标记同形态，since 一并归 0）
+        let off = LanGuardSettings { exception_enabled: false, exception_since_ms: 0 };
+        let merged = apply_patch(
+            &merged,
+            &SettingsPatch { lan_guard: Some(off), ..Default::default() },
+        );
+        assert_eq!(merged.lan_guard, off);
+
+        // JSON 侧：camelCase 对象可解析
+        let patch: SettingsPatch = serde_json::from_str(
+            r#"{"lanGuard":{"exceptionEnabled":true,"exceptionSinceMs":123}}"#,
+        )
+        .expect("解析失败");
+        assert_eq!(
+            patch.lan_guard,
+            Some(LanGuardSettings { exception_enabled: true, exception_since_ms: 123 })
+        );
     }
 
     #[test]

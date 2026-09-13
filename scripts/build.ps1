@@ -56,6 +56,7 @@ $ScriptSubset = @(
     'mesh-service.ps1'        # EasyTier 组网服务管理（UAC，spec 007）
     'set-mesh-secret.ps1'     # EasyTier 组网密钥写入 network-secret（交互式，spec 007）
     'uninstall-legacy.ps1'    # 旧通道一次性卸载（frp/ddns-go 残留清理，spec 008）
+    'lan-guard.ps1'           # LAN 边界防火墙守卫五动作（UAC/status 免提权，spec 010）
 )
 
 function Write-Step { param([string]$Msg) Write-Host "`n==> $Msg" -ForegroundColor Cyan }

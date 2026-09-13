@@ -74,7 +74,7 @@ function Show-Menu {
     Write-Host (T '  2. 停止服务' '  2. Stop services')
     Write-Host (T '  3. 查看各端访问地址' '  3. Show access URLs for every device')
     Write-Host (T '  4. 安装/重装服务端（管理员）' '  4. Install/reinstall server (admin)')
-    Write-Host (T '  5. HTTPS 环境配置：防火墙/专用网络/hosts（管理员）' '  5. HTTPS setup: firewall/private network/hosts (admin)')
+    Write-Host (T '  5. HTTPS 环境配置：443 白名单/hosts（管理员）' '  5. HTTPS setup: 443 whitelist/hosts (admin)')
     Write-Host (T '  6. 客户端配置（本机验证 + 桌面快捷方式）' '  6. Client setup (verify + desktop shortcut)')
     Write-Host (T '  7. 开机自启：全部开启' '  7. Autostart: enable all')
     Write-Host (T '  8. 开机自启：全部关闭' '  8. Autostart: disable all')
@@ -108,7 +108,7 @@ while ($true) {
             Show-Status
             Write-Host (T '  本机访问:  http://localhost:3001' '  This PC:  http://localhost:3001')
             foreach ($ip in (Get-LanIps)) {
-                Write-Host (T "  局域网:    http://${ip}:3001（同 WiFi 直访）" "  LAN:      http://${ip}:3001 (same WiFi)")
+                Write-Host (T "  局域网:    http://${ip}:3001（默认已收口；例外开启时同网段可直访）" "  LAN:      http://${ip}:3001 (closed by default; same-subnet direct access only while the exception is on)")
             }
             Write-Host (T '  跨网组网:  https://ai.jackqi.cn（成员设备加入 EasyTier 组网后可达；非成员不可达是设计使然）' '  Mesh:      https://ai.jackqi.cn (reachable once the device joins the EasyTier mesh; unreachable for non-members by design)')
         }

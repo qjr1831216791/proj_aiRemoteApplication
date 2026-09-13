@@ -94,7 +94,7 @@ $t = Test-NetConnection -ComputerName $uri.Host -Port $uri.Port -WarningAction S
 if (-not $t.TcpTestSucceeded) {
     Write-Bad (T "TCP $($uri.Host):$($uri.Port) 不可达，按顺序排查（多数在服务端侧）：" "TCP $($uri.Host):$($uri.Port) unreachable. Check in order (mostly server-side):")
     Write-Host  (T '    1) 服务端 cloudcli 是否已启动（窗口保持开启）' "    1) Is cloudcli started on the server? (keep its window open)") -ForegroundColor Yellow
-    Write-Host  (T '    2) 服务端防火墙规则 "CloudCLI LAN" 是否存在（可重跑 install-server.ps1）' '    2) Does the "CloudCLI LAN" firewall rule exist? (re-run install-server.ps1)') -ForegroundColor Yellow
+    Write-Host  (T '    2) 局域网直访自 spec 010 起默认收口：需在服务端工作台开启「局域网例外」（12h 自动回落）' '    2) LAN direct access is closed by default since spec 010: turn on the "LAN exception" switch in the server workbench (auto-reverts in 12h)') -ForegroundColor Yellow
     Write-Host  (T '    3) 两台机器是否同一 WiFi / 同网段（别用访客网络）' '    3) Are both machines on the same Wi-Fi / subnet? (avoid guest networks)') -ForegroundColor Yellow
     Write-Host  (T '    4) 路由器是否开启 AP 隔离（设备间互 ping 不通即是）' '    4) Does the router enable AP isolation? (devices cannot ping each other)') -ForegroundColor Yellow
     Write-Host  (T '    详见仓库 docs/research/sprint0-cloudcli-lan-deploy.md §6' '    See docs/research/sprint0-cloudcli-lan-deploy.md §6') -ForegroundColor Yellow

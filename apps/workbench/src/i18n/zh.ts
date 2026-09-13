@@ -56,22 +56,54 @@ export const zh = {
   "tools.uacHint": "带「管理员」标记的操作会弹出 UAC 授权窗口",
   "tools.dispatched": "已派发：请在弹出的窗口中按提示完成操作",
 
-  // 网络环境（spec 002：被拦截反馈 + 用户决策的归类调整）
+  // 网络环境（spec 002 US2 归类调整；spec 010 T5 起 443 归类告警随 Private 语义退役）
   "net.title": "网络环境",
-  "net.alert": "网络「{names}」被 Windows 归类为公用：3001（局域网）与 443（域名/组网）防火墙放行仅对专用网络生效，其他设备可能无法访问。可在下方将其设为专用（请确认为你信任的网络）。",
   "net.setPrivate": "设为专用",
   "net.setPublic": "设为公用",
   "net.confirmPrivate": "确认改为专用",
   "net.confirmPublic": "确认改为公用",
   "net.cancel": "取消",
-  "net.riskPrivate": "专用网络下本机在当前局域网内可被发现（网络发现/共享面扩大）。请仅在信任的网络（如个人热点、家庭网络）这样做。",
-  "net.riskPublic": "改回公用将减少局域网暴露面；若 3001/443 规则仅限专用网络，其他设备将无法经局域网或域名访问。",
+  // 专用/公用后果（spec 010 验收期文案回填）：专用后果精确指向 3001 例外
+  //（443 归类「更易被发现」旧表述随其语义退役）；公用 = 推荐的安全默认
+  "net.riskPrivate": "专用 = 若 3001 例外开关开启，同网段未持密钥的设备将可直访看板（12h 自动收回）；请仅在信任的网络（如个人热点、家庭网络）这样做。",
+  "net.riskPublic": "公用 = 仅持组网密钥的设备可访问本服务端（推荐的安全默认），改回公用将收窄局域网暴露面；3001 例外（若开启）在公用网络下不生效，其他设备将无法经局域网直访（域名/组网访问不受影响）。",
   "net.catPublic": "公用",
   "net.catPrivate": "专用",
   "net.catDomain": "域网络",
   "net.catUnknown": "未知",
   "net.noNetworks": "未检测到活动网络",
-  "net.dispatched": "已发起：UAC 通过后约 15s 内自动刷新状态",
+  "net.dispatched": "已发起：UAC 通过后约 1 分钟内自动刷新状态",
+
+  // 访问白名单（spec 010：白名单健康区 + 例外开关 + 地址区局域网行三态）
+  "languard.title": "访问白名单",
+  "languard.wl.ok": "正常",
+  "languard.wl.dormant": "休眠",
+  "languard.wl.fix": "待修复",
+  "languard.wl.okHint": "仅组网成员（持密钥设备）可经 443 访问本机",
+  "languard.wl.dormantHint": "组网未运行，白名单暂不就位（休眠非异常：成员本就无组网路由）",
+  "languard.wl.fixHint": "白名单与组网实况失配（成员暂不可达，暴露面未扩大）：点「修复白名单」一键重建",
+  "languard.fixBtn": "修复白名单",
+  "languard.bypassChip": "旁路风险",
+  "languard.bypassHint": "检测到程序级全端口放行规则绕过白名单（服务进程被整体放行）：点「修复白名单」清理收紧（幂等，只处理本栈服务程序，不动其他软件）",
+  "languard.legacyBanner": "检测到旧版局域网放行规则（3001/443 对全网段放行）：建议一键收口，迁移到白名单契约",
+  "languard.migrateBtn": "一键收口",
+  "languard.exceptionLabel": "3001 局域网例外",
+  "languard.excOffChip": "已收口",
+  "languard.exceptionOnBtn": "开启例外…",
+  "languard.exceptionOffBtn": "关闭例外",
+  "languard.exceptionRemaining": "放行中 · 剩余 {h}h",
+  "languard.exceptionExpired": "已到期，回落未完成（仍放行）",
+  "languard.exceptionPending": "例外已请求但规则未生效：可重新开启",
+  "languard.riskTitle": "开启 3001 局域网例外？",
+  "languard.riskBody":
+    "开启后，同网段任何设备都可零认证直访本机 3001 服务——等于潜在拿到宿主机 shell。仅限信任网络的应急使用。",
+  "languard.riskTtl": "例外开启满 12 小时将自动回落关闭；回落时会再次请求管理员权限。",
+  "languard.riskProfile": "仅当当前网络为「专用」时本放行才生效；公用网络下本开关不产生任何放行。",
+  "languard.riskConfirm": "确认开启（管理员）",
+  "languard.publicBlocks": "当前有公用网络：例外放行仅对专用网络生效，直访暂不生效（可在网络环境卡改为专用）",
+  "languard.addrOff": "不可直访（已收口）",
+  "languard.addrOn": "临时放行中 · 剩余 {h}h",
+  "languard.addrExpired": "已到期，回落未完成",
 
   // 设置页
   "settings.behavior": "行为设置",
@@ -156,7 +188,7 @@ export const zh = {
   "tunnel.check.ok": "正常",
   "tunnel.check.fail": "异常",
   "tunnel.check.dns": "DNS 解析对齐",
-  "tunnel.check.netCategory": "网络归类（443 放行）",
+  "tunnel.check.netCategory": "网络归类（例外直访）",
   "tunnel.check.caddy": "本机 HTTPS 服务（caddy:443）",
   "tunnel.check.upstream": "上游服务（:3001）",
   "tunnel.check.domain": "域名全链路（本机视角）",
@@ -203,6 +235,8 @@ export const zh = {
     "同步 = 删除残留 CNAME + 把 A 记录指向虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
   "mesh.syncDnsDone": "DNS 同步完成（{n} 条记录操作）",
   "mesh.memberConfig": "成员入网配置",
+  // 折叠区副标题（spec 010 验收期第 3 项：显眼化——让用户知道可展开）
+  "mesh.memberConfigSub": "查看成员设备接入步骤与 TOML 配置",
   "mesh.memberConfigHint":
     "手机/电脑安装 EasyTier 客户端后，按下方各字段旁的注释在 App 内逐项输入即可入网；「网络密码」填入运行 set-mesh-secret.ps1 时设定的密钥（真实密钥不显示在此处）",
   "mesh.memberClientRec":
@@ -221,14 +255,14 @@ export const zh = {
   "wizard.state.done": "完成",
   "wizard.state.failed": "失败",
   "wizard.state.skipped": "已跳过",
-  "wizard.stage.basis": "基础（局域网）",
+  "wizard.stage.basis": "基础（本机）",
   "wizard.stage.tencent": "腾讯云前置",
   "wizard.stage.https": "HTTPS 栈",
   "wizard.stage.channel": "访问通道",
   "wizard.stage.finalize": "收尾",
   "wizard.domainLabel": "访问域名",
   "wizard.domainSave": "保存域名",
-  "wizard.basis.desc": "安装 CloudCLI 服务并放行防火墙 3001 端口（管理员）。完成后本机局域网即变为可用。",
+  "wizard.basis.desc": "安装 CloudCLI 服务（管理员）。完成后本机服务即就绪——局域网直访默认已收口（跨设备访问走域名/组网，应急例外见主界面「访问白名单」）。",
   "wizard.basis.run": "开始安装（管理员）",
   "wizard.tencent.desc": "签发可信证书与维护域名解析（组网 A 记录同步）都依赖腾讯云密钥。以下三步只需做一次。",
   "wizard.tencent.step1": "打开腾讯云 CAM 控制台，新建密钥：",
@@ -246,7 +280,7 @@ export const zh = {
   "wizard.channel.meshServiceHint":
     "服务以 Windows 服务形态常驻（登录自启）；未安装或需修复时点此按钮",
   "wizard.channel.meshPeerGuide":
-    "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端（上方按钮可直达）。配置：网络名称「{name}」、密钥与本机相同、对端同本机节点列表；虚拟 IP 手动填静态地址——第一台成员填 10.126.126.2、之后逐台递增（勿用「自动获取」：本机为静态配置形态，网内无 DHCP 分配；勿填 10.126.126.1，那是本机）；建议填写主机名（如 phone）便于辨认。入网成功的标志：App 设备列表出现 ai-remote-workbench——仅显示「已连接服务器」不算入网。完成后即可经虚拟网络访问本机",
+    "成员设备（访客手机/电脑）：从 EasyTier 官方 GitHub Releases 下载客户端（上方链接可直达）。配置：网络名称「{name}」、密钥与本机相同、对端同本机节点列表；虚拟 IP 手动填静态地址——第一台成员填 10.126.126.2、之后逐台递增（勿用「自动获取」：本机为静态配置形态，网内无 DHCP 分配；勿填 10.126.126.1，那是本机）；建议填写主机名（如 phone）便于辨认。入网成功的标志：App 设备列表出现 ai-remote-workbench——仅显示「已连接服务器」不算入网。完成后即可经虚拟网络访问本机",
   "wizard.channel.meshDownloadBtn": "打开 EasyTier 下载页（GitHub Releases）",
   "mesh.diag.desc": "组网诊断：服务、密钥、节点可达性、成员、本机网卡、域名链路六项检查（成员访问异常时自查断点）",
   "mesh.diag.runBtn": "运行诊断",
@@ -274,7 +308,7 @@ export const zh = {
     "把 ai.jackqi.cn 的 A 记录自动同步为虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
   "wizard.channel.meshDnsDone": "DNS 同步完成（{n} 条记录操作）",
   "wizard.finalize.desc": "收尾：确认目标达成情况（开机自启在「设置」页开关）。",
-  "wizard.summary.lan": "局域网访问",
+  "wizard.summary.lan": "本机服务",
   "wizard.summary.domain": "域名访问",
   "wizard.finalize.done": "完成，回到主界面",
   "wizard.finalize.meshHint":

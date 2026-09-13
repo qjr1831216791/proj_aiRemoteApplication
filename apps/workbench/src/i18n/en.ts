@@ -57,22 +57,55 @@ export const en = {
   "tools.uacHint": "Actions marked (admin) show a UAC prompt",
   "tools.dispatched": "Dispatched: follow the prompts in the opened window",
 
-  // Network environment (spec 002: blocked-access feedback + user-decided profile switch)
+  // Network environment (spec 002 US2 profile switch; the 443 profile alert retired with its Private semantics since spec 010 T5)
   "net.title": "Network",
-  "net.alert": "Network \"{names}\" is categorized as Public by Windows: the firewall rules only allow TCP 3001 (LAN) and 443 (domain/mesh) on Private networks, so other devices may be unable to connect. You can set it to Private below (only do this on a network you trust).",
   "net.setPrivate": "Set Private",
   "net.setPublic": "Set Public",
   "net.confirmPrivate": "Confirm: set Private",
   "net.confirmPublic": "Confirm: set Public",
   "net.cancel": "Cancel",
-  "net.riskPrivate": "On a Private network this PC becomes discoverable in the current LAN (wider discovery/sharing surface). Only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
-  "net.riskPublic": "Switching back to Public reduces LAN exposure; if the 3001/443 rules are Private-only, other devices will be unable to connect via LAN or domain.",
+  // Private/Public consequences (spec 010 acceptance-phase copy backfill): the Private
+  // consequence now points at the port-3001 exception (the retired "more discoverable"
+  // wording belonged to the retired 443 profile semantics); Public = recommended default
+  "net.riskPrivate": "Private = if the port-3001 exception is enabled, unkeyed devices on the same subnet will be able to open the dashboard directly (auto-reverts after 12h); only do this on a network you trust (e.g. personal hotspot, home Wi-Fi).",
+  "net.riskPublic": "Public = only devices holding the mesh key can reach this server (the recommended secure default), so switching back to Public narrows the LAN exposure; the port-3001 exception (if enabled) has no effect on a Public network and other devices will be unable to reach this PC over the LAN (domain/mesh access is unaffected).",
   "net.catPublic": "Public",
   "net.catPrivate": "Private",
   "net.catDomain": "Domain",
   "net.catUnknown": "Unknown",
   "net.noNetworks": "No active network detected",
-  "net.dispatched": "Requested: status refreshes automatically within ~15s after UAC approval",
+  "net.dispatched": "Requested: status refreshes automatically within ~1 minute after UAC approval",
+
+  // Access whitelist (spec 010: whitelist health row + exception switch + LAN address tri-state)
+  "languard.title": "Access Whitelist",
+  "languard.wl.ok": "Healthy",
+  "languard.wl.dormant": "Dormant",
+  "languard.wl.fix": "Needs fix",
+  "languard.wl.okHint": "Only mesh members (key-holding devices) can reach this PC over 443",
+  "languard.wl.dormantHint": "Mesh not running; the whitelist is not in place (dormant, not an error: members have no mesh route anyway)",
+  "languard.wl.fixHint": "Whitelist rule doesn't match the current mesh state (members unreachable, no extra exposure): click \"Fix whitelist\" to rebuild it",
+  "languard.fixBtn": "Fix whitelist",
+  "languard.bypassChip": "Bypass risk",
+  "languard.bypassHint": "Program-level allow rules bypass the whitelist (a service exe is open on all ports): click \"Fix whitelist\" to clean up (idempotent; only this stack's service programs are touched)",
+  "languard.legacyBanner": "Legacy LAN allow rules detected (3001/443 open to any address): run one-click cleanup to migrate to the whitelist contract",
+  "languard.migrateBtn": "Clean up now",
+  "languard.exceptionLabel": "LAN exception (3001)",
+  "languard.excOffChip": "Locked down",
+  "languard.exceptionOnBtn": "Enable exception…",
+  "languard.exceptionOffBtn": "Disable exception",
+  "languard.exceptionRemaining": "Open · {h}h left",
+  "languard.exceptionExpired": "Expired; revert unfinished (still open)",
+  "languard.exceptionPending": "Exception requested but rule not active: try enabling again",
+  "languard.riskTitle": "Enable the LAN exception (port 3001)?",
+  "languard.riskBody":
+    "While enabled, any device on the same subnet can reach port 3001 on this PC with zero authentication — effectively a potential shell on this host. For trusted networks and emergencies only.",
+  "languard.riskTtl": "The exception auto-reverts after 12 hours; reverting asks for admin approval again.",
+  "languard.riskProfile": "This allowance only takes effect while the current network is Private; on a Public network this switch grants no access.",
+  "languard.riskConfirm": "Enable (admin)",
+  "languard.publicBlocks": "A Public network is active: the exception only applies on Private networks, so direct access is inactive for now (set it Private in the Network card)",
+  "languard.addrOff": "Not directly reachable (locked down)",
+  "languard.addrOn": "Temporarily open · {h}h left",
+  "languard.addrExpired": "Expired; revert unfinished",
 
   // Settings
   "settings.behavior": "Behavior",
@@ -157,7 +190,7 @@ export const en = {
   "tunnel.check.ok": "OK",
   "tunnel.check.fail": "Problem",
   "tunnel.check.dns": "DNS alignment",
-  "tunnel.check.netCategory": "Network category (443 allowed)",
+  "tunnel.check.netCategory": "Network category (exception direct access)",
   "tunnel.check.caddy": "Local HTTPS service (caddy:443)",
   "tunnel.check.upstream": "Upstream service (:3001)",
   "tunnel.check.domain": "Domain end-to-end (local view)",
@@ -204,6 +237,8 @@ export const en = {
     "Sync = delete leftover CNAMEs + point the A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
   "mesh.syncDnsDone": "DNS synced ({n} record operations)",
   "mesh.memberConfig": "Member onboarding config",
+  // Collapsed-row subtitle (spec 010 acceptance polish #3: make it obviously expandable)
+  "mesh.memberConfigSub": "View onboarding steps and the TOML config for member devices",
   "mesh.memberConfigHint":
     "After installing the EasyTier client on a phone/PC, enter each field in the app following the comment beside it; for the \"network password\", type the secret you set when running set-mesh-secret.ps1 (the real secret is never shown here)",
   "mesh.memberClientRec":
@@ -222,14 +257,14 @@ export const en = {
   "wizard.state.done": "Done",
   "wizard.state.failed": "Failed",
   "wizard.state.skipped": "Skipped",
-  "wizard.stage.basis": "Basics (LAN)",
+  "wizard.stage.basis": "Basics (Local)",
   "wizard.stage.tencent": "Tencent Cloud Prereqs",
   "wizard.stage.https": "HTTPS Stack",
   "wizard.stage.channel": "Access Channel",
   "wizard.stage.finalize": "Finish",
   "wizard.domainLabel": "Access domain",
   "wizard.domainSave": "Save domain",
-  "wizard.basis.desc": "Installs the CloudCLI service and opens firewall port 3001 (admin). When done, your LAN becomes usable.",
+  "wizard.basis.desc": "Installs the CloudCLI service (admin). When done, the local service is ready — LAN direct access is locked down by default (reach this PC via domain/mesh; emergency exception lives in the \"Access Whitelist\" card on Main).",
   "wizard.basis.run": "Install now (admin)",
   "wizard.tencent.desc": "Both trusted certificates and DNS record maintenance (mesh A-record sync) rely on the Tencent Cloud key. Do these three steps once.",
   "wizard.tencent.step1": "Open the Tencent Cloud CAM console and create a key:",
@@ -247,7 +282,7 @@ export const en = {
   "wizard.channel.meshServiceHint":
     "The service runs as a Windows service (starts at logon); click this if not installed yet or needs repair",
   "wizard.channel.meshPeerGuide":
-    "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases (button above). Configure: network name \"{name}\", the same secret as here, peers as listed above; set the virtual IP MANUALLY to a static address — first member 10.126.126.2, then increment (do NOT use auto/DHCP: this host uses a static config and the network has no DHCP; do NOT use 10.126.126.1, that's this PC); a hostname (e.g. phone) is recommended. You're joined only when the device list shows ai-remote-workbench — \"connected to server\" alone doesn't count. Then reach this PC via the virtual network",
+    "Member devices (visitor phones/PCs): download the client from the official EasyTier GitHub Releases (link above). Configure: network name \"{name}\", the same secret as here, peers as listed above; set the virtual IP MANUALLY to a static address — first member 10.126.126.2, then increment (do NOT use auto/DHCP: this host uses a static config and the network has no DHCP; do NOT use 10.126.126.1, that's this PC); a hostname (e.g. phone) is recommended. You're joined only when the device list shows ai-remote-workbench — \"connected to server\" alone doesn't count. Then reach this PC via the virtual network",
   "wizard.channel.meshDownloadBtn": "Open EasyTier download page (GitHub Releases)",
   "mesh.diag.desc": "Mesh diagnostics: six checks — service, secret, peer reachability, members, local NIC, domain chain (self-troubleshoot when members can't reach this PC)",
   "mesh.diag.runBtn": "Run diagnostics",
@@ -275,7 +310,7 @@ export const en = {
     "Automatically points the ai.jackqi.cn A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
   "wizard.channel.meshDnsDone": "DNS synced ({n} record operations)",
   "wizard.finalize.desc": "Finish: review your goals (autostart is toggled in Settings).",
-  "wizard.summary.lan": "LAN access",
+  "wizard.summary.lan": "Local services",
   "wizard.summary.domain": "Domain access",
   "wizard.finalize.done": "Finish — back to Main",
   "wizard.finalize.meshHint":

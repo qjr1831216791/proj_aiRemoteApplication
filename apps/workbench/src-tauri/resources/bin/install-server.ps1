@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   自动覆盖 docs/research/sprint0-cloudcli-lan-deploy.md 的 §0 前置检查、§1 安装、
-  §3.2 防火墙放行、§3.3 IP 提示、§4 电源常开。
+  §3.3 IP 提示、§4 电源常开。
 
   执行内容（均可逆，回滚命令见部署文档 §8）：
     1. 检查/安装 Node.js >= 20（缺失时经 winget 安装 OpenJS.NodeJS.LTS）
@@ -15,12 +15,14 @@
        npmmirror；随后安装 @cloudcli-ai/cloudcli（已安装则跳过，
        -Update 强制升级最新版；-UseMirror 可换国内镜像）
     4. powercfg 设置插电永不睡眠（standby-timeout-ac 0）
-    5. 创建防火墙入站规则 "CloudCLI LAN <port>"（已存在则跳过）
-    6. 将当前网络配置文件设为"专用"（域网络跳过，已是专用则跳过）
-    7. 探测局域网 IPv4，打印客户端访问地址
+    5. 探测局域网 IPv4，打印本机访问地址
+
+  自 spec 010 起本脚本不再创建防火墙规则：3001 局域网直访默认收口（Windows
+  默认拒绝，loopback 不受影响）；跨网访问走 HTTPS/组网通道（工作台装机向导 /
+  install-https.ps1），临时放行局域网走工作台「局域网例外」开关。
 
   幂等设计：装好后重复运行 = 跳过已装组件、只刷新配置，不会重复安装。
-  需要管理员权限（防火墙 / 电源 / 网络配置文件）。
+  需要管理员权限（电源设置 / winget 安装）。
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\install-server.ps1
@@ -147,7 +149,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 
 # ---------- 1. Node.js ----------
-Write-Step (T '步骤 1/7：检查 Node.js（要求 >= 20）' 'Step 1/7: Checking Node.js (>= 20 required)')
+Write-Step (T '步骤 1/5：检查 Node.js（要求 >= 20）' 'Step 1/5: Checking Node.js (>= 20 required)')
 $nodeOk = $false
 if (Get-Command node -ErrorAction SilentlyContinue) {
     $raw = (node --version).TrimStart('v')
@@ -175,7 +177,7 @@ if (-not $nodeOk) {
 }
 
 # ---------- 2. Claude Code ----------
-Write-Step (T '步骤 2/7：检查 Claude Code（CC Switch 前置）' 'Step 2/7: Checking Claude Code (required by CC Switch)')
+Write-Step (T '步骤 2/5：检查 Claude Code（CC Switch 前置）' 'Step 2/5: Checking Claude Code (required by CC Switch)')
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     Write-Ok (T "claude 已安装：$(claude --version)" "claude already installed: $(claude --version)")
 } else {
@@ -186,7 +188,7 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
 }
 
 # ---------- 3. 安装/升级 CloudCLI（幂等：已装则跳过）----------
-Write-Step (T '步骤 3/7：安装 CloudCLI（已装则跳过，-Update 升级）' 'Step 3/7: Installing CloudCLI (skipped if present; -Update to upgrade)')
+Write-Step (T '步骤 3/5：安装 CloudCLI（已装则跳过，-Update 升级）' 'Step 3/5: Installing CloudCLI (skipped if present; -Update to upgrade)')
 Repair-DeadMirror
 if ($UseMirror) {
     npm config set registry https://registry.npmmirror.com
@@ -217,36 +219,12 @@ if ($cloudcliInstalled -and -not $Update) {
 }
 
 # ---------- 4. 电源常开 ----------
-Write-Step (T '步骤 4/7：电源设置（插电状态永不睡眠）' 'Step 4/7: Power settings (never sleep on AC power)')
+Write-Step (T '步骤 4/5：电源设置（插电状态永不睡眠）' 'Step 4/5: Power settings (never sleep on AC power)')
 powercfg /change standby-timeout-ac 0
 Write-Ok (T 'standby-timeout-ac = 0（屏幕自动关闭不受影响）' 'standby-timeout-ac = 0 (display auto-off is not affected)')
 
-# ---------- 5. 防火墙 ----------
-Write-Step (T "步骤 5/7：防火墙放行 TCP $Port（仅专用网络）" "Step 5/7: Firewall allow TCP $Port (private networks only)")
-$ruleName = "CloudCLI LAN $Port"
-if (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue) {
-    Write-Ok (T "入站规则已存在：$ruleName（跳过）" "Inbound rule already exists: $ruleName (skipped)")
-} else {
-    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
-        -LocalPort $Port -Action Allow -Profile Private | Out-Null
-    Write-Ok (T "已创建入站规则：$ruleName" "Inbound rule created: $ruleName")
-}
-
-# ---------- 6. 网络配置文件 ----------
-Write-Step (T '步骤 6/7：将网络配置文件设为"专用"' 'Step 6/7: Setting network profile to "Private"')
-foreach ($p in Get-NetConnectionProfile) {
-    if ($p.NetworkCategory -eq 'DomainAuthenticated') {
-        Write-Info (T "$($p.Name) 为域网络，跳过" "$($p.Name) is a domain network, skipped")
-    } elseif ($p.NetworkCategory -ne 'Private') {
-        Set-NetConnectionProfile -InterfaceIndex $p.InterfaceIndex -NetworkCategory Private
-        Write-Ok "$($p.Name) -> Private"
-    } else {
-        Write-Ok (T "$($p.Name) 已是 Private" "$($p.Name) is already Private")
-    }
-}
-
-# ---------- 7. 局域网 IP ----------
-Write-Step (T '步骤 7/7：探测局域网 IPv4' 'Step 7/7: Probing LAN IPv4 addresses')
+# ---------- 5. 局域网 IP ----------
+Write-Step (T '步骤 5/5：探测局域网 IPv4' 'Step 5/5: Probing LAN IPv4 addresses')
 $privateRx = '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)'
 $ips = Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp,Manual | Where-Object {
     $_.InterfaceAlias -notlike 'vEthernet*' -and
@@ -270,7 +248,7 @@ Write-Host "  $(T '本机访问' 'Local URL'): http://localhost:$Port"
 Write-Host (T '  手动收尾（脚本覆盖不到的两步）：' '  Manual follow-ups (two steps the script cannot cover):')
 Write-Host (T '    1) 浏览器打开上面的地址 -> 设置 -> 开启需要的工具（默认全禁用）' '    1) Open the URL above -> Settings -> enable the tools you need (all disabled by default)')
 Write-Host (T '    2) 确认 CC Switch 当前供应商可用（终端跑一次 claude）' "    2) Confirm the current CC Switch provider works (run 'claude' once in a terminal)")
-Write-Host (T '  客户端电脑：powershell -ExecutionPolicy Bypass -File .\install-client.ps1 -Url http://<上面的地址>' '  Client PC: powershell -ExecutionPolicy Bypass -File .\install-client.ps1 -Url http://<URL above>')
-Write-Host (T '  手机：同 WiFi 浏览器直接打开同一地址（Chrome 可"添加到主屏幕"）' '  Phone: open the same URL in a browser on the same Wi-Fi (Chrome: "Add to Home screen")')
+Write-Host (T '  局域网直访自 spec 010 起默认收口：http://<IP>:3001 仅本机可访问。' '  LAN direct access is closed by default since spec 010: http://<IP>:3001 works on this PC only.')
+Write-Host (T '    临时放行：工作台「局域网例外」开关（12h 自动回落）；跨网访问：组网域名 https://ai.jackqi.cn/' '    Temporary access: the workbench "LAN exception" switch (auto-reverts in 12h); cross-network: the mesh domain https://ai.jackqi.cn/')
 Write-Host (T '  排障：docs/research/sprint0-cloudcli-lan-deploy.md §6' '  Troubleshooting: docs/research/sprint0-cloudcli-lan-deploy.md §6')
 Write-Host '=======================================================' -ForegroundColor Magenta

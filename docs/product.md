@@ -33,6 +33,7 @@
 | Sprint 5 | 访问通道安全重构：EasyTier 私有组网替代 frp（零公网暴露），停用直连与穿透旧通道（2026-09-11 需求方签收 done） | [007-mesh-access](../specs/007-mesh-access/spec.md) |
 | Sprint 6（已完成 v0.4.0） | 旧通道彻底移除：直连（ddns-go）与穿透（frp）从代码/分发层面退役，收敛为「局域网 IP 直访 + EasyTier 组网」双方案（2026-09-11 需求方签收 done；真机卸载脚本 `uninstall-legacy.ps1` 随包保留为可选动作） | [008-legacy-channel-removal](../specs/008-legacy-channel-removal/spec.md) |
 | Sprint 7（已完成 v0.5.0） | v0.5.0 调优：组网网段冲突检测接线（spec 007 §6 决议落地）· 成员入网配置展示（密钥占位符 + 推荐 Android 客户端指引）· 发版校验脚本 release-check · 真机旧通道清理收尾（2026-09-11 验收 done） | [009-mesh-subnet-guard](../specs/009-mesh-subnet-guard/spec.md) |
+| Sprint 8（已完成 v0.6.0） | 局域网边界收口：443 防火墙改「源网段 + TUN 接口」双条件白名单、3001 直访默认退役 + 12h 自动回落例外开关、程序级规则旁路加固（AC11）、443 归类告警退役（2026-09-13 验收 done——唯一放行组合 = 同一 WiFi + 专用网络 + 例外放行） | [010-lan-boundary-hardening](../specs/010-lan-boundary-hardening/spec.md) |
 
 ## 非目标（产品级）
 

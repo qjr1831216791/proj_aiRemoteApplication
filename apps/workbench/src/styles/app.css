@@ -528,11 +528,70 @@
   }
 }
 
-/* ── 成员入网配置折叠区（spec 009 US4；折叠交互复用 tools__toggle 系）── */
+/* ── 组网卡常驻操作区（spec 010 验收期第 1/2 项）：密钥/同步 DNS 按钮行与
+   说明行上下留白加大，对齐卡片其他区块（net__row/checkup）的呼吸节奏 ── */
+.mesh-ops__actions {
+  margin: var(--sp-4) 0 var(--sp-1);
+}
+
+.mesh-ops__hint {
+  margin: var(--sp-2) 0 var(--sp-4);
+}
+
+/* ── 成员入网配置折叠区（spec 009 US4；验收期第 3 项显眼化：弃小箭头裸排，
+   改整行可点的盒状行——副标题提示内容、大 chevron 随展开旋转、hover 反馈）── */
+.mesh-member__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-bg);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.mesh-member__toggle:hover {
+  background: var(--c-primary-soft);
+  border-color: var(--c-primary);
+}
+
+.mesh-member__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
 .mesh-member__title {
   font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.mesh-member__sub {
+  font-size: var(--fs-sm);
   color: var(--c-text-secondary);
 }
+
+.mesh-member__chev {
+  flex: none;
+  font-size: var(--fs-lg);
+  color: var(--c-text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.mesh-member__chev--open {
+  transform: rotate(180deg);
+}
+
 
 .mesh-member__actions {
   display: flex;
@@ -540,11 +599,18 @@
   margin: 0 0 var(--sp-2);
 }
 
-.mesh-member__link {
+/* open_external 外链的链接形态（无 href 的 a）：MeshCard 成员指引与
+   向导「打开 EasyTier 下载页」共用同一交互形态（需求方 2026-09-13） */
+.mesh-member__link,
+.wizard__link {
   color: var(--c-primary);
+  /* 无 href 的 a（外链改走 open_external，WebView2 吞 target=_blank）失去
+     UA 指针光标，此处补回以保持与原链接一致的手型悬停反馈 */
+  cursor: pointer;
 }
 
-.mesh-member__link:hover {
+.mesh-member__link:hover,
+.wizard__link:hover {
   text-decoration: underline;
 }
 

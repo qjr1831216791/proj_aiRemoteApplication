@@ -31,6 +31,13 @@ interface MeshConfig {
   peers: string[];
 }
 
+/** 局域网边界守卫标记（spec 010 plan §4.1；sinceMs 由后端在派发成功后写入，
+ * 前端只提交开关意图；旧设置文件缺字段 → false/0） */
+interface LanGuardSettings {
+  exceptionEnabled: boolean;
+  exceptionSinceMs: number;
+}
+
 /** 全量设置（get_settings 载荷，camelCase 对齐 Rust serde） */
 export interface Settings {
   version: number;
@@ -45,6 +52,7 @@ export interface Settings {
   mesh: MeshConfig;
   domainHeartbeat: boolean;
   stackDir: string;
+  lanGuard: LanGuardSettings;
 }
 
 /** 补丁（save_settings 入参；只提交要改的字段） */
@@ -59,6 +67,7 @@ export interface SettingsPatch {
   mesh?: MeshConfig;
   domainHeartbeat?: boolean;
   stackDir?: string;
+  lanGuard?: LanGuardSettings;
 }
 
 /** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase；spec 008
@@ -202,12 +211,39 @@ interface NetworkEntry {
   category: NetCategory;
 }
 
-/** 网络环境快照（get_net_status / net://changed 载荷；null = 尚无成功探测） */
+/** 网络环境快照（get_net_status / net://changed 载荷；null = 尚无成功探测）。
+ * spec 010 T5：002 的 rulePresent/rulePrivateOnly/alert 三字段随 443 归类告警
+ * 链退役（plan §3.6），快照仅存活动网络行（供归类卡与 public_blocks_exception 消费） */
 export interface NetStatus {
-  rulePresent: boolean;
-  rulePrivateOnly: boolean;
   networks: NetworkEntry[];
-  alert: boolean;
+}
+
+// ── 局域网边界守卫（spec 010）───────────────────────────────────────────────
+
+/** 443 白名单健康五态（languard://changed 与 lan_guard_status 载荷）：
+ * ok=三元全匹配 / missing=规则缺(TUN 在) / staleCidr|staleIface=失配待修复 /
+ * dormant=TUN 未解析(组网不在,休眠非异常) */
+export type WhitelistState = "ok" | "missing" | "staleCidr" | "staleIface" | "dormant";
+
+/** 例外开关四态（tag="state"；on 携剩余秒数；expired=满 12h 回落未完成仍放行；
+ * pending=已请求但规则未生效） */
+export type ExceptionState =
+  | { state: "off" }
+  | { state: "on"; remainingSecs: number }
+  | { state: "expired" }
+  | { state: "pending" };
+
+/** 白名单健康快照（languard://changed 事件与 lan_guard_status 命令载荷） */
+export interface LanHealth {
+  whitelist: WhitelistState;
+  /** 任一旧规则存在 → 迁移横幅（AC10） */
+  legacyPresent: boolean;
+  exception: ExceptionState;
+  /** 例外生效 ∧ 当前有公用活动网络（Private 规则直访不生效的如实提示） */
+  publicBlocksException: boolean;
+  /** 程序级旁路残留（AC11）：任一服务 exe 存在全端口放行规则 → 「旁路风险」
+   * 警示 chip，经「修复白名单」清理（ensure-whitelist 语义已含程序规则清理） */
+  bypassRisk: boolean;
 }
 
 /** set_autostart_services 返回载荷 */

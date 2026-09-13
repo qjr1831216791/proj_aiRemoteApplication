@@ -4,7 +4,7 @@
 >
 > 背景：这是 [remote-solutions.md](../../docs/research/remote-solutions.md) 调研决策（D0 先试用）的落地工具；
 > 完整部署文档：[sprint0-cloudcli-lan-deploy.md](../../docs/research/sprint0-cloudcli-lan-deploy.md)（遇事不决看它的 §6 排障表）。
-> 适用范围：**局域网直访**（所有设备连同一个 WiFi/路由器，`http://192.168.x.x:3001`）与 **EasyTier 组网**（跨网遥控：成员设备加入同一网络后经 `https://ai.jackqi.cn` 访问，spec 007/008）——宿主机不向公网暴露任何入站端口。
+> 适用范围：**EasyTier 组网**（跨网遥控：成员设备加入同一网络后经 `https://ai.jackqi.cn` 访问，spec 007/008）为主方案；**局域网直访默认已收口**（spec 010：3001 默认拒绝、443 白名单放行——同 WiFi 直访需在工作台临时开启例外开关）——宿主机不向公网暴露任何入站端口。
 
 ---
 
@@ -26,7 +26,7 @@
 
 ```
 [客户端] 手机/其他电脑          [服务端] 跑 AI 的电脑
-  浏览器打开地址  ──局域网──>  Caddy(443) ──> CloudCLI(3001)
+  浏览器打开地址  ──组网成员──>  Caddy(443) ──> CloudCLI(3001)
   什么都不用装                 └─> Claude Code + CC Switch
   https://ai.jackqi.cn
 ```
@@ -40,10 +40,10 @@
 ## 服务端上路（3 步）
 
 1. **双击 `bin\install-server.bat`** → 弹 UAC 点"是"（第一个黑窗一闪而过是正常现象，提权后会开新窗口继续）。
-   脚本自动完成：检查/安装 Node → 检查 Claude Code → 镜像源体检 → 装 CloudCLI → 电源永不睡眠 → 防火墙放行 → 网络改"专用"。
+   脚本自动完成：检查/安装 Node → 检查 Claude Code → 镜像源体检 → 装 CloudCLI → 电源永不睡眠 → 探测本机局域网 IP。（spec 010 起不再创建防火墙放行规则、不再改网络归类——局域网直访默认收口，防火墙由工作台的白名单契约承载）
    - 卡在哪一步会**停下来告诉你怎么办**（比如缺 Claude Code / CC Switch 没配好），照提示做完重跑即可。
    - npm 下载慢：右键编辑该文件，把 `set "PS_ARGS="` 改成 `set "PS_ARGS=-UseMirror"` 再双击。
-   - 重跑是安全的：已装好的组件自动跳过，只刷新电源/防火墙/网络配置；升级 CloudCLI 把 `PS_ARGS` 改成 `-Update`（可叠加 `-UseMirror`）再双击。
+   - 重跑是安全的：已装好的组件自动跳过，只刷新电源配置；升级 CloudCLI 把 `PS_ARGS` 改成 `-Update`（可叠加 `-UseMirror`）再双击。
 2. **记下结尾打印的"客户端访问地址"**，形如 `http://192.168.x.x:3001`（这就是给其他设备用的）。
 3. **浏览器打开 `http://localhost:3001` → 设置 → 开启需要的工具**（默认全禁用是它的安全设计；建议先开文件浏览/编辑 + Git）。
 
@@ -66,7 +66,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 
 ## 手机上路（0 步）
 
-- **局域网**：同 WiFi 浏览器打开 `http://192.168.x.x:3001`（服务端 install-server 结尾打印的地址）。
+- **局域网（默认收口，spec 010）**：同 WiFi 直访 `http://192.168.x.x:3001` 默认不可达——应急需要时在宿主机工作台「例外开关」临时开启（仅专用网络 + 本机子网，12h 自动回落）。
 - **跨网**：手机安装 EasyTier 客户端并加入组网（同网络名/密钥；工作台装机向导的组网分支有成员指引）后打开 **`https://ai.jackqi.cn`**——证书可信，可"添加到主屏幕"装成独立 App。
 
 ## 文件清单（谁在哪台机器用）
@@ -95,7 +95,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 | `set-tencent-key.ps1` | 服务端 | 腾讯云密钥写入栈 `.env`（HTTPS 证书签发与组网 A 记录维护共用；输入不回显，spec 006/008） |
 | `setup-autostart.ps1` | 服务端 | **开机自启开关**：启用/移除 CloudCLI + Caddy 两个登录自启（`-Remove` 全关） |
 | `autostart-on.bat` / `autostart-off.bat` | 服务端 | 双击版自启开关：双击 on 启用、双击 off 关闭（免命令行） |
-| `enable-https.bat` / `.ps1` | 服务端 | HTTPS 一次性配置：防火墙 443 + 网络改专用 + hosts 钉定 DNS API 域名（`install-https` 会自动代跑） |
+| `enable-https.bat` / `.ps1` | 服务端 | HTTPS 一次性配置：443 白名单规则（经同目录 `lan-guard.ps1`，源 ∈ 组网网段 + TUN 接口）+ hosts 钉定 DNS API 域名（`install-https` 会自动代跑） |
+| `lan-guard.ps1` | 服务端 | **局域网边界守卫**（spec 010）：status / ensure-whitelist / exception-on / exception-off / migrate 五动作——443 白名单与 3001 例外的规则 CRUD 单点（status 只读免提权；其余动作需管理员，工作台看板有同款入口） |
 | `install-https.bat` / `.ps1` | 服务端 | **HTTPS 栈装机**（一次）：下载 caddy.exe（caddyserver.com 插件构建；直连失败用 `-CaddyZip` 指手动下载的文件，升级加 `-Update`）+ 生成 Caddyfile + 跑 enable-https |
 | `mesh-service.ps1` | 服务端 | **EasyTier 组网服务管理**（spec 007）：install / uninstall / start / stop / restart / status 六动作（变更动作需管理员，status 只读免提权） |
 | `set-mesh-secret.ps1` | 服务端 | 组网密钥写入 `easytier\network-secret`（spec 007；成员设备加入同一网络时输入相同密钥，输入不回显） |
@@ -107,12 +108,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\run-server-hidden.ps1 
 |------|------|
 | 双击 `install-server.bat` 后好像没反应 | 看屏幕中央是否弹了 UAC 深色对话框；被拒了就右键 → 以管理员身份运行 |
 | 提示 `cloudcli` 不是内部或外部命令 | 刚装完 PATH 未刷新，新开一个终端窗口再试 |
-| 客户端/手机打不开页面 | 按序查：① 服务端起没起（`start-server.bat`）② 防火墙规则（重跑 install-server）③ 是否同一 WiFi（别用访客网络）④ 路由器 AP 隔离。详表见部署文档 §6 |
+| 客户端/手机打不开页面 | 按序查：① 服务端起没起（`start-server.bat`）② 走的哪条路：组网域名不通查工作台「访问白名单」健康区（或重跑 `enable-https`）；局域网直访默认收口（spec 010，例外开关开启才可达）③ 是否同一 WiFi（别用访客网络）④ 路由器 AP 隔离。详表见部署文档 §6 |
 | 双击 `start-server.bat` 提示端口被占 | 多半后台实例已在跑，脚本会直接帮你开浏览器，无需处理 |
 | 服务端重启后服务没了 | 双击 `bin\autostart-on.bat` 注册自启 |
 | 想停止服务 | 前台窗口 Ctrl+C；后台隐藏实例双击 `bin\stop-server.bat` |
-| 想完全卸载 | `npm uninstall -g @cloudcli-ai/cloudcli` + `bin\autostart-off.bat` + 删防火墙规则（详见部署文档 §8） |
-| 想换端口 | `install-server.ps1 -Port 3002` 重跑，客户端 URL 与防火墙规则同步改 |
+| 想完全卸载 | `npm uninstall -g @cloudcli-ai/cloudcli` + `bin\autostart-off.bat` + 删防火墙白名单规则（`Remove-NetFirewallRule -DisplayName 'CloudCLI Mesh HTTPS 443'`，详见部署文档 §8） |
+| 想换端口 | `install-server.ps1 -Port 3002` 重跑，客户端 URL 同步改（防火墙默认不放行新端口——局域网直访收口是 spec 010 设计使然，经域名/组网访问不受影响） |
 | 想升级/重装 CloudCLI | 服务端编辑 `install-server.bat`，`set "PS_ARGS=-Update"` 后重跑 |
 | 想换服务端地址 | 客户端双击 `install-client.bat`，提示处输入新地址（旧记录自动覆盖） |
 | npm install 报 npm.taobao.org 证书错误（ERR_TLS_CERT_ALTNAME_INVALID） | 机器残留了停服的旧淘宝镜像变量；重跑 `install-server.bat`，步骤 3 会检测并提示一键迁移 npmmirror |

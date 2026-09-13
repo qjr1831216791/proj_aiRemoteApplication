@@ -6,17 +6,30 @@
  * - 常驻操作（向导组网分支同款能力下沉）：写入组网密钥 / 安装·刷新服务 /
  *   同步 DNS（CNAME 全删 + A → 虚拟 IP）——装机后日常维护不再依赖向导
  * - 成员入网配置（spec 009 US4）：折叠区展示官方 TOML 对照清单（密钥占位
- *   符 + 指引文案），移动端 App 逐项输入避免漏项错配
+ *   符 + 指引文案），移动端 App 逐项输入避免漏项错配；验收期第 3 项显眼化
+ *   （整行可点 + 副标题 + 大 chevron 旋转 + hover），密钥/同步 DNS 操作区
+ *   间距加大（验收期第 1/2 项，需求方截图反馈）
  * - DNS 指引：常态轮询权威检测，对齐即消失；判 A=虚拟 IP，
  *   CNAME 残留按旁路暴露面提示（spec 007 体检口径延续）
+ * - 访问白名单（spec 010 T6）：健康 chip（正常/休眠/待修复）+ 失配「修复白名单」
+ *   + 旧规则迁移横幅「一键收口」+ 3001 例外开关（风险确认模态含归类前提 + 12h 回落如实呈现）
+ *   + 旁路风险警示 chip（AC11：程序级全端口放行规则残留，同按钮清理）
  * - 通道体检：DNS / 网络归类（组网不适用）/ 组网客户端 / 本机组件 / 域名全链路
- * 通道与配置数据源：settings（App 持有）。
+ * 通道与配置数据源：settings（App 持有）；白名单健康：languard://changed 事件
+ * （60s 监视 + 动作后即时复测经 MainView 下沉的回调）。
  */
 
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
-import type { DnsAlignment, MeshStateKind, MeshStatus, Settings } from "../types";
+import type {
+  DnsAlignment,
+  LanHealth,
+  MeshStateKind,
+  MeshStatus,
+  Settings,
+  WhitelistState,
+} from "../types";
 import { CopyButton } from "./CopyButton";
 
 /** 体检单项结论 */
@@ -31,6 +44,10 @@ export interface MeshCardProps {
   lang: Lang;
   settings: Settings | null;
   meshStatus: MeshStatus | null;
+  /** 白名单健康快照（spec 010；null = 尚无成功探测；MainView 持有） */
+  lanHealth: LanHealth | null;
+  /** 白名单动作后的即时复测（延迟追加由本组件排程） */
+  onLanRefresh: () => void;
   onToast: (text: string, kind?: "info" | "success" | "error") => void;
 }
 
@@ -38,7 +55,7 @@ export interface MeshCardProps {
 const DNS_CHECK_INTERVAL = 30_000;
 
 export function MeshCard(props: MeshCardProps) {
-  const { lang, settings, meshStatus, onToast } = props;
+  const { lang, settings, meshStatus, lanHealth, onLanRefresh, onToast } = props;
   const meshCfg = settings?.mesh ?? null;
 
   // DNS 对齐检测：常态轮询（A=虚拟 IP 生效需常态盯；对齐即隐藏指引）
@@ -83,6 +100,12 @@ export function MeshCard(props: MeshCardProps) {
     }
   };
 
+  /** 外链必须走 open_external：WebView2 吞掉 target=_blank 新窗口请求，
+      裸 <a href> 点击无反应（需求方 2026-09-13 实测）；MainView「打开」同款 */
+  const openReleases = () => {
+    void api.openExternal("easytier_releases").catch((e) => onToast(String(e), "error"));
+  };
+
   /** 脚本/命令派发统一收口（沿向导 dispatch 模式） */
   const dispatch = async (key: string, action: () => Promise<unknown>, doneHint = false) => {
     setBusy(key);
@@ -110,6 +133,70 @@ export function MeshCard(props: MeshCardProps) {
       setBusy(null);
     }
   };
+
+  // ── 访问白名单（spec 010 T6）───────────────────────────────────────────
+
+  /** 例外开启的风险确认（30s 未确认自动收起，沿网络归类切换确认先例） */
+  const [confirmExc, setConfirmExc] = useState(false);
+  useEffect(() => {
+    if (!confirmExc) return;
+    const id = setTimeout(() => setConfirmExc(false), 30000);
+    return () => clearTimeout(id);
+  }, [confirmExc]);
+
+  /** 白名单动作统一收口：成功 toast + 即时/延迟复测（UAC 窗内规则数秒后才落位，
+   * 沿归类切换 3.5s 追加复测先例，12s 二次兜底；60s 监视器轮询兜尾）；
+   * 失败 toast（AC7：UAC 拒绝 → Err，状态原样不崩溃） */
+  const runLan = async (key: string, action: () => Promise<unknown>) => {
+    setBusy(key);
+    try {
+      await action();
+      onToast(t("tools.dispatched", lang), "success");
+      onLanRefresh();
+      setTimeout(onLanRefresh, 3500);
+      setTimeout(onLanRefresh, 12000);
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** 例外四态 → chip（on 橙警 + 剩余时长 / expired·pending 红 / off 灰） */
+  const exc = lanHealth?.exception ?? null;
+  const excChip = !exc ? (
+    <span class="muted">—</span>
+  ) : exc.state === "on" ? (
+    <span class="chip chip--net-public">
+      {t("languard.exceptionRemaining", lang).replace(
+        "{h}",
+        String(Math.ceil(exc.remainingSecs / 3600)),
+      )}
+    </span>
+  ) : exc.state === "expired" ? (
+    <span class="chip chip--failed">{t("languard.exceptionExpired", lang)}</span>
+  ) : exc.state === "pending" ? (
+    <span class="chip chip--failed">{t("languard.exceptionPending", lang)}</span>
+  ) : (
+    <span class="chip chip--stopped">{t("languard.excOffChip", lang)}</span>
+  );
+
+  /** 例外动作：on/expired → 关闭（off 动作同开关，expired 即手动回落）；
+   * off/pending → 开启（pending 重开即重新派发）；无探测数据不出现按钮 */
+  const excBtn =
+    !exc ? null : exc.state === "on" || exc.state === "expired" ? (
+      <button
+        class="btn btn--sm"
+        disabled={busy !== null}
+        onClick={() => void runLan("excOff", () => api.lanGuardSetException(false))}
+      >
+        {t("languard.exceptionOffBtn", lang)}
+      </button>
+    ) : (
+      <button class="btn btn--sm" disabled={busy !== null} onClick={() => setConfirmExc(true)}>
+        {t("languard.exceptionOnBtn", lang)}
+      </button>
+    );
 
   /** 通道体检（组网单通道口径；组网访客经虚拟网络到达，物理网络归类不影响） */
   const runCheckup = async () => {
@@ -262,6 +349,93 @@ export function MeshCard(props: MeshCardProps) {
         </button>
       </div>
 
+      {/* 访问白名单（spec 010 T6）：健康 chip + 失配修复；数据源 languard://changed
+          （后端 60s 监视）+ 动作后即时复测。旁路风险（AC11）：程序级全端口放行
+          规则残留的警示 chip——与端口级白名单健康正交的另一层，经「修复白名单」
+          清理（ensure-whitelist 语义已含程序规则清理，按钮同款复用） */}
+      <div class="net__row">
+        <span class="net__name">{t("languard.title", lang)}</span>
+        {lanHealth ? (
+          <>
+            <span class={`chip ${wlChipClass(lanHealth.whitelist)}`}>
+              {t(wlChipKey(lanHealth.whitelist), lang)}
+            </span>
+            {lanHealth.bypassRisk ? (
+              <span class="chip chip--net-public">{t("languard.bypassChip", lang)}</span>
+            ) : null}
+            <span class="settings__desc">{t(wlHintKey(lanHealth.whitelist), lang)}</span>
+          </>
+        ) : (
+          <span class="muted">—</span>
+        )}
+        <span class="net__spacer" />
+        {lanHealth && (wlNeedsFix(lanHealth.whitelist) || lanHealth.bypassRisk) ? (
+          <button
+            class="btn btn--sm"
+            disabled={busy !== null}
+            onClick={() => void runLan("wlFix", () => api.lanGuardEnsureWhitelist())}
+          >
+            {t("languard.fixBtn", lang)}
+          </button>
+        ) : null}
+      </div>
+      {lanHealth?.bypassRisk ? (
+        <p class="notice notice--warn">{t("languard.bypassHint", lang)}</p>
+      ) : null}
+
+      {/* 旧规则迁移横幅（AC10）：一键收口 = 幂等删两旧规则 + 就位白名单（端到端演练 T7） */}
+      {lanHealth?.legacyPresent ? (
+        <div class="net__confirm">
+          <p class="net__risk">{t("languard.legacyBanner", lang)}</p>
+          <button
+            class="btn btn--sm btn--primary"
+            disabled={busy !== null}
+            onClick={() => void runLan("migrate", () => api.lanGuardMigrate())}
+          >
+            {t("languard.migrateBtn", lang)}
+          </button>
+        </div>
+      ) : null}
+
+      {/* 例外开关（AC6/AC7/AC8）：开启走风险确认模态；开启中显示剩余时长 */}
+      <div class="net__row">
+        <span class="net__name">{t("languard.exceptionLabel", lang)}</span>
+        {excChip}
+        <span class="net__spacer" />
+        {excBtn}
+      </div>
+      {lanHealth?.publicBlocksException ? (
+        <p class="notice notice--warn">{t("languard.publicBlocks", lang)}</p>
+      ) : null}
+      {confirmExc ? (
+        <div class="net__confirm">
+          <p class="net__risk">
+            {t("languard.riskTitle", lang)}
+            <br />
+            {t("languard.riskBody", lang)}
+            <br />
+            {t("languard.riskTtl", lang)}
+            <br />
+            {/* 归类前提（spec 010 验收期文案回填）：例外 × 网络归类两把锁——
+                仅「例外开 + 专用」才放行，公用下例外完全不生效 */}
+            {t("languard.riskProfile", lang)}
+          </p>
+          <button
+            class="btn btn--sm btn--primary"
+            disabled={busy !== null}
+            onClick={() => {
+              setConfirmExc(false);
+              void runLan("excOn", () => api.lanGuardSetException(true));
+            }}
+          >
+            {t("languard.riskConfirm", lang)}
+          </button>
+          <button class="btn btn--sm" onClick={() => setConfirmExc(false)}>
+            {t("net.cancel", lang)}
+          </button>
+        </div>
+      ) : null}
+
       {/* 成员列表（peer list 首项恒为本机，isLocal 标注） */}
       {meshStatus && meshStatus.peers.length > 0 ? (
         <div class="checkup__list">
@@ -292,8 +466,9 @@ export function MeshCard(props: MeshCardProps) {
       {/* DNS 指引：仅异常时显示，对齐后自动隐藏 */}
       {dns ? <DnsNotice dns={dns} virtualIp={meshCfg?.virtualIp ?? ""} lang={lang} /> : null}
 
-      {/* 常驻操作（向导同款能力下沉）：密钥写入 / 同步 DNS */}
-      <div class="master__actions">
+      {/* 常驻操作（向导同款能力下沉）：密钥写入 / 同步 DNS；间距对齐卡片区块节奏
+          （spec 010 验收期第 1/2 项：按钮行与说明行上下留白加大） */}
+      <div class="master__actions mesh-ops__actions">
         <button
           class="btn btn--sm"
           disabled={busy !== null}
@@ -311,17 +486,26 @@ export function MeshCard(props: MeshCardProps) {
           {busy === "syncDns" ? t("tunnel.dnsChecking", lang) : t("mesh.syncDnsBtn", lang)}
         </button>
       </div>
-      <p class="muted">{t("mesh.syncDnsHint", lang)}</p>
+      <p class="muted mesh-ops__hint">{t("mesh.syncDnsHint", lang)}</p>
 
-      {/* 成员入网配置（spec 009 US4）：折叠区默认收起，展开拉取；
+      {/* 成员入网配置（spec 009 US4；验收期第 3 项显眼化）：折叠区默认收起，展开拉取；
+          整行可点（aria-expanded）+ 副标题 + 大号 chevron 随展开旋转 + hover 反馈；
           密钥为占位符 + 指引文案，真实密钥不出现（spec 007 AC8 延续） */}
       <button
-        class="tools__toggle"
+        class="mesh-member__toggle"
         aria-expanded={memberCfgOpen}
         onClick={() => openMemberCfg(!memberCfgOpen)}
       >
-        <h3 class="card__title mesh-member__title">{t("mesh.memberConfig", lang)}</h3>
-        <span class={`tools__chev${memberCfgOpen ? " tools__chev--open" : ""}`}>▸</span>
+        <span class="mesh-member__head">
+          <span class="mesh-member__title">{t("mesh.memberConfig", lang)}</span>
+          <span class="mesh-member__sub">{t("mesh.memberConfigSub", lang)}</span>
+        </span>
+        <span
+          class={`mesh-member__chev${memberCfgOpen ? " mesh-member__chev--open" : ""}`}
+          aria-hidden="true"
+        >
+          ▾
+        </span>
       </button>
       {memberCfgOpen ? (
         <div class="tools__body">
@@ -330,11 +514,19 @@ export function MeshCard(props: MeshCardProps) {
               第三方 Orbit 因移动端隧道在系统网络切换/重启后易失效已撤销推荐 */}
           <p class="muted">
             {t("mesh.memberClientRec", lang)}{" "}
+            {/* 下载页外链走 open_external（地址由后端 urls.rs 统一持有）；
+                裸 <a target=_blank> 会被 WebView2 吞掉，点击无反应——勿回退 */}
             <a
               class="mesh-member__link"
-              href="https://github.com/EasyTier/EasyTier/releases"
-              target="_blank"
-              rel="noreferrer"
+              role="button"
+              tabIndex={0}
+              onClick={openReleases}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openReleases();
+                }
+              }}
             >
               GitHub Releases
             </a>
@@ -422,6 +614,47 @@ function meshChipClass(state: MeshStateKind): string {
     default:
       return "chip--stopped";
   }
+}
+
+/** 白名单五态 → chip 配色（纯函数：ok 绿 / dormant 灰（休眠非异常）/ 失配红） */
+function wlChipClass(state: WhitelistState): string {
+  switch (state) {
+    case "ok":
+      return "chip--running";
+    case "dormant":
+      return "chip--stopped";
+    default:
+      return "chip--failed";
+  }
+}
+
+/** 白名单五态 → chip 三分类键（正常 / 休眠 / 待修复） */
+function wlChipKey(state: WhitelistState): DictKey {
+  switch (state) {
+    case "ok":
+      return "languard.wl.ok";
+    case "dormant":
+      return "languard.wl.dormant";
+    default:
+      return "languard.wl.fix";
+  }
+}
+
+/** 白名单五态 → 提示行键（chip 同行的如实说明） */
+function wlHintKey(state: WhitelistState): DictKey {
+  switch (state) {
+    case "ok":
+      return "languard.wl.okHint";
+    case "dormant":
+      return "languard.wl.dormantHint";
+    default:
+      return "languard.wl.fixHint";
+  }
+}
+
+/** 待修复判定（missing / staleCidr / staleIface → 「修复白名单」按钮消费） */
+function wlNeedsFix(state: WhitelistState): boolean {
+  return state === "missing" || state === "staleCidr" || state === "staleIface";
 }
 
 /** 组网 detail 为稳定码（mesh.rs DETAIL_*，构造上不含密钥）→ 词典文案；
