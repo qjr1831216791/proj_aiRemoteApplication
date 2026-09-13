@@ -189,7 +189,17 @@ $segment = @("`t$beginTag")
 if ($accounts.Count -eq 0) {
     $segment += "`t#   (no access accounts configured - add via the workbench or set-https-account.ps1)"
 } else {
-    $segment += "`tbasic_auth {"
+    # Bearer 令牌直通匹配器（2026-09-13 真机实证）：CloudCLI 前端登录后，
+    # 其 API 调用把 Authorization 头整个换成 Bearer <token>——若不加匹配器，
+    # caddy 拿 Bearer 当 basic 凭证校验必败，回 401 + WWW-Authenticate，
+    # 浏览器（尤其移动端/PWA）反复弹原生账密框、永无宁日。带 Bearer 的请求
+    # 跳过本门，交由 CloudCLI 自身 token 认证把关（注册端点已实证关闭 403）；
+    # 无头/ basic 请求照常校验，纵深不丢。
+    # 语法坑（2026-09-13 实证）：PS 5.1 单引号字符串若以致闭引号的反引号收尾，
+    # 反引号会被静默吞掉（`^...` 写法曾丢收尾反引号导致 caddy 解析失败）——
+    # 一律用双引号 + `` 转义
+    $segment += "`t@noBearer not header_regexp Authorization ``^Bearer\s``"
+    $segment += "`tbasic_auth @noBearer {"
     foreach ($a in $accounts) {
         $segment += ("`t`t{0} {1}" -f $a.username, $a.hash)
     }
