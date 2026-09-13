@@ -155,20 +155,25 @@ export type ExternalKind =
   | "domain"
   | "easytier_releases";
 
-/** run_tool 工具类别（ddns/frp 四类已随直连/穿透通道退役——spec 008） */
+/** run_tool 工具类别（ddns/frp 四类已随直连/穿透通道退役——spec 008；
+ * set_https_account = 访问账号 add/set/remove，spec 011 T6） */
 export type ToolKind =
   | "install_server"
   | "install_https"
   | "enable_https"
   | "install_client"
   | "set_tencent_key"
-  | "set_mesh_secret";
+  | "set_mesh_secret"
+  | "set_https_account";
 
-/** run_tool 可选项（update/mirror 仅 install_server；domain 供安装/配置类透传，spec 006） */
+/** run_tool 可选项（update/mirror 仅 install_server；domain 供安装/配置类透传，spec 006；
+ * authAction/authUser 为访问账号的非敏感参数——密码绝不在此结构中，spec 011 AC11） */
 export interface ToolOpts {
   update: boolean;
   mirror: boolean;
   domain?: string | null;
+  authAction?: string | null;
+  authUser?: string | null;
 }
 
 // ── 装机向导（spec 006）─────────────────────────────────────────────────────

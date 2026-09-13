@@ -169,6 +169,27 @@ export const zh = {
   "settings.meshUninstallBtn": "卸载服务",
   "settings.meshUninstallDone": "组网服务卸载已派发",
 
+  // 访问账号（spec 011 T6/AC9/AC11：443 密码门——界面只发起与展示，
+  // 密码在派发的脚本窗口输入，界面不出现任何密码框）
+  "settings.auth": "访问账号（443 密码门）",
+  "settings.authDesc":
+    "域名访问的账号密码（basic_auth）。不同成员设备建议各持一个账号，可单独移除吊销；密码只在弹出的控制台窗口输入（不回显、两次确认），不经程序、不落设置与日志。",
+  "settings.authUsername": "用户名",
+  "settings.authUserPlaceholder": "如 jack（字母/数字/下划线/连字符，1~32 字符）",
+  "settings.authAddBtn": "新增账号…",
+  "settings.authDispatched":
+    "账号设置窗口已打开：请在弹出的控制台中完成输入（密码不回显），完成后点「刷新」查看",
+  "settings.authChangeBtn": "改密",
+  "settings.authRemoveBtn": "移除",
+  "settings.authRemoveConfirm":
+    "确定移除账号「{name}」？移除后该凭证的新请求将被拒绝（既有长连接断开后无法重连；必要时重启 Caddy 彻底断开）。",
+  "settings.authRemoveYes": "确认移除",
+  "settings.authRefreshBtn": "刷新",
+  "settings.authEmptyHint":
+    "尚未设置任何访问账号：域名访问维持现状（无密码门，仅组网成员可达）。添加账号后，浏览器访问域名将要求输入账号密码。",
+  "settings.authNameInvalid": "用户名仅限字母/数字/下划线/连字符，长度 1~32",
+  "common.cancel": "取消",
+
   // 域名心跳（spec 005）
   "heartbeat.kind.ok": "正常",
   "heartbeat.kind.dns": "DNS 解析失败",

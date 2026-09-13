@@ -165,6 +165,46 @@ pub fn open_logs_dir(
     scripts::open_dir(dir).map_err(|code| lang::shell_error_text(code, lang_state.current()))
 }
 
+/// 访问账号用户名列表（spec 011 T6/AC11：设置区「访问账号」只读展示）。
+/// 只返回用户名——bcrypt 哈希不出 Rust 侧边界；增删/改密经 run_tool 派发
+/// set-https-account.ps1（密码在脚本窗口输入，不进任何 Tauri 命令参数）。
+#[tauri::command]
+pub fn https_auth_list(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<Vec<String>, String> {
+    let stack_dir = settings.current().stack_dir;
+    read_auth_usernames(&stack_dir)
+}
+
+/// auth-accounts.json → 用户名列表（纯函数，单测覆盖）：
+/// 文件不存在 → 空列表（未启用密码门，AC9 引导态）；损坏 → 可读中文错误
+/// （不静默清空——事实来源坏了必须让管理员知道）。
+fn read_auth_usernames(stack_dir: &str) -> Result<Vec<String>, String> {
+    #[derive(serde::Deserialize)]
+    struct AuthAccount {
+        username: String,
+        // 哈希字段存在但刻意不建模：本函数的类型边界即「哈希不出 Rust 侧」
+    }
+    #[derive(serde::Deserialize)]
+    struct AuthFile {
+        #[serde(default)]
+        accounts: Vec<AuthAccount>,
+    }
+    let path = std::path::Path::new(stack_dir).join("auth-accounts.json");
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("读取访问账号文件失败（{}）：{e}", path.display()))?;
+    let parsed: AuthFile = serde_json::from_str(&raw).map_err(|e| {
+        format!(
+            "访问账号文件损坏（{}）：{e}——请手动修正或删除该文件后重新添加账号",
+            path.display()
+        )
+    })?;
+    Ok(parsed.accounts.into_iter().map(|a| a.username).collect())
+}
+
 /// 网络环境快照（spec 002 AC1/AC2）：即时探测（成功同时刷新监测器缓存，
 /// 变化经 `net://changed` 去重发声）；探测失败回上次状态，无缓存则 None（AC4）
 #[tauri::command]
@@ -744,5 +784,63 @@ mod tests {
         assert!(!poll_rule_absent(|| Some(false), 4, std::time::Duration::ZERO), "始终在 → 耗尽未确认");
         assert!(!poll_rule_absent(|| None, 3, std::time::Duration::ZERO), "探测失败（None）不算确认");
         assert!(poll_rule_absent(|| Some(true), 1, std::time::Duration::ZERO), "首查即不在 → 立即确认");
+    }
+
+    // ── spec 011 T6：访问账号列表（AC11 只读展示面）──────────────────────
+
+    /// 独享临时栈目录（可选预置 auth-accounts.json 内容），返回路径
+    fn temp_auth_dir(tag: &str, json: Option<&str>) -> std::path::PathBuf {
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "wb-cmds-auth-{}-{tag}-{n}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("创建临时栈目录失败");
+        if let Some(content) = json {
+            std::fs::write(dir.join("auth-accounts.json"), content).expect("写 JSON 失败");
+        }
+        dir
+    }
+
+    /// 正常解析：只返回用户名、保序；哈希不进返回值（类型边界即约束）
+    #[test]
+    fn read_auth_usernames_parses_and_returns_names_only() {
+        let dir = temp_auth_dir(
+            "normal",
+            Some(r#"{"accounts":[{"username":"jack","hash":"$2a$14$abc"},{"username":"member-02","hash":"$2a$14$def"}]}"#),
+        );
+        let names = read_auth_usernames(dir.to_str().unwrap()).expect("正常 JSON 应解析");
+        assert_eq!(names, vec!["jack".to_string(), "member-02".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 缺文件 → 空列表（未启用密码门，AC9 引导态）；空 accounts 同为空列表
+    #[test]
+    fn read_auth_usernames_missing_or_empty_yields_empty_list() {
+        let dir = temp_auth_dir("missing", None);
+        assert!(
+            read_auth_usernames(dir.to_str().unwrap()).unwrap().is_empty(),
+            "缺文件应为空列表（未启用）"
+        );
+        let dir2 = temp_auth_dir("empty", Some(r#"{"accounts":[]}"#));
+        assert!(
+            read_auth_usernames(dir2.to_str().unwrap()).unwrap().is_empty(),
+            "空 accounts 应为空列表"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    /// 损坏 → 可读中文错误（不静默清空），文案指明文件与处置方式
+    #[test]
+    fn read_auth_usernames_corrupt_file_reports_readable_error() {
+        let dir = temp_auth_dir("corrupt", Some("{not json at all"));
+        let err = read_auth_usernames(dir.to_str().unwrap())
+            .expect_err("损坏 JSON 应报错");
+        assert!(err.contains("损坏"), "文案应说明损坏：{err}");
+        assert!(err.contains("auth-accounts.json"), "文案应指明文件：{err}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

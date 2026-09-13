@@ -55,6 +55,7 @@ $ScriptSubset = @(
     'set-tencent-key.ps1'     # 腾讯云 CAM 密钥写入 .env（交互式，spec 006）
     'mesh-service.ps1'        # EasyTier 组网服务管理（UAC，spec 007）
     'set-mesh-secret.ps1'     # EasyTier 组网密钥写入 network-secret（交互式，spec 007）
+    'set-https-account.ps1'   # HTTPS 访问账号 add/set/remove（交互式，spec 011 T6）
     'uninstall-legacy.ps1'    # 旧通道一次性卸载（frp/ddns-go 残留清理，spec 008）
     'lan-guard.ps1'           # LAN 边界防火墙守卫五动作（UAC/status 免提权，spec 010）
 )

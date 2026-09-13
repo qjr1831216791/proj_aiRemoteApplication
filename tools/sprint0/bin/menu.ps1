@@ -91,7 +91,17 @@ while ($true) {
         '1' {
             powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'run-server-hidden.ps1')
             if (-not (Test-PortListening $httpsPort)) {
-                Start-Process -FilePath (Join-Path $StackDir 'caddy.exe') -ArgumentList 'run', '--config', (Join-Path $StackDir 'Caddyfile') -WindowStyle Hidden
+                # spec 011 T6 顺手修（既有 bug）：此处原为直启 caddy.exe，不注入栈 .env 的
+                # 腾讯云凭证——与 install-https.ps1 文案「总控菜单会自动注入」不符（tls dns
+                # 引用 {env.*} 为空会致证书签发失败）。改道 run-caddy-hidden.ps1（与自启任务
+                # 同款链：白名单注入 TENCENT_* + 前台长驻 run，§9.5-⑩）；凭证只进该专用
+                # 隐藏子进程环境，不进菜单进程本身，比在菜单内注入暴露面更小
+                $hidden = Join-Path $PSScriptRoot 'run-caddy-hidden.ps1'
+                Start-Process powershell -WindowStyle Hidden -ArgumentList @(
+                    '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                    '-File', ('"{0}"' -f $hidden),
+                    '-StackDir', ('"{0}"' -f $StackDir)
+                )
                 Write-Host (T '[OK] Caddy 已启动。' '[OK] Caddy started.') -ForegroundColor Green
             }
             Start-Process "http://localhost:$port"

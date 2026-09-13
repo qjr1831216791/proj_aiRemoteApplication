@@ -42,6 +42,9 @@ pub enum Script {
     MeshService,
     /// EasyTier 组网密钥写入 network-secret（交互式，无需管理员；spec 007）
     SetMeshSecret,
+    /// HTTPS 访问账号 add/set/remove（交互式，无需管理员；spec 011 T6——
+    /// 密码在脚本窗口 Read-Host 输入，工作台只传非敏感的 Action/Username/StackDir）
+    SetHttpsAccount,
 }
 
 /// 窗口形态（spec §4.3）
@@ -67,6 +70,7 @@ impl Script {
             Script::SetTencentKey => "set-tencent-key.ps1",
             Script::MeshService => "mesh-service.ps1",
             Script::SetMeshSecret => "set-mesh-secret.ps1",
+            Script::SetHttpsAccount => "set-https-account.ps1",
         }
     }
 
@@ -79,7 +83,8 @@ impl Script {
             | Script::MeshService => {
                 Visibility::Elevated
             }
-            Script::InstallClient | Script::SetTencentKey | Script::SetMeshSecret => {
+            Script::InstallClient | Script::SetTencentKey | Script::SetMeshSecret
+            | Script::SetHttpsAccount => {
                 Visibility::VisibleInteractive
             }
         }
@@ -100,6 +105,8 @@ impl Script {
             Script::MeshService => Duration::from_secs(60),
             // 交互输入等待无上限，给足余量；隐藏执行器不消费此值（可见窗 detached）
             Script::SetMeshSecret => Duration::from_secs(300),
+            // 交互输入等待无上限（密码两次输入 + validate/reload），可见窗 detached
+            Script::SetHttpsAccount => Duration::from_secs(300),
         }
     }
 }
@@ -477,6 +484,36 @@ pub fn validate_stack_dir(dir: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ── 访问账号参数校验（spec 011 T6/AC11：派发闸，构造命令行之前）──────────────
+
+/// auth_action 白名单（spec 011 AC11）：仅 add / set / remove 三动作。
+/// 错误文案中文、指明字段与合法取值。
+pub fn validate_auth_action(action: &str) -> Result<(), String> {
+    if matches!(action, "add" | "set" | "remove") {
+        Ok(())
+    } else {
+        Err(format!(
+            "auth_action 非法：「{action}」——仅允许 add（新增）/ set（改密）/ remove（移除）"
+        ))
+    }
+}
+
+/// auth_user 用户名白名单（spec 011 AC11 / plan §4）：`^[a-zA-Z0-9_-]{1,32}$`
+/// ——与脚本侧同规格（注入防线双闸；空值走 tool_plan 的缺失分支，此处只裁形态）。
+pub fn validate_auth_user(name: &str) -> Result<(), String> {
+    let len_ok = (1..=32).contains(&name.chars().count());
+    let chars_ok = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if len_ok && chars_ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "username 非法：「{name}」——仅允许英文字母/数字/下划线/连字符，长度 1~32"
+        ))
+    }
+}
+
 // ── 低频工具派发（run_tool，plan §5.1 / AC19-20）────────────────────────────
 
 /// 工具类别（前端序列化：snake_case 字符串）
@@ -496,6 +533,9 @@ pub enum ToolKind {
     /// EasyTier 组网密钥写入 network-secret（set-mesh-secret.ps1，可见交互窗；
     /// spec 007 AC8——密钥经交互脚本注入，不进工作台内存）
     SetMeshSecret,
+    /// HTTPS 访问账号 add/set/remove（set-https-account.ps1，可见交互窗；
+    /// spec 011 AC11——密码在脚本窗口输入，工作台只传非敏感参数）
+    SetHttpsAccount,
 }
 
 impl From<ToolKind> for Script {
@@ -507,6 +547,7 @@ impl From<ToolKind> for Script {
             ToolKind::InstallClient => Script::InstallClient,
             ToolKind::SetTencentKey => Script::SetTencentKey,
             ToolKind::SetMeshSecret => Script::SetMeshSecret,
+            ToolKind::SetHttpsAccount => Script::SetHttpsAccount,
         }
     }
 }
@@ -521,6 +562,11 @@ pub struct ToolOpts {
     pub mirror: bool,
     /// `-Domain`：安装/配置类脚本的域名透传（装机向导自定义域名；None = 脚本默认）
     pub domain: Option<String>,
+    /// `-Action`：访问账号动作（spec 011 T6——仅 add/set/remove，派发前白名单校验）
+    pub auth_action: Option<String>,
+    /// `-Username`：访问账号用户名（spec 011 T6——`^[a-zA-Z0-9_-]{1,32}$`，
+    /// 派发前校验；密码绝不在此结构中——脚本窗口交互输入）
+    pub auth_user: Option<String>,
 }
 
 /// 派发计划（纯函数构造，可单测；run_tool 命令消费）
@@ -549,6 +595,19 @@ pub fn tool_plan(
         validate_domain(domain)?;
     }
     validate_stack_dir(stack_dir)?;
+    // spec 011 AC11 派发闸：访问账号动作/用户名白名单——前端被攻破时校验依然生效，
+    // 非法 → Err（中文、指明字段），不产出 ToolDispatch、不启动任何进程
+    if matches!(kind, ToolKind::SetHttpsAccount) {
+        let action = opts.auth_action.as_deref().ok_or_else(|| {
+            "auth_action 缺失：访问账号动作必须提供（add / set / remove）".to_string()
+        })?;
+        validate_auth_action(action)?;
+        let user = opts.auth_user.as_deref().ok_or_else(|| {
+            "username 缺失：访问账号用户名必须提供（字母/数字/下划线/连字符，1~32 字符）"
+                .to_string()
+        })?;
+        validate_auth_user(user)?;
+    }
     let script = Script::from(kind);
     let mut extra: Vec<&str> = Vec::new();
     if matches!(kind, ToolKind::InstallServer) {
@@ -562,10 +621,20 @@ pub fn tool_plan(
     // 感知栈目录的脚本跟随用户配置（spec 004：装机/密钥写入正确位置）
     if matches!(
         kind,
-        ToolKind::InstallHttps | ToolKind::SetTencentKey | ToolKind::SetMeshSecret
+        ToolKind::InstallHttps
+            | ToolKind::SetTencentKey
+            | ToolKind::SetMeshSecret
+            | ToolKind::SetHttpsAccount
     ) {
         extra.push("-StackDir");
         extra.push(stack_dir);
+    }
+    // 访问账号：非敏感的动作与用户名（值经 sink 单引号包裹；密码不存在于任何参数）
+    if matches!(kind, ToolKind::SetHttpsAccount) {
+        extra.push("-Action");
+        extra.push(opts.auth_action.as_deref().expect("上方白名单校验已确保存在"));
+        extra.push("-Username");
+        extra.push(opts.auth_user.as_deref().expect("上方白名单校验已确保存在"));
     }
     // 域名透传（spec 006：装机向导自定义域名 → Caddyfile；ddns-go 已退役）
     if let Some(domain) = opts.domain.as_deref() {
@@ -936,7 +1005,7 @@ mod tests {
         assert!(!plan.params.contains("-Update") && !plan.params.contains("-UseMirror"), "{}", plan.params);
 
         // 升级 + 镜像源：两个开关透传
-        let opts = ToolOpts { update: true, mirror: true, domain: None };
+        let opts = ToolOpts { update: true, mirror: true, domain: None, ..ToolOpts::default() };
         let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::En, DEFAULT_STACK_DIR)
             .expect("默认栈目录应可派发");
         assert!(plan.params.contains("-Update"), "{}", plan.params);
@@ -1098,9 +1167,8 @@ mod tests {
         let dir = script_dir("gate");
         for c in [';', '\'', '"', '`', '$', '(', ')', '|', '&', '<', '>', '中'] {
             let opts = ToolOpts {
-                update: false,
-                mirror: false,
                 domain: Some(format!("ai.jackqi{c}cn")),
+                ..ToolOpts::default()
             };
             let err = tool_plan(ToolKind::InstallHttps, opts, &dir, Lang::Zh, DEFAULT_STACK_DIR)
                 .expect_err(&format!("domain 元字符「{c}」应拒绝派发"));
@@ -1126,9 +1194,8 @@ mod tests {
     fn tool_plan_accepts_legal_inputs_with_wrapped_values() {
         let dir = script_dir("ok");
         let opts = ToolOpts {
-            update: false,
-            mirror: false,
             domain: Some("ai.jackqi.cn".into()),
+            ..ToolOpts::default()
         };
         let plan = tool_plan(
             ToolKind::InstallHttps,
@@ -1159,6 +1226,158 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<ToolKind>("\"set_tencent_key\"").unwrap(),
             ToolKind::SetTencentKey
+        );
+    }
+
+    // ── spec 011 T6：访问账号派发闸 + 参数包裹（AC11）───────────────────
+
+    /// action 白名单：三动作放行，其余（含大小写变体/注入串）拒绝且文案指明字段
+    #[test]
+    fn validate_auth_action_whitelist() {
+        for good in ["add", "set", "remove"] {
+            validate_auth_action(good).expect("合法动作应放行");
+        }
+        for bad in ["", "delete", "ADD", "add ", "add;rm", "add\nset", "']&&"] {
+            let err =
+                validate_auth_action(bad).expect_err(&format!("非法动作「{bad}」应拒绝"));
+            assert!(err.contains("auth_action"), "「{bad}」文案应指明字段：{err}");
+        }
+    }
+
+    /// username 白名单：合法形态放行（含下划线/连字符/数字、32 边界）；
+    /// 注入元字符、超长、空、非 ASCII、控制字符拒绝
+    #[test]
+    fn validate_auth_user_whitelist() {
+        for good in ["jack", "a", "member-02", "phone_home", &"u".repeat(32)] {
+            validate_auth_user(good).expect("合法用户名应放行");
+        }
+        for bad in [
+            "", " ", "jack;rm", "jack'rule", "jack\"x", "ja ck", "jack`n", "a$b",
+            "$(whoami)", "jack|ls", "jack&dir", "jack>out", "jack<in", "中文", "jack\n",
+            &"u".repeat(33),
+        ] {
+            let err =
+                validate_auth_user(bad).expect_err(&format!("非法用户名「{bad}」应拒绝"));
+            assert!(err.contains("username"), "「{bad}」文案应指明字段：{err}");
+        }
+    }
+
+    /// 派发形态：-StackDir/-Action/-Username 值参数单引号包裹、参数名裸 token；
+    /// 可见交互窗（无 UAC、无 -NonInteractive——密码要靠 Read-Host 输入）
+    #[test]
+    fn tool_plan_set_https_account_dispatch_shape() {
+        let dir = script_dir("auth");
+        let opts = ToolOpts {
+            auth_action: Some("add".into()),
+            auth_user: Some("member-02".into()),
+            ..ToolOpts::default()
+        };
+        let plan = tool_plan(ToolKind::SetHttpsAccount, opts, &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect("合法账号参数应可派发");
+        assert_eq!(plan.script, Script::SetHttpsAccount);
+        assert!(!plan.elevated, "账号管理为用户级交互操作，无 UAC");
+        assert!(plan.params.contains("set-https-account.ps1"), "{}", plan.params);
+        assert!(plan.params.contains("-NoExit"), "交互脚本窗口结束后保留：{}", plan.params);
+        assert!(!plan.params.contains("-NonInteractive"), "交互式脚本禁用 -NonInteractive：{}", plan.params);
+        assert!(
+            plan.params.contains(r"-StackDir 'D:\Software\cloudcli-https'"),
+            "栈目录应以单引号包裹透传：{}",
+            plan.params
+        );
+        assert!(
+            plan.params.contains("-Action 'add'") && plan.params.contains("-Username 'member-02'"),
+            "动作与用户名应以单引号包裹透传：{}",
+            plan.params
+        );
+        // 值内单引号翻倍兜底（纵深）：即使白名单漏放也不破形
+        let opts_q = ToolOpts {
+            auth_action: Some("add".into()),
+            auth_user: Some("ja'ck".into()),
+            ..ToolOpts::default()
+        };
+        let err = tool_plan(ToolKind::SetHttpsAccount, opts_q, &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect_err("含单引号用户名应被白名单拒绝");
+        assert!(err.contains("username"), "文案应指明字段：{err}");
+    }
+
+    /// 派发闸：缺失/非法 action、缺失/非法 username → Err（不产出命令行），
+    /// 文案中文且指明字段；合法 remove 同样放行
+    #[test]
+    fn tool_plan_set_https_account_rejects_bad_params() {
+        let dir = script_dir("authgate");
+        // 缺失
+        let err = tool_plan(
+            ToolKind::SetHttpsAccount,
+            ToolOpts {
+                auth_action: None,
+                auth_user: Some("jack".into()),
+                ..ToolOpts::default()
+            },
+            &dir,
+            Lang::Zh,
+            DEFAULT_STACK_DIR,
+        )
+        .expect_err("缺失 action 应拒绝派发");
+        assert!(err.contains("auth_action"), "{err}");
+        let err = tool_plan(
+            ToolKind::SetHttpsAccount,
+            ToolOpts {
+                auth_action: Some("add".into()),
+                auth_user: None,
+                ..ToolOpts::default()
+            },
+            &dir,
+            Lang::Zh,
+            DEFAULT_STACK_DIR,
+        )
+        .expect_err("缺失 username 应拒绝派发");
+        assert!(err.contains("username"), "{err}");
+        // 非法（注入形态——派发闸在包裹兜底之前就该拦下）
+        for (action, user) in [("delete", "jack"), ("add;rm -rf", "jack"), ("add", "jack;calc"), ("add", " jack")] {
+            let err = tool_plan(
+                ToolKind::SetHttpsAccount,
+                ToolOpts {
+                    auth_action: Some(action.into()),
+                    auth_user: Some(user.into()),
+                    ..ToolOpts::default()
+                },
+                &dir,
+                Lang::Zh,
+                DEFAULT_STACK_DIR,
+            )
+            .expect_err(&format!("非法参数（{action}/{user}）应拒绝派发"));
+            assert!(
+                err.contains("auth_action") || err.contains("username"),
+                "文案应指明字段：{err}"
+            );
+        }
+        // remove 合法放行（无密码交互的动作）
+        let plan = tool_plan(
+            ToolKind::SetHttpsAccount,
+            ToolOpts {
+                auth_action: Some("remove".into()),
+                auth_user: Some("jack".into()),
+                ..ToolOpts::default()
+            },
+            &dir,
+            Lang::En,
+            DEFAULT_STACK_DIR,
+        )
+        .expect("remove 应放行");
+        assert!(plan.params.contains("-Action 'remove'"), "{}", plan.params);
+    }
+
+    /// 前端序列化契约：set_https_account 可反序列化（snake_case）
+    #[test]
+    fn set_https_account_tool_kind_deserializes() {
+        assert_eq!(
+            serde_json::from_str::<ToolKind>("\"set_https_account\"").unwrap(),
+            ToolKind::SetHttpsAccount
+        );
+        assert_eq!(Script::from(ToolKind::SetHttpsAccount).file_name(), "set-https-account.ps1");
+        assert_eq!(
+            Script::from(ToolKind::SetHttpsAccount).visibility(),
+            Visibility::VisibleInteractive
         );
     }
 

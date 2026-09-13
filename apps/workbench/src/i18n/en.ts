@@ -171,6 +171,27 @@ export const en = {
   "settings.meshUninstallBtn": "Uninstall service",
   "settings.meshUninstallDone": "Mesh service uninstall dispatched",
 
+  // Access accounts (spec 011 T6/AC9/AC11: 443 password gate - the UI only
+  // dispatches and displays; passwords are typed in the popped-up script console)
+  "settings.auth": "Access accounts (443 password gate)",
+  "settings.authDesc":
+    "Username/password for domain access (basic_auth). Member devices should each use their own account (individually revocable); passwords are only typed into the popped-up console (hidden, confirmed twice) - never through the app, never stored in settings or logs.",
+  "settings.authUsername": "Username",
+  "settings.authUserPlaceholder": "e.g. jack (letters/digits/underscore/hyphen, 1-32 chars)",
+  "settings.authAddBtn": "Add account…",
+  "settings.authDispatched":
+    "Account setup window opened: complete the input in the popped-up console (password hidden), then press \"Refresh\" to see the result",
+  "settings.authChangeBtn": "Change password",
+  "settings.authRemoveBtn": "Remove",
+  "settings.authRemoveConfirm":
+    "Remove account \"{name}\"? New requests with that credential will be rejected (existing long-lived connections cannot reconnect once they drop; restart Caddy to cut them immediately).",
+  "settings.authRemoveYes": "Confirm removal",
+  "settings.authRefreshBtn": "Refresh",
+  "settings.authEmptyHint":
+    "No access accounts yet: domain access stays as-is (no password gate; mesh members only). Once an account is added, browsers will prompt for credentials when visiting the domain.",
+  "settings.authNameInvalid": "Username: letters/digits/underscore/hyphen only, 1-32 chars",
+  "common.cancel": "Cancel",
+
   // Domain heartbeat (spec 005)
   "heartbeat.kind.ok": "OK",
   "heartbeat.kind.dns": "DNS resolution failed",

@@ -14,7 +14,7 @@
  * 全部乐观更新 + 失败回滚，长任务期间对应开关禁用防重复提交。
  */
 
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { api } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
 import type {
@@ -218,6 +218,64 @@ export function SettingsView(props: SettingsViewProps) {
     }
   };
 
+  // ── 访问账号（spec 011 T6/AC11：443 密码门——界面只发起与展示）─────────
+  // 账号列表（null = 加载中）；哈希不出 Rust 侧，这里只有用户名。
+  // 密码输入发生在派发的脚本窗口（Read-Host 不回显）——本界面无任何密码框。
+  const [accounts, setAccounts] = useState<string[] | null>(null);
+  const [authUser, setAuthUser] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  // 移除的两步确认（沿网络归类切换同款交互：行内确认，30s 未决自动还原）
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  useEffect(() => {
+    if (confirmRemove === null) return;
+    const id = setTimeout(() => setConfirmRemove(null), 30000);
+    return () => clearTimeout(id);
+  }, [confirmRemove]);
+
+  const refreshAccounts = async () => {
+    try {
+      setAccounts(await api.httpsAuthList());
+    } catch (e) {
+      onToast(`${t("toast.loadFailed", lang)}: ${String(e)}`, "error");
+    }
+  };
+
+  useEffect(() => {
+    void refreshAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** 派发 set-https-account.ps1（add/set/remove）：run_tool 只传非敏感参数，
+   * 密码在弹出的控制台窗口输入；完成后由用户点「刷新」收敛列表 */
+  const dispatchAuth = async (action: "add" | "set" | "remove", name: string) => {
+    const user = name.trim();
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(user)) {
+      onToast(t("settings.authNameInvalid", lang), "error");
+      return;
+    }
+    setAuthBusy(true);
+    setConfirmRemove(null);
+    try {
+      await api.runTool("set_https_account", {
+        update: false,
+        mirror: false,
+        authAction: action,
+        authUser: user,
+      });
+      onToast(t("settings.authDispatched", lang), "info");
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  /** 改密入口：从列表选中预填用户名（界面只收用户名，不收密码） */
+  const startChangePassword = (user: string) => {
+    setAuthUser(user);
+    void dispatchAuth("set", user);
+  };
+
   const readonlyRows: { label: string; value: string }[] = [
     { label: t("settings.portCloudcli", lang), value: String(READONLY.cloudcliPort) },
     { label: t("settings.portCaddy", lang), value: String(READONLY.caddyPort) },
@@ -418,6 +476,88 @@ export function SettingsView(props: SettingsViewProps) {
             ))}
           </div>
         ) : null}
+      </section>
+
+      {/* 访问账号（spec 011 T6/AC9/AC11：443 密码门——只发起与展示，
+          密码在派发的脚本窗口输入，界面无密码框） */}
+      <section class="card">
+        <h2 class="card__title">{t("settings.auth", lang)}</h2>
+        <p class="muted">{t("settings.authDesc", lang)}</p>
+        {accounts === null ? (
+          <p class="muted">{t("common.loading", lang)}</p>
+        ) : accounts.length === 0 ? (
+          <p class="notice notice--warn">{t("settings.authEmptyHint", lang)}</p>
+        ) : (
+          <div class="settings__rows">
+            {accounts.map((u) => (
+              <div class="settings__row" key={u}>
+                <div class="settings__row-text">
+                  <span class="settings__label">{u}</span>
+                </div>
+                {confirmRemove === u ? null : (
+                  <div class="settings__actions">
+                    <button
+                      class="btn btn--sm"
+                      disabled={authBusy}
+                      onClick={() => startChangePassword(u)}
+                    >
+                      {t("settings.authChangeBtn", lang)}
+                    </button>
+                    <button
+                      class="btn btn--sm btn--danger"
+                      disabled={authBusy}
+                      onClick={() => setConfirmRemove(u)}
+                    >
+                      {t("settings.authRemoveBtn", lang)}
+                    </button>
+                  </div>
+                )}
+                {confirmRemove === u ? (
+                  <div class="settings__row-text">
+                    <span class="settings__desc">
+                      {t("settings.authRemoveConfirm", lang).replace("{name}", u)}
+                    </span>
+                    <div class="settings__actions">
+                      <button
+                        class="btn btn--sm btn--danger"
+                        disabled={authBusy}
+                        onClick={() => void dispatchAuth("remove", u)}
+                      >
+                        {t("settings.authRemoveYes", lang)}
+                      </button>
+                      <button class="btn btn--sm" onClick={() => setConfirmRemove(null)}>
+                        {t("common.cancel", lang)}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+        <div class="tunnel-form-row">
+          <div class="tunnel-form-field">
+            <span class="settings__label">{t("settings.authUsername", lang)}</span>
+            <input
+              class="form-input"
+              placeholder={t("settings.authUserPlaceholder", lang)}
+              value={authUser}
+              onInput={(e) => setAuthUser(e.currentTarget.value)}
+            />
+          </div>
+          <button
+            class="btn btn--sm btn--primary tunnel-form-save"
+            disabled={authBusy}
+            onClick={() => void dispatchAuth("add", authUser)}
+          >
+            {t("settings.authAddBtn", lang)}
+          </button>
+        </div>
+        <div class="settings__actions">
+          <button class="btn btn--sm" disabled={authBusy} onClick={() => void refreshAccounts()}>
+            {t("settings.authRefreshBtn", lang)}
+          </button>
+        </div>
       </section>
 
       {/* 域名心跳（spec 005 AC7） */}

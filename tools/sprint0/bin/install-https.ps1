@@ -236,6 +236,12 @@ if (Test-Path $caddyfile) {
         '        }',
         '    }',
         "    reverse_proxy 127.0.0.1:${Port}",
+        # 访问账号标记段（spec 011 AC9/AC11）：新装机即带空段——未设账号=空注释，
+        # caddy 正常启动；set-https-account.ps1 以此为锚点原地再生 basic_auth 块
+        # （内容保持 ASCII：本文件以 -Encoding ascii 落盘）
+        '    # BEGIN workbench-auth',
+        '    #   (no access accounts configured - add via the workbench or set-https-account.ps1)',
+        '    # END workbench-auth',
         '}'
     )
     Set-Content -Path $caddyfile -Value $lines -Encoding ascii
