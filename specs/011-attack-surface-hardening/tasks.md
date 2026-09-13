@@ -21,12 +21,12 @@
 
 ## 阶段 3: 443 入口账号密码（P3）
 
-- [ ] T6 访问账号多账号管理（测试先行）：新增 `https_auth.rs`（`https_auth_list/upsert/remove` 命令 + 用户名白名单/密码长度校验 + `auth-accounts.json` 读写 + 标记段再生（存量首插/多账号形态/空列表回空段）+ .bak 备份回滚 + validate/reload 编排）；前端设置区「访问账号」界面（列表/新增/改密/移除）；install-https.ps1 生成端带空标记段；menu.ps1 直启 .env 注入缺失顺手修；未设账号引导提示（验收: AC9/AC11）
+- [ ] T6 访问账号多账号管理（测试先行，工作台发起 + 脚本执行）：新增 `tools/sprint0/bin/set-https-account.ps1`（add/set/remove 三动作：Read-Host 隐藏回显取密两次+一致/长度校验 → 栈目录 caddy.exe hash-password stdin → `auth-accounts.json` 读写 → 标记段再生（存量首插/多账号形态/空列表回空段）+ .bak 备份回滚 + caddy validate/reload）；Rust 侧 `https_auth_list`（只读用户名）+ `ToolKind::SetHttpsAccount` 派发（ToolOpts 非敏感 `auth_action`/`auth_user` 白名单校验+值包裹，单测）；前端设置区「访问账号」界面（列表展示/发起新增或改密（界面只收用户名）/移除确认）；install-https.ps1 生成端带空标记段；build.ps1 $ScriptSubset 登记；menu.ps1 直启 .env 注入缺失顺手修；未设账号引导提示（验收: AC9/AC11）
 - [ ] T7 真机验证：多账号各自凭证 401/进入（含 WS 终端重连专项）、移除账号后新请求 401 且重连被拒、存量装机（v0.6.0 升级形态）首次管理自动插入标记段且重启后仍生效、localhost:3001 不受影响（依赖: T6）（验收: AC8/AC10 真机半）
 
 ## 阶段 4: 收尾
 
-- [ ] T8 cargo test 全绿 + `scripts/build.ps1` 打包复核（resources 副本与 manifest 由 build 同步段自动刷新）（依赖: T4~T7）
+- [ ] T8 cargo test 全绿 + `scripts/build.ps1` 打包复核（$ScriptSubset 含 set-https-account.ps1；resources 副本与 manifest 由 build 同步段自动刷新）（依赖: T4~T7）
 - [ ] T9 对照 [spec.md](./spec.md) 逐条验证验收标准并勾选；CHANGELOG Unreleased 登记；tools/README 工具表补 upgrade-component.ps1；MOC 状态流转
 - [ ] T10 真机手工清单回填 acceptance-manual（沿 007/009/010 先例），需求方签收
 
