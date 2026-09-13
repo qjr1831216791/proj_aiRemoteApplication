@@ -13,6 +13,6 @@
                   "mesh-service.ps1":  "f263b3ee9e587de7cfd6186058d00f1ecde7a2d997e33bdef9cae2c8de1bddca",
                   "set-mesh-secret.ps1":  "440c92efa1a8628639216ddd035da3549ededa9ff1c91a546a1bfe7c2161e8c8",
                   "uninstall-legacy.ps1":  "99591dc40a6e83b7aada0e35360a8af3eec62935903584b91315b1079a8ecdad",
-                  "lan-guard.ps1":  "1e9cf7f284bde22eca7443f7f31f59adc85af310726f5abb23dfcee1f01f9d99"
+                  "lan-guard.ps1":  "44687e656456d7cf295471f320d2040173be90ffd9e846c9e00feb8ad995b077"
               }
 }

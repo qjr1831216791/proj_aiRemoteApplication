@@ -204,7 +204,7 @@ function Get-InboundAllowProgramRules {
         $rule = $f | Get-NetFirewallRule -ErrorAction SilentlyContinue
         if ($rule -and $rule.Direction -eq 'Inbound' -and $rule.Action -eq 'Allow') { $out += $rule }
     }
-    return ,$out
+    return $out
 }
 
 # 可执行文件名（任意目录）命中的「入站 Allow」规则（ddns-go 残留专用：任意路径
@@ -218,7 +218,7 @@ function Get-InboundAllowProgramRulesByLeaf {
         $rule = $f | Get-NetFirewallRule -ErrorAction SilentlyContinue
         if ($rule -and $rule.Direction -eq 'Inbound' -and $rule.Action -eq 'Allow') { $out += $rule }
     }
-    return ,$out
+    return $out
 }
 
 # EasyTier 规则集是否存在非收紧形态（「11010 限定的 TCP/UDP 两条」之外即宽放行；

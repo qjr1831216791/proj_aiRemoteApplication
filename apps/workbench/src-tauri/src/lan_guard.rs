@@ -1802,11 +1802,18 @@ mod tests {
             "ensure 函数不再内部 exit（返回 bool 交调用方）"
         );
 
-        // ③ 删除形态：程序规则一律按稳定名删除；方向/动作过滤在识别函数内
+        // ③ 删除形态：程序规则一律按稳定名删除；方向/动作过滤在识别函数内；
+        //    识别函数禁止 `,$out` 包装返回（真机回归钉：,@() 使空数组退化为
+        //    「单元素嵌套数组」，foreach 首元素的 .Name 为 null → Remove -Name 空）
         assert!(
             dev.contains("$rule.Direction -eq 'Inbound' -and $rule.Action -eq 'Allow'"),
             "识别只取入站 Allow（误伤防线）：{dev:}"
         );
+        assert!(
+            !dev.contains("return ,$out"),
+            "识别函数禁止 , 包装返回（真机 2026-09-13 实跑踩坑：Remove -Name 收到 null）"
+        );
+        assert_eq!(dev.matches("return $out").count(), 2, "两个识别函数统一平铺返回");
         let cleanup = &dev[dev.find("function Invoke-BypassCleanup").expect("清理函数存在")..];
         let cleanup = &cleanup[..cleanup.find("try {").expect("主流程起点")];
         assert!(cleanup.contains("Remove-NetFirewallRule -Name $r.Name"), "按稳定 Name 删除");
