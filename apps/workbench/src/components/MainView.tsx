@@ -283,19 +283,18 @@ export function MainView(props: MainViewProps) {
                       title={`${t(`heartbeat.kind.${domainHealth.kind}`, lang).replace("{code}", String(domainHealth.code ?? ""))} · ${t("heartbeat.scopeNote", lang)}`}
                     />
                   ) : null}
+                  {/* 局域网行绿/红二值豆（验收期第 4 项）：置于行标签左侧，
+                      DOM 结构与视觉位置对齐域名行心跳点（需求方 2026-09-13 反馈）；
+                      绿=此路通 / 红=此路不通，默认收口态也红 */}
+                  {k === "lan" ? (
+                    <span class={`hb-dot ${lanDotGreen ? "hb-dot--ok" : "hb-dot--fail"}`} />
+                  ) : null}
                   {t(`addr.${k}`, lang)}
                 </span>
                 <code class="addr__url">{urls[k]}</code>
                 {/* 局域网行三态措辞（spec 010 AC5/AC8）：off/pending → 已收口、
-                    on → 临时放行剩余时长、expired → 回落未完成（get_urls 语义不动）；
-                    前置绿/红二值豆（验收期第 4 项，与域名行心跳同色语义：
-                    绿=此路通 / 红=此路不通，默认收口态也红） */}
-                {k === "lan" ? (
-                  <>
-                    <span class={`hb-dot ${lanDotGreen ? "hb-dot--ok" : "hb-dot--fail"}`} />
-                    <LanAddrChip health={lanHealth} lang={lang} />
-                  </>
-                ) : null}
+                    on → 临时放行剩余时长、expired → 回落未完成（get_urls 语义不动） */}
+                {k === "lan" ? <LanAddrChip health={lanHealth} lang={lang} /> : null}
                 <span class="addr__actions">
                   <CopyButton text={urls[k]} lang={lang} onToast={onToast} />
                   <button
