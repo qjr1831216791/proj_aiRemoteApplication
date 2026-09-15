@@ -321,6 +321,31 @@ pub fn normalize_domain(input: &str) -> Result<String, String> {
     Ok(d)
 }
 
+// ── 生效域名解析（spec 013 T2：全部消费点的唯一取值入口）────────────────────
+// 消费点不得再直读 consts::DOMAIN / DOMAIN_ROOT / WORKBENCH_URL（spec §4）。
+
+/// 生效域名：settings.domain 非空且合法 → 归一后用之；空/非法 → 回落编译期
+/// 默认（研发机既有部署兼容，spec AC3）。非法值按未配置容错回落，不 panic
+/// （spec §4 异常路径）。入参取 `Settings.domain`，&str 保持纯函数。
+pub fn effective_domain(domain_setting: &str) -> String {
+    match normalize_domain(domain_setting) {
+        Ok(d) if !d.is_empty() => d,
+        _ => crate::consts::DOMAIN.to_string(),
+    }
+}
+
+/// 生效根域（DNSPod API 的 Domain 参数）：由生效完整域名末两段派生
+/// （沿用 wizard::split_domain 既有算法，spec 非目标：不改拆分规则）。
+pub fn effective_root(full_domain: &str) -> String {
+    crate::wizard::split_domain(full_domain).0
+}
+
+/// 生效工作台 URL（地址区/心跳/托盘）：`https://<域名>/`（与既有
+/// consts::WORKBENCH_URL 形态一致，带尾斜杠）。
+pub fn workbench_url_of(full_domain: &str) -> String {
+    format!("https://{full_domain}/")
+}
+
 /// 栈目录规整（纯函数）：去首尾空白与尾随分隔符；未以 `cloudcli-https`
 /// 子目录结尾则自动追加（需求方：用户输入安装根，子目录名固定）；
 /// 空输入回落默认值。spec 011 AC1 源头闸：非绝对盘符路径或含 PowerShell
@@ -500,6 +525,32 @@ mod tests {
             "{json}"
         );
         cleanup(&path);
+    }
+
+    /// spec 013 T2：生效域名解析——配置值/空回落/非法回落/根域与 URL 派生
+    #[test]
+    fn effective_domain_resolution_and_fallback() {
+        // AC1：配置了用户域名 → 生效值为它（顺带归一）
+        assert_eq!(effective_domain(" ai.example.com "), "ai.example.com");
+        // AC3：未配置（空）→ 回落编译期默认
+        assert_eq!(effective_domain(""), crate::consts::DOMAIN);
+        assert_eq!(effective_domain("   "), crate::consts::DOMAIN);
+        // §4 异常路径：非法值按未配置容错回落，不 panic
+        assert_eq!(effective_domain("bad;domain"), crate::consts::DOMAIN);
+        assert_eq!(effective_domain("a..b"), crate::consts::DOMAIN);
+
+        // 根域派生（沿用 split_domain 末两段算法）
+        assert_eq!(effective_root("ai.example.com"), "example.com");
+        assert_eq!(effective_root("ai.jackqi.cn"), "jackqi.cn");
+        assert_eq!(effective_root("example.com"), "example.com", "裸根域原样");
+
+        // URL 派生（与 consts::WORKBENCH_URL 形态一致，带尾斜杠）
+        assert_eq!(workbench_url_of("ai.example.com"), "https://ai.example.com/");
+        assert_eq!(
+            workbench_url_of(&effective_domain("")),
+            crate::consts::WORKBENCH_URL,
+            "回落态与既有常量形态一致"
+        );
     }
 
     /// spec 013 T1：旧版文件缺 domain 字段 → serde default → 空串，其余字段保留
