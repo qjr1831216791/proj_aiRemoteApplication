@@ -46,6 +46,8 @@ export interface MeshCardProps {
   meshStatus: MeshStatus | null;
   /** 白名单健康快照（spec 010；null = 尚无成功探测；MainView 持有） */
   lanHealth: LanHealth | null;
+  /** 生效域名（spec 013：地址区同源的 get_urls 下发解析；null = 尚未加载） */
+  domain: string | null;
   /** 白名单动作后的即时复测（延迟追加由本组件排程） */
   onLanRefresh: () => void;
   onToast: (text: string, kind?: "info" | "success" | "error") => void;
@@ -55,7 +57,7 @@ export interface MeshCardProps {
 const DNS_CHECK_INTERVAL = 30_000;
 
 export function MeshCard(props: MeshCardProps) {
-  const { lang, settings, meshStatus, lanHealth, onLanRefresh, onToast } = props;
+  const { lang, settings, meshStatus, lanHealth, domain, onLanRefresh, onToast } = props;
   const meshCfg = settings?.mesh ?? null;
 
   // DNS 对齐检测：常态轮询（A=虚拟 IP 生效需常态盯；对齐即隐藏指引）
@@ -468,7 +470,7 @@ export function MeshCard(props: MeshCardProps) {
       ) : null}
 
       {/* DNS 指引：仅异常时显示，对齐后自动隐藏 */}
-      {dns ? <DnsNotice dns={dns} virtualIp={meshCfg?.virtualIp ?? ""} lang={lang} /> : null}
+      {dns ? <DnsNotice dns={dns} virtualIp={meshCfg?.virtualIp ?? ""} domain={domain} lang={lang} /> : null}
 
       {/* 常驻操作（向导同款能力下沉）：密钥写入 / 同步 DNS；间距对齐卡片区块节奏
           （spec 010 验收期第 1/2 项：按钮行与说明行上下留白加大） */}
@@ -577,8 +579,8 @@ export function MeshCard(props: MeshCardProps) {
 
 /** DNS 结论 → 提示条（仅异常时显示；A=虚拟 IP 对齐 → null 自动隐藏）。
  * 残留 CNAME = 旁路暴露面（应删，走「同步 DNS」）；A 值不符 = 待改值。 */
-function DnsNotice(props: { dns: DnsAlignment; virtualIp: string; lang: Lang }) {
-  const { dns, virtualIp, lang } = props;
+function DnsNotice(props: { dns: DnsAlignment; virtualIp: string; domain: string | null; lang: Lang }) {
+  const { dns, virtualIp, domain, lang } = props;
   switch (dns.kind) {
     case "alignedMesh":
       return null;
@@ -599,7 +601,9 @@ function DnsNotice(props: { dns: DnsAlignment; virtualIp: string; lang: Lang }) 
     case "noRecord":
       return (
         <p class="notice notice--warn">
-          {t("tunnel.dnsGuideMesh", lang).replace("{target}", virtualIp)}
+          {t("tunnel.dnsGuideMesh", lang)
+            .replace("{domain}", domain ?? "")
+            .replace("{target}", virtualIp)}
         </p>
       );
     case "queryFailed":

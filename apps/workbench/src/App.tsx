@@ -6,10 +6,11 @@
  * - 设置加载失败/损坏恢复（settings://repaired）→ 非阻塞 toast（AC24）
  * - 「启动后打开工作台页面」选项已移除（spec 001 §7 v2.10，2026-09-13 需求方定）
  * - 语言切换走 Rust set_language（托盘同源重建 + 脚本 -Lang 对齐，AC25），前端随之换词典
+ * - 页头为全窗宽吸顶标题栏（2026-09-15 需求方反馈：主界面/设置页同一行统一 + 滚动置顶）
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onDomainHealth, onMeshStatus, onNetChanged, onSettingsRepaired, onStatusChanged, onWizardChanged } from "./api";
+import { api, onDomainHealth, onMeshStatus, onNetChanged, onSettingsRepaired, onStatusChanged, onUrlsChanged, onWizardChanged } from "./api";
 import { installAutoTitles } from "./autoTitle";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
@@ -101,6 +102,8 @@ export function App() {
       track(await onMeshStatus(setMeshStatus));
       // 域名心跳事件（spec 005）：60s 周期探测
       track(await onDomainHealth(setDomainHealth));
+      // urls 事件（spec 013 验收期补漏）：向导改域名后推新快照，地址区/只读卡免重启跟随
+      track(await onUrlsChanged(setUrls));
       // 设置损坏恢复：非阻塞提示（AC24）
       track(await onSettingsRepaired(() => pushToast(t("settings.repaired", lang), "info")));
       // 向导状态事件（spec 006）：引导条随 done 收敛
@@ -153,11 +156,13 @@ export function App() {
   };
 
   // 设置页放宽（2026-09-13）：左侧目录自成一列，不靠挤压卡片腾位置——
-  // 960 默认窗口下卡片反而比 760 上限时更宽
+  // 960 默认窗口下卡片反而比 760 上限时更宽。
+  // 页头在容器外（2026-09-15 需求方反馈）：全窗宽吸顶标题栏，主界面/设置
+  // 两页共用同一元素、风格统一，导航不再随容器限宽切页左右跳动
   return (
-    <main class={`app${view === "settings" ? " app--wide" : ""}`}>
-      <header class="app__header">
-        <div>
+    <>
+      <header class="app-bar">
+        <div class="app-bar__brand">
           <h1 class="app__title">{t("app.title", lang)}</h1>
           <p class="app__subtitle">{t("app.subtitle", lang)}</p>
         </div>
@@ -186,6 +191,7 @@ export function App() {
         </nav>
       </header>
 
+      <main class={`app${view === "settings" ? " app--wide" : ""}`}>
       {view === "main" ? (
         <MainView
           lang={lang}
@@ -221,6 +227,7 @@ export function App() {
         <SettingsView
           lang={lang}
           settings={settings}
+          workbenchDomain={urls ? new URL(urls.domain).hostname : null}
           onToast={pushToast}
           onSettingsChange={setSettings}
           onLanguageChange={changeLanguage}
@@ -241,6 +248,7 @@ export function App() {
           </div>
         ))}
       </div>
-    </main>
+      </main>
+    </>
   );
 }

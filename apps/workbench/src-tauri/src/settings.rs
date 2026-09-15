@@ -144,6 +144,11 @@ pub struct Settings {
     /// 局域网边界守卫（spec 010：例外开关标记，plan §4.1）
     #[serde(default)]
     pub lan_guard: LanGuardSettings,
+    /// 访问域名（spec 013：域名单一数据来源；空 = 未配置，消费点回落
+    /// `consts::DOMAIN`。唯一写入口是装机向导 `wizard_set_domain` 双写；
+    /// 旧版文件缺字段 → serde default → 空串）
+    #[serde(default)]
+    pub domain: String,
 }
 
 impl Default for Settings {
@@ -161,6 +166,7 @@ impl Default for Settings {
             domain_heartbeat: true,
             stack_dir: crate::consts::DEFAULT_STACK_DIR.to_string(),
             lan_guard: LanGuardSettings::default(),
+            domain: String::new(),
         }
     }
 }
@@ -188,6 +194,9 @@ pub struct SettingsPatch {
     pub stack_dir: Option<String>,
     /// 局域网边界守卫整块写入（spec 010：开关标记 + since 同块提交，mesh 同款）
     pub lan_guard: Option<LanGuardSettings>,
+    /// 访问域名（spec 013：向导双写入口；Some 值经 normalize_domain 归一+校验，
+    /// 空串 = 显式未配置）
+    pub domain: Option<String>,
 }
 
 /// scriptsDirOverride 三态反序列化（仅字段出现时被调用）：
@@ -294,7 +303,53 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Result<Settings, S
     if let Some(v) = patch.lan_guard {
         merged.lan_guard = v;
     }
+    if let Some(v) = patch.domain.as_deref() {
+        merged.domain = normalize_domain(v)?;
+    }
     Ok(merged)
+}
+
+/// 域名归一（spec 013 T1，纯函数）：去首尾空白与尾随点、小写化；空输入 =
+/// 未配置语义放行（Ok("")，消费点回落默认）；非空过 `validate_domain`
+/// 白名单（spec 011 注入防线复用，错误文案指明 domain 字段）。
+pub fn normalize_domain(input: &str) -> Result<String, String> {
+    let d = input.trim().trim_end_matches('.').to_ascii_lowercase();
+    if d.is_empty() {
+        return Ok(String::new());
+    }
+    crate::scripts::validate_domain(&d)?;
+    Ok(d)
+}
+
+// ── 生效域名解析（spec 013 T2：全部消费点的唯一取值入口）────────────────────
+// 消费点不得再直读 consts::DOMAIN / DOMAIN_ROOT / WORKBENCH_URL（spec §4）。
+
+/// 生效域名：settings.domain 非空且合法 → 归一后用之；空/非法 → 回落编译期
+/// 默认（研发机既有部署兼容，spec AC3）。非法值按未配置容错回落，不 panic
+/// （spec §4 异常路径）。入参取 `Settings.domain`，&str 保持纯函数。
+pub fn effective_domain(domain_setting: &str) -> String {
+    match normalize_domain(domain_setting) {
+        Ok(d) if !d.is_empty() => d,
+        _ => crate::consts::DOMAIN.to_string(),
+    }
+}
+
+/// 生效根域（DNSPod API 的 Domain 参数）：由生效完整域名末两段派生
+/// （沿用 wizard::split_domain 既有算法，spec 非目标：不改拆分规则）。
+pub fn effective_root(full_domain: &str) -> String {
+    crate::wizard::split_domain(full_domain).0
+}
+
+/// 生效工作台 URL（地址区/心跳/托盘）：`https://<域名>/`（与既有
+/// consts::WORKBENCH_URL 形态一致，带尾斜杠）。
+pub fn workbench_url_of(full_domain: &str) -> String {
+    format!("https://{full_domain}/")
+}
+
+/// 生效工作台 URL（一步到位组合）：settings.domain → 解析生效域名 → URL。
+/// 命令层/托盘的标准取值形态（spec 013 T4）。
+pub fn effective_workbench_url(domain_setting: &str) -> String {
+    workbench_url_of(&effective_domain(domain_setting))
 }
 
 /// 栈目录规整（纯函数）：去首尾空白与尾随分隔符；未以 `cloudcli-https`
@@ -436,6 +491,8 @@ mod tests {
         assert_eq!(d.stack_dir, crate::consts::DEFAULT_STACK_DIR);
         // spec 010：例外开关标记默认关（AC5 默认收口态）
         assert_eq!(d.lan_guard, LanGuardSettings { exception_enabled: false, exception_since_ms: 0 });
+        // spec 013：生效域名默认未配置（空 = 消费点回落 consts::DOMAIN）
+        assert_eq!(d.domain, "", "domain 默认空串（未配置）");
     }
 
     /// spec 010 plan §4.1：例外标记 serde default（旧文件缺字段 → false/0，其余
@@ -476,10 +533,127 @@ mod tests {
         cleanup(&path);
     }
 
+    /// spec 013 T2：生效域名解析——配置值/空回落/非法回落/根域与 URL 派生
+    #[test]
+    fn effective_domain_resolution_and_fallback() {
+        // AC1：配置了用户域名 → 生效值为它（顺带归一）
+        assert_eq!(effective_domain(" ai.example.com "), "ai.example.com");
+        // AC3：未配置（空）→ 回落编译期默认
+        assert_eq!(effective_domain(""), crate::consts::DOMAIN);
+        assert_eq!(effective_domain("   "), crate::consts::DOMAIN);
+        // §4 异常路径：非法值按未配置容错回落，不 panic
+        assert_eq!(effective_domain("bad;domain"), crate::consts::DOMAIN);
+        assert_eq!(effective_domain("a..b"), crate::consts::DOMAIN);
+
+        // 根域派生（沿用 split_domain 末两段算法）
+        assert_eq!(effective_root("ai.example.com"), "example.com");
+        assert_eq!(effective_root("ai.jackqi.cn"), "jackqi.cn");
+        assert_eq!(effective_root("example.com"), "example.com", "裸根域原样");
+
+        // URL 派生（与 consts::WORKBENCH_URL 形态一致，带尾斜杠）
+        assert_eq!(workbench_url_of("ai.example.com"), "https://ai.example.com/");
+        assert_eq!(
+            workbench_url_of(&effective_domain("")),
+            crate::consts::WORKBENCH_URL,
+            "回落态与既有常量形态一致"
+        );
+    }
+
+    /// spec 013 T1：旧版文件缺 domain 字段 → serde default → 空串，其余字段保留
+    #[test]
+    fn domain_field_legacy_file_compat() {
+        let path = temp_settings_path("domain-legacy");
+        fs::write(
+            &path,
+            r#"{"version":1,"language":"zh","mesh":{"networkName":"kept","virtualIp":"10.9.9.1","virtualCidr":"10.9.9.0/24","peers":["tcp://k:1"]}}"#,
+        )
+        .expect("写入失败");
+        match load_from(&path) {
+            LoadOutcome::Loaded(s) => {
+                assert_eq!(s.domain, "", "缺 domain 字段 → 空串（未配置）");
+                assert_eq!(s.mesh.network_name, "kept", "其余字段不受影响");
+            }
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        cleanup(&path);
+    }
+
+    /// spec 013 T1：normalize_domain 归一与白名单——trim/尾点/小写、空输入 =
+    /// 未配置放行、非法形态拒绝（复用 validate_domain，文案指明 domain）
+    #[test]
+    fn normalize_domain_rules() {
+        // 归一：空白与尾随点去除、大小写归一
+        assert_eq!(normalize_domain(" AI.Example.COM. ").expect("应通过"), "ai.example.com");
+        // 空输入：显式未配置语义，放行为空串（消费点回落默认）
+        assert_eq!(normalize_domain("").expect("空输入应放行"), "");
+        assert_eq!(normalize_domain("   ").expect("空白应放行"), "");
+        assert_eq!(normalize_domain(".").expect("仅尾点应放行为空"), "");
+        // 非法形态：注入字符 / 非 ASCII / 空段（文案应指明 domain 字段）
+        for bad in ["ai;example.com", "ai example.com", "ai。example", "a..b", "-ai.example.com"] {
+            let err = normalize_domain(bad)
+                .expect_err(&format!("非法域名应拒绝：{bad}"));
+            assert!(err.contains("domain"), "文案应指明字段：{err}");
+        }
+    }
+
+    /// spec 013 T1：SettingsPatch.domain 合并——合法值归一写入、非法值 Err、
+    /// None 不动既有值
+    #[test]
+    fn apply_patch_domain_normalizes_and_validates() {
+        let mut base = Settings::default();
+        base.domain = "keep.example.com".into();
+
+        // None：不动
+        let untouched = apply_patch(&base, &SettingsPatch::default()).expect("空补丁应通过");
+        assert_eq!(untouched.domain, "keep.example.com");
+
+        // 合法值：归一写入
+        let merged = apply_patch(
+            &base,
+            &SettingsPatch { domain: Some(" My.Domain.Org. ".into()), ..Default::default() },
+        )
+        .expect("合法域名应通过");
+        assert_eq!(merged.domain, "my.domain.org");
+        assert_eq!(merged.stack_dir, base.stack_dir, "未提交字段不变");
+
+        // 显式空串：未配置语义
+        let cleared = apply_patch(
+            &base,
+            &SettingsPatch { domain: Some("  ".into()), ..Default::default() },
+        )
+        .expect("空串应通过");
+        assert_eq!(cleared.domain, "");
+
+        // 非法值：Err 且 base 不变
+        let err = apply_patch(
+            &base,
+            &SettingsPatch { domain: Some("evil;domain".into()), ..Default::default() },
+        )
+        .expect_err("非法域名应拒绝");
+        assert!(err.contains("domain"), "文案应指明字段：{err}");
+    }
+
+    /// spec 013 T1：SettingsState 层非法 domain 写入即拒——Err 于写盘之前，
+    /// 内存与磁盘均为旧值（对齐 spec 011 stack_dir 源头闸口径）
+    #[test]
+    fn state_patch_rejects_bad_domain_and_keeps_old_value() {
+        let path = temp_settings_path("domain-inject");
+        let (state, _) = SettingsState::load_at(path.clone());
+        let good = SettingsPatch { domain: Some("ok.example.com".into()), ..Default::default() };
+        state.patch(&good).expect("合法写入应通过");
+
+        let bad = SettingsPatch { domain: Some("bad'domain.com".into()), ..Default::default() };
+        assert!(state.patch(&bad).is_err(), "写入即拒");
+        assert_eq!(state.current().domain, "ok.example.com", "内存旧值不动");
+
+        let (state2, _) = SettingsState::load_at(path.clone());
+        assert_eq!(state2.current().domain, "ok.example.com", "磁盘未被写脏");
+        cleanup(&path);
+    }
+
     /// spec 010：SettingsPatch.lan_guard 整块写入（mesh 同款）；空补丁不动既有值
     #[test]
-    fn apply_patch_lan_guard_block_write() {
-        let base = Settings::default();
+    fn apply_patch_lan_guard_block_write() {        let base = Settings::default();
         // 空补丁：原样
         let untouched =
             apply_patch(&base, &SettingsPatch::default()).expect("空补丁应通过");
@@ -618,6 +792,7 @@ mod tests {
             "\"exitAction\":\"keep\"",
             "\"scriptsDirOverride\":null",
             "\"accessChannel\":\"mesh\"",
+            "\"domain\":\"\"",
             "\"mesh\":{",
             "\"networkName\":\"ai-remote\"",
             "\"virtualIp\":\"10.126.126.1\"",

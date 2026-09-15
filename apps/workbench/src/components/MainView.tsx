@@ -266,6 +266,7 @@ export function MainView(props: MainViewProps) {
         settings={settings}
         meshStatus={meshStatus}
         lanHealth={lanHealth}
+        domain={urls ? new URL(urls.domain).hostname : null}
         onLanRefresh={refreshLan}
         onToast={onToast}
       />
@@ -314,7 +315,7 @@ export function MainView(props: MainViewProps) {
       </section>
 
       {/* 低频操作区（折叠） */}
-      <ToolsSection lang={lang} scripts={scripts} onToast={onToast} />
+      <ToolsSection lang={lang} scripts={scripts} settings={settings} onToast={onToast} />
     </>
   );
 }

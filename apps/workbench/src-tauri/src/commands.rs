@@ -23,10 +23,13 @@ pub fn get_status(orch: tauri::State<'_, Orchestrator>) -> Vec<ComponentStatus> 
     orch.statuses()
 }
 
-/// 三端访问地址（AC19 地址区）
+/// 三端访问地址（AC19 地址区；spec 013 T4：域名行 = 生效域名 URL）
 #[tauri::command]
-pub fn get_urls() -> urls::AccessUrls {
-    urls::access_urls()
+pub fn get_urls(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> urls::AccessUrls {
+    let cur = settings.current();
+    urls::access_urls(&crate::settings::effective_workbench_url(&cur.domain))
 }
 
 /// 一键启动（AC1/AC3/AC6）：立即返回，状态经事件推进；部分失败按组件实况展示
@@ -88,13 +91,16 @@ fn summarize_stop(outcomes: Vec<(ComponentId, StopOutcome)>) -> Result<(), Strin
 }
 
 /// 用默认浏览器打开目标（workbench/local/lan/domain，AC19；ddns_admin 已随
-/// 直连通道退役——spec 008）
+/// 直连通道退役——spec 008；spec 013 T4：workbench/domain = 生效域名 URL）
 #[tauri::command]
 pub fn open_external(
     kind: ExternalKind,
     lang_state: tauri::State<'_, LanguageState>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
 ) -> Result<(), String> {
-    let url = urls::external_url(kind, &urls::access_urls());
+    let cur = settings.current();
+    let urls = urls::access_urls(&crate::settings::effective_workbench_url(&cur.domain));
+    let url = urls::external_url(kind, &urls);
     scripts::open_url(&url).map_err(|code| lang::shell_error_text(code, lang_state.current()))
 }
 
@@ -387,23 +393,39 @@ pub async fn mesh_uninstall_service(
 pub async fn mesh_sync_dns(
     settings: tauri::State<'_, crate::settings::SettingsState>,
 ) -> Result<usize, String> {
-    use crate::consts::{DOMAIN, DOMAIN_ROOT};
-
     let cur = settings.current();
     if cur.access_channel != crate::settings::AccessChannel::Mesh {
         return Err("组网通道未现役：请先在向导选择组网，或到主界面切换到组网".into());
     }
     let cred = crate::dns_api::read_credential(&cur.stack_dir)
         .ok_or("腾讯云凭证不存在：请先完成向导「腾讯云前置」阶段（写入密钥）")?;
-    let sub = crate::dns_api::subdomain_of(DOMAIN, DOMAIN_ROOT).to_string();
+    // spec 013 T4：根域/子域派生自生效域名（向导录入），不再直读 consts；
+    // spec 013 验收期修订（AC9）：不回落默认域名——未配置就点同步，宁可明确
+    // 报错也不能拿研发者域名配用户密钥试错（真机 2026-09-15 NoPermissionToOperateDomain）
+    let domain = resolve_sync_domain(&cur.domain)?;
+    let root = crate::settings::effective_root(&domain);
+    let sub = crate::dns_api::subdomain_of(&domain, &root).to_string();
     let virtual_ip = cur.mesh.virtual_ip.clone();
     let count = tauri::async_runtime::spawn_blocking(move || {
-        crate::dns_api::sync_to_mesh(&cred, DOMAIN_ROOT, &sub, &virtual_ip)
+        crate::dns_api::sync_to_mesh(&cred, &root, &sub, &virtual_ip)
     })
     .await
     .map_err(|e| format!("DNS 同步线程失败：{e}"))??;
     log::info!("组网 DNS 同步完成（{count} 条记录操作）");
     Ok(count)
+}
+
+/// 同步 DNS 的域名校核（spec 013 AC9，2026-09-15 验收期修订）：归一
+/// （去空白/尾点、小写）后返回；**空即 Err**——本链路不走 `effective_domain`
+/// 回落，避免未配置时静默拿研发者域名发起 DNSPod 操作。
+pub fn resolve_sync_domain(raw: &str) -> Result<String, String> {
+    let d = raw.trim().trim_end_matches('.').to_ascii_lowercase();
+    if d.is_empty() {
+        return Err(
+            "同步 DNS 失败：域名传入为空——请先在装机向导「腾讯云前置」录入你的工作台域名".into(),
+        );
+    }
+    Ok(d)
 }
 
 /// 组网诊断（T16，AC13）：六项只读探测——服务态/密钥就绪/逐条对端 TCP 可达/
@@ -416,7 +438,9 @@ pub async fn mesh_diagnostics(
 ) -> Result<Vec<crate::mesh::DiagItem>, String> {
     let snapshot = settings.current();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::mesh::run_diagnostics(&snapshot.mesh, &snapshot.stack_dir, crate::consts::DOMAIN)
+        // spec 013 T4：诊断第⑥项「域名链路」检查生效域名
+        let domain = crate::settings::effective_domain(&snapshot.domain);
+        crate::mesh::run_diagnostics(&snapshot.mesh, &snapshot.stack_dir, &domain)
     })
     .await
     .map_err(|e| format!("诊断任务失败：{e}"))
@@ -609,9 +633,12 @@ pub async fn lan_guard_ensure_whitelist(
 pub async fn check_dns_alignment(
     settings: tauri::State<'_, crate::settings::SettingsState>,
 ) -> Result<DnsAlignment, String> {
-    use crate::consts::{DOMAIN, DOMAIN_ROOT};
-    let virtual_ip = settings.current().mesh.virtual_ip.clone();
-    let probe = tauri::async_runtime::spawn_blocking(move || run_dns_probe(DOMAIN_ROOT, DOMAIN))
+    let cur = settings.current();
+    let virtual_ip = cur.mesh.virtual_ip.clone();
+    // spec 013 T4：对齐检测目标 = 生效域名（根域 + 完整域名派生）
+    let domain = crate::settings::effective_domain(&cur.domain);
+    let root = crate::settings::effective_root(&domain);
+    let probe = tauri::async_runtime::spawn_blocking(move || run_dns_probe(&root, &domain))
         .await
         .map_err(|e| format!("DNS 检测线程失败：{e}"))??;
     Ok(judge_dns_mesh(
@@ -678,13 +705,18 @@ pub fn open_stack_dir(
 }
 
 /// 即时域名探测（「通道体检」消费；单次 8s 超时。探测后 poke 心跳立即
-/// 补测一轮，保持地址区状态点与体检结论一致，避免红绿矛盾）
+/// 补测一轮，保持地址区状态点与体检结论一致，避免红绿矛盾。
+/// spec 013 T4：探测目标 = 生效域名 URL）
 #[tauri::command]
 pub async fn check_domain_health_now(
     monitor: tauri::State<'_, std::sync::Arc<heartbeat::HealthMonitor>>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
 ) -> Result<heartbeat::ProbeOutcome, String> {
-    use crate::consts::WORKBENCH_URL;
-    let outcome = tauri::async_runtime::spawn_blocking(|| heartbeat::probe_once(WORKBENCH_URL))
+    let url = {
+        let cur = settings.current();
+        crate::settings::effective_workbench_url(&cur.domain)
+    };
+    let outcome = tauri::async_runtime::spawn_blocking(move || heartbeat::probe_once(&url))
         .await
         .map_err(|e| format!("探测线程失败：{e}"))?;
     monitor.poke();
@@ -727,6 +759,27 @@ mod tests {
         // 编译期语义：Orchestrator 可跨线程共享（spawn_blocking 前提）
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Arc<Orchestrator>>();
+    }
+
+    // ── spec 013 验收期修订（AC9）：同步 DNS 不回落默认域名 ───────────────
+
+    #[test]
+    fn sync_domain_empty_rejects_with_guidance() {
+        // 未配置（空/纯空白/仅尾点）→ 明确报错，绝不回落 consts::DOMAIN 试错
+        for raw in ["", "   ", ".", "  .  "] {
+            let err = resolve_sync_domain(raw).unwrap_err();
+            assert!(err.contains("域名传入为空"), "{raw:?} → {err}");
+            assert!(!err.contains("jackqi"), "报错不得引导到研发者域名：{err}");
+        }
+    }
+
+    #[test]
+    fn sync_domain_normalizes_without_fallback() {
+        // 合法值归一（去空白/尾点、小写）；已配置值原样通过，不注入默认域名
+        assert_eq!(resolve_sync_domain(" AI.Example.COM. ").unwrap(), "ai.example.com");
+        assert_eq!(resolve_sync_domain("ai.example.com").unwrap(), "ai.example.com");
+        let ok = resolve_sync_domain("box.example.com").unwrap();
+        assert!(!ok.contains("jackqi"));
     }
 
     // ── spec 010 T4：组合派发构造面 + 例外复测循环 ────────────────────────

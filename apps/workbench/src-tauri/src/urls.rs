@@ -5,7 +5,7 @@
 //! - 地址口径与 sprint0 menu.ps1 菜单 3 对齐：
 //!   本机 `http://localhost:3001` / 局域网 `http://<ip>:3001` / 域名 `https://ai.jackqi.cn`。
 
-use crate::consts::{CLOUDCLI_PORT, WORKBENCH_URL};
+use crate::consts::CLOUDCLI_PORT;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 
@@ -21,6 +21,10 @@ pub struct AccessUrls {
 /// LAN 探测目标（公网 DNS 地址，仅用于选路，不发包）
 pub const LAN_PROBE_TARGET: (&str, u16) = ("8.8.8.8", 80);
 
+/// urls 变更事件（spec 013 验收期补漏）：向导改域名后推新快照，展示层
+/// （地址区/只读卡/组网卡）免重启跟随——快照启动兜底、变化走事件的既有格局
+pub const EVENT_URLS_CHANGED: &str = "urls://changed";
+
 /// 探测默认路由上的本机局域网 IPv4（失败返回 None：无路由/离线等）
 pub fn detect_lan_ip() -> Option<Ipv4Addr> {
     let sock = UdpSocket::bind("0.0.0.0:0").ok()?;
@@ -35,8 +39,10 @@ pub fn detect_lan_ip() -> Option<Ipv4Addr> {
     }
 }
 
-/// 纯构造：探测结果 → 三端地址（探测失败时局域网行回落本机地址）
-pub fn build_urls(lan: Option<Ipv4Addr>) -> AccessUrls {
+/// 纯构造：探测结果 → 三端地址（探测失败时局域网行回落本机地址）。
+/// `domain_url` 为生效工作台 URL（spec 013：调用方经
+/// `settings::effective_workbench_url` 取得，本模块不再直读常量）。
+pub fn build_urls(lan: Option<Ipv4Addr>, domain_url: &str) -> AccessUrls {
     let local = format!("http://localhost:{CLOUDCLI_PORT}/");
     let lan = lan
         .map(|ip| format!("http://{ip}:{CLOUDCLI_PORT}/"))
@@ -44,13 +50,13 @@ pub fn build_urls(lan: Option<Ipv4Addr>) -> AccessUrls {
     AccessUrls {
         local,
         lan,
-        domain: WORKBENCH_URL.to_string(),
+        domain: domain_url.to_string(),
     }
 }
 
 /// 真实入口：探测 + 构造
-pub fn access_urls() -> AccessUrls {
-    build_urls(detect_lan_ip())
+pub fn access_urls(domain_url: &str) -> AccessUrls {
+    build_urls(detect_lan_ip(), domain_url)
 }
 
 // ── 外部打开目标（open_external 命令的 kind，plan §5.1）─────────────────────
@@ -92,17 +98,30 @@ mod tests {
 
     #[test]
     fn build_urls_shapes_align_with_sprint0_menu() {
-        // menu.ps1 菜单 3 口径：localhost:3001 / <ip>:3001 / https://ai.jackqi.cn
-        let urls = build_urls(Some(Ipv4Addr::new(192, 168, 1, 5)));
+        // menu.ps1 菜单 3 口径：localhost:3001 / <ip>:3001 / https://<域名>
+        // （spec 013：域名行来自调用方传入的生效 URL，研发实例默认值经常量传入）
+        let urls = build_urls(Some(Ipv4Addr::new(192, 168, 1, 5)), crate::consts::WORKBENCH_URL);
         assert_eq!(urls.local, "http://localhost:3001/");
         assert_eq!(urls.lan, "http://192.168.1.5:3001/");
         assert_eq!(urls.domain, "https://ai.jackqi.cn/");
     }
 
+    /// spec 013 AC1：生效域名经参数进入地址区（用户域名形态）
+    #[test]
+    fn build_urls_uses_effective_domain_param() {
+        let urls = build_urls(None, "https://ai.example.com/");
+        assert_eq!(urls.domain, "https://ai.example.com/");
+        // 回落态形态一致性：effective_workbench_url(未配置) == 常量
+        assert_eq!(
+            crate::settings::effective_workbench_url(""),
+            crate::consts::WORKBENCH_URL
+        );
+    }
+
     #[test]
     fn build_urls_falls_back_to_local_when_lan_unresolved() {
         // 探测失败：局域网行回落本机地址（UI 仍可用，不显示空串）
-        let urls = build_urls(None);
+        let urls = build_urls(None, crate::consts::WORKBENCH_URL);
         assert_eq!(urls.lan, urls.local);
         assert_eq!(urls.local, "http://localhost:3001/");
     }
@@ -117,7 +136,7 @@ mod tests {
 
     #[test]
     fn external_url_maps_every_kind() {
-        let urls = build_urls(Some(Ipv4Addr::new(10, 0, 0, 2)));
+        let urls = build_urls(Some(Ipv4Addr::new(10, 0, 0, 2)), crate::consts::WORKBENCH_URL);
         assert_eq!(external_url(ExternalKind::Workbench, &urls), urls.domain);
         assert_eq!(external_url(ExternalKind::Domain, &urls), urls.domain);
         assert_eq!(external_url(ExternalKind::Local, &urls), "http://localhost:3001/");

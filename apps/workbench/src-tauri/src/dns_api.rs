@@ -352,9 +352,14 @@ fn apply_ops(cred: &TcCredential, root: &str, sub: &str, ops: Vec<RecordOp>) -> 
 /// 同步到组网（spec 007 AC6/AC7）：CNAME 全删 + A upsert 值=虚拟 IP（幂等）。
 /// 虚拟 IP 是私网段——公网不可路由，达成「公网解析仅指向私网段」（AC7）。
 /// CNAME 残留清理（D6：卸载后兜底）复用本函数的 reconcile 删除语义。
+/// 报错带域名上下文（spec 013 AC10，2026-09-15 需求方反馈）：API 错误原样
+/// 透传时看不出操作的是哪个域名——「域名：<sub.root>，<API 错误>」让错值可辨
 pub fn sync_to_mesh(cred: &TcCredential, root: &str, sub: &str, virtual_ip: &str) -> Result<usize, String> {
-    let current = list_records(cred, root, sub)?;
+    let fqdn = if sub.is_empty() { root.to_string() } else { format!("{sub}.{root}") };
+    let with_ctx = |e: String| format!("域名：{fqdn}，{e}");
+    let current = list_records(cred, root, sub).map_err(with_ctx)?;
     apply_ops(cred, root, sub, reconcile(&current, &DnsTarget::Mesh(virtual_ip.to_string())))
+        .map_err(with_ctx)
 }
 
 // ── DNS 对齐判定（spec 008 自 tunnel.rs 迁入；AC8：A=虚拟 IP）──────────────

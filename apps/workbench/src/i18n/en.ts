@@ -231,9 +231,9 @@ export const en = {
   "tunnel.dnsChecking": "Checking…",
   "tunnel.dnsFailed": "DNS check failed (network or resolver error); please retry later",
 
-  // Mesh DNS guidance (spec 007; the only channel since spec 008)
+  // Mesh DNS guidance (spec 007; the only channel since spec 008; spec 013: {domain} placeholder)
   "tunnel.dnsGuideMesh":
-    "DNS pending: at Tencent Cloud DNS, add an A record for ai.jackqi.cn pointing to the virtual IP: {target} (public resolvers may take up to one TTL, ~10 minutes)",
+    "DNS pending: at Tencent Cloud DNS, add an A record for {domain} pointing to the virtual IP: {target} (public resolvers may take up to one TTL, ~10 minutes)",
   "tunnel.dnsMismatchA":
     "A record mismatch: currently {actual}; the mesh channel expects {target} (the virtual IP). Please fix it at Tencent Cloud DNS",
   "tunnel.dnsCnameLeftMesh":
@@ -304,7 +304,7 @@ export const en = {
   "wizard.tencent.desc": "Both trusted certificates and DNS record maintenance (mesh A-record sync) rely on the Tencent Cloud key. Do these three steps once.",
   "wizard.tencent.step1": "Open the Tencent Cloud CAM console and create a key:",
   "wizard.tencent.step2": "Recommended: create a sub-user granted QcloudDNSPodFullAccess only, then create keys for it",
-  "wizard.tencent.step3": "In the console \"DNSPod\", make sure your domain has a DNS zone (e.g. ai.jackqi.cn)",
+  "wizard.tencent.step3": "In the console \"DNSPod\", make sure your domain has a DNS zone (e.g. {domain})",
   "wizard.tencent.keyBtn": "Enter access keys (hidden input)",
   "wizard.https.desc": "Downloads Caddy (with the cert plugin), generates configs and opens 443. The certificate is issued automatically once Caddy starts (about 1-2 minutes, no inbound 80/443 needed).",
   "wizard.https.run": "Install HTTPS stack (admin)",
@@ -342,7 +342,7 @@ export const en = {
   "wizard.channel.meshApplyBtn": "Apply & restart (admin)",
   "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
   "wizard.channel.meshDnsHint":
-    "Automatically points the ai.jackqi.cn A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
+    "Automatically points the {domain} A record at the virtual IP (needs the Tencent Cloud key ready); member devices may also skip the domain and use the virtual IP directly",
   "wizard.channel.meshDnsDone": "DNS synced ({n} record operations)",
   "wizard.finalize.desc": "Finish: review your goals (autostart is toggled in Settings).",
   "wizard.summary.lan": "Local services",

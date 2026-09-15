@@ -52,6 +52,8 @@ export interface Settings {
   domainHeartbeat: boolean;
   stackDir: string;
   lanGuard: LanGuardSettings;
+  /** 访问域名（spec 013；空 = 未配置，后端消费点回落默认） */
+  domain: string;
 }
 
 /** 补丁（save_settings 入参；只提交要改的字段） */
@@ -66,6 +68,8 @@ export interface SettingsPatch {
   domainHeartbeat?: boolean;
   stackDir?: string;
   lanGuard?: LanGuardSettings;
+  /** 访问域名（spec 013；向导双写入口） */
+  domain?: string;
 }
 
 /** DNS 对齐结论（check_dns_alignment 载荷；tag="kind" camelCase；spec 008

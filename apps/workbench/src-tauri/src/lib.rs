@@ -282,10 +282,17 @@ pub fn run() {
             app.manage(exit_flow::ExitGate::new());
 
             // ── 域名心跳（spec 005）：60s 周期探测，变化/每轮发 domain://health ──
+            // spec 013 T5：探测目标经 provider 每轮实时取生效域名（改域名免重启）
             let health_sink_handle = app.handle().clone();
             let health_enabled_handle = app.handle().clone();
+            let health_url_handle = app.handle().clone();
             let monitor = std::sync::Arc::new(heartbeat::HealthMonitor::new(
-                consts::WORKBENCH_URL,
+                std::sync::Arc::new(move || {
+                    let cur = health_url_handle
+                        .state::<settings::SettingsState>()
+                        .current();
+                    settings::effective_workbench_url(&cur.domain)
+                }),
             ));
             monitor.spawn(
                 std::sync::Arc::new(HealthSinkImpl { app: health_sink_handle }),

@@ -46,6 +46,8 @@ const TOC_LINE_PX = 120;
 export interface SettingsViewProps {
   lang: Lang;
   settings: Settings;
+  /** 生效域名（spec 013：后端 get_urls 下发解析；null = 尚未加载） */
+  workbenchDomain: string | null;
   onToast: (text: string, kind?: "info" | "success" | "error") => void;
   /** 设置对象变更（乐观更新/回滚/服务端合并结果） */
   onSettingsChange: (s: Settings) => void;
@@ -54,15 +56,15 @@ export interface SettingsViewProps {
 }
 
 // 只读展示常量：与 src-tauri/src/consts.rs 同步维护（改这里必须改那里，重跑安装脚本才生效）
+// spec 013：域名行不再走本表——生效域名经 get_urls 下发（props.workbenchDomain）
 const READONLY = {
   cloudcliPort: 3001,
   caddyPort: 443,
   stackDir: "D:\\Software\\cloudcli-https",
-  domain: "ai.jackqi.cn",
 } as const;
 
 export function SettingsView(props: SettingsViewProps) {
-  const { lang, settings, onToast, onSettingsChange, onLanguageChange } = props;
+  const { lang, settings, workbenchDomain, onToast, onSettingsChange, onLanguageChange } = props;
 
   // ── 左侧目录（2026-09-13 需求方反馈）：点击平滑跳转 + 滚动高亮当前节 ──────
   const [activeSec, setActiveSec] = useState<string>(SECTIONS[0].id);
@@ -344,7 +346,7 @@ export function SettingsView(props: SettingsViewProps) {
   const readonlyRows: { label: string; value: string }[] = [
     { label: t("settings.portCloudcli", lang), value: String(READONLY.cloudcliPort) },
     { label: t("settings.portCaddy", lang), value: String(READONLY.caddyPort) },
-    { label: t("settings.domain", lang), value: READONLY.domain },
+    { label: t("settings.domain", lang), value: workbenchDomain ?? "" },
   ];
 
   return (
