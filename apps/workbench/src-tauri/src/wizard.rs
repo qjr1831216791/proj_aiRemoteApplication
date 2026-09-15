@@ -515,17 +515,31 @@ pub async fn wizard_detect(
     Ok(saved)
 }
 
-/// 设置访问域名（非敏感；AC5 校验经由 detect）
-#[tauri::command]
-pub fn wizard_set_domain(
-    holder: tauri::State<'_, WizardHolder>,
-    domain: String,
-    app: tauri::AppHandle,
-) -> Result<WizardState, String> {
+/// 向导域名写入核心（spec 013 T3 双写的 settings 侧）：归一 → 011 白名单
+/// 源头闸（validate_domain，经 settings.patch 的 normalize_domain）→ 落盘。
+/// Err 时 settings 不动，调用方（命令层）亦不写 wizard-state，两处保持一致。
+pub fn apply_domain_to(domain: &str, settings: &SettingsState) -> Result<String, String> {
     let d = domain.trim().trim_end_matches('.').to_ascii_lowercase();
     if d.is_empty() || !d.contains('.') {
         return Err("域名格式不合法".into());
     }
+    settings.patch(&crate::settings::SettingsPatch {
+        domain: Some(d.clone()),
+        ..Default::default()
+    })?;
+    Ok(d)
+}
+
+/// 设置访问域名（非敏感；AC5 校验经由 detect；spec 013 T3：双写 settings
+/// ——向导录入即全链路生效，settings.domain 为运行时单一来源）
+#[tauri::command]
+pub fn wizard_set_domain(
+    holder: tauri::State<'_, WizardHolder>,
+    settings: tauri::State<'_, SettingsState>,
+    domain: String,
+    app: tauri::AppHandle,
+) -> Result<WizardState, String> {
+    let d = apply_domain_to(&domain, &settings)?;
     let mut next = holder.current();
     next.domain = d;
     let saved = holder.replace(next)?;
@@ -617,6 +631,32 @@ mod tests {
         assert_eq!(split_domain("ai.jackqi.cn"), ("jackqi.cn".into(), "ai.jackqi.cn".into()));
         assert_eq!(split_domain("Jackqi.CN."), ("jackqi.cn".into(), "jackqi.cn".into()));
         assert_eq!(split_domain("localhost"), ("localhost".into(), "localhost".into()));
+    }
+
+    /// spec 013 T3：向导域名双写核心——settings 侧归一 + 011 白名单落盘；
+    /// Err 时 settings 不动（命令层据此保证 wizard-state 亦不写，两处一致）
+    #[test]
+    fn apply_domain_to_writes_settings_and_validates() {
+        let p = std::env::temp_dir().join(format!("wb-wiz-{}-domain.json", std::process::id()));
+        let _ = fs::remove_file(&p);
+        let (settings, _) = SettingsState::load_at(p.clone());
+
+        // 合法：归一写入，返回归一值
+        let d = apply_domain_to(" AI.Example.COM. ", &settings).expect("合法域名应通过");
+        assert_eq!(d, "ai.example.com");
+        assert_eq!(settings.current().domain, "ai.example.com", "settings 侧已写入");
+
+        // 空与无点：Err 且 settings 旧值不动
+        for bad in ["", "   ", "localhost"] {
+            assert!(apply_domain_to(bad, &settings).is_err(), "应拒绝：{bad:?}");
+        }
+        assert_eq!(settings.current().domain, "ai.example.com", "Err 后旧值不动");
+
+        // 011 注入防线（validate_domain）：Err 且不动
+        assert!(apply_domain_to("evil;domain.com", &settings).is_err());
+        assert_eq!(settings.current().domain, "ai.example.com");
+
+        let _ = fs::remove_file(&p);
     }
 
     #[test]

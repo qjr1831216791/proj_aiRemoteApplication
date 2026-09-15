@@ -12,7 +12,7 @@
 
 - [x] T1 `settings.rs` 新增 `domain` 字段（`#[serde(default)]` + `SettingsPatch` + 归一与 `validate_domain` 校验），旧格式文件兼容；单测覆盖：缺字段反序列化、空值、非法值拒绝写入（验收: AC3）✅ 2026-09-15（+`normalize_domain` 纯函数；4 新测试 + 2 既有测试扩充，cargo test 258 绿）
 - [x] T2 生效域名解析纯函数集（`effective_domain` / 根域派生 / `workbench_url_of`），回落 `consts::DOMAIN`；单测覆盖：配置值、空回落、非法值容错回落、根域/URL 派生（依赖: T1）（验收: AC3，支撑全部 AC）✅ 2026-09-15（落 `settings.rs`，回落态与 `WORKBENCH_URL` 形态一致性有断言）
-- [ ] T3 `wizard_set_domain` 双写 settings（同命令内原子完成，写入前过 T1 校验链）；单测断言 wizard-state 与 settings 同值（依赖: T1）（验收: AC2 前置）
+- [x] T3 `wizard_set_domain` 双写 settings（同命令内原子完成，写入前过 T1 校验链）；单测断言 wizard-state 与 settings 同值（依赖: T1）（验收: AC2 前置）✅ 2026-09-15（抽 `apply_domain_to` 核心：settings 侧归一+011 闸，Err 即两处均不写；命令加 `SettingsState` 注入，前端 invoke 不受影响）
 
 ## 阶段 2: 消费点接线（Rust）
 
