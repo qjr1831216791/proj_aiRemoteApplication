@@ -1,13 +1,21 @@
 /* 布局与组件样式（T1 骨架 + T13/T14/T15 扩展）：只用 tokens.css 令牌，不写裸色值 */
 
+/* 根壳：吸顶标题栏 + 内容列。min-height/flex 在根上做，footer 吸底仍由
+   .app（flex:1）内 .app__footer（margin-top:auto）承接，短页不缩短 */
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .app {
   max-width: 760px;
   margin: 0 auto;
-  padding: var(--sp-5) var(--sp-4);
+  padding: var(--sp-4) var(--sp-4) var(--sp-5);
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-  min-height: 100vh;
+  flex: 1;
 }
 
 /* 设置页放宽（2026-09-13）：左侧目录自成一列，卡片列仍按原宽度节奏排 */
@@ -15,13 +23,30 @@
   max-width: 1060px;
 }
 
-/* ── 页头 + 导航 ─────────────────────────────────────────────── */
-.app__header {
+/* ── 吸顶标题栏（2026-09-15 需求方反馈：主界面/设置页这一行统一 + 置顶）──
+   原先页头随内容列限宽（主界面 760 / 设置页 1060），切页时导航左右跳动；
+   现提出内容列、全窗宽常驻顶部，两页共用同一元素。滚动时内容从栏下穿过 */
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
   flex-wrap: wrap;
+  min-height: var(--appbar-h);
+  padding: var(--sp-1) var(--sp-4);
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
+}
+
+/* 品牌区：标题 + 副标题同行（基线对齐），栏高压在一行 */
+.app-bar__brand {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
 }
 
 .app__title {
@@ -31,7 +56,7 @@
 }
 
 .app__subtitle {
-  margin: var(--sp-1) 0 0;
+  margin: 0;
   color: var(--c-text-secondary);
   font-size: var(--fs-sm);
 }
@@ -704,7 +729,8 @@
 
 .settings-toc {
   position: sticky;
-  top: var(--sp-4);
+  /* 吸顶标题栏（--appbar-h）之下留一档呼吸位，滚动时目录不钻到栏下 */
+  top: calc(var(--appbar-h) + var(--sp-4));
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -742,9 +768,9 @@
   min-width: 0;
 }
 
-/* 跳转落点留呼吸位：scrollIntoView 后卡片标题不贴视口顶 */
+/* 跳转落点留呼吸位：scrollIntoView 后卡片标题落在吸顶标题栏之下，不贴栏不贴顶 */
 .settings-sections > .card {
-  scroll-margin-top: var(--sp-4);
+  scroll-margin-top: calc(var(--appbar-h) + var(--sp-2));
 }
 
 /* 窗口窄到装不下两列时（低于 Tauri 最小宽度 800，如浏览器预览），目录让位给内容 */
