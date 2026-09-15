@@ -155,15 +155,17 @@ pub type SharedHealth = Arc<std::sync::Mutex<Option<DomainHealth>>>;
 /// 心跳监测器：周期探测 + 防抖 + 变化即发（每轮都发，载荷轻）。
 /// 支持 poke：外部（如「通道体检」）触发即时补测，保持状态点与体检结论一致。
 pub struct HealthMonitor {
-    url: String,
+    /// 探测目标 provider（spec 013 AC5：每轮实时取——向导改域名下一轮即
+    /// 生效、免重启；装配层接 settings 生效域名，与 enabled 闭包同款先例）
+    url: Arc<dyn Fn() -> String + Send + Sync>,
     stop: Arc<AtomicBool>,
     poke: Arc<AtomicBool>,
 }
 
 impl HealthMonitor {
-    pub fn new(url: impl Into<String>) -> Self {
+    pub fn new(url: Arc<dyn Fn() -> String + Send + Sync>) -> Self {
         Self {
-            url: url.into(),
+            url,
             stop: Arc::new(AtomicBool::new(false)),
             poke: Arc::new(AtomicBool::new(false)),
         }
@@ -205,7 +207,9 @@ impl HealthMonitor {
                         return;
                     }
                     if enabled() {
-                        let outcome = probe_once(&me.url);
+                        // spec 013：探测目标每轮实时解析（改域名免重启即跟随）
+                        let url = (me.url)();
+                        let outcome = probe_once(&url);
                         if outcome.is_ok() {
                             failures = 0;
                         } else {
@@ -285,5 +289,71 @@ mod tests {
         // 其余 4xx/5xx 仍是「服务在但行为异常」
         assert_eq!(classify_status(404), (HealthKind::Status, Some(404)));
         assert_eq!(classify_status(500), (HealthKind::Status, Some(500)));
+    }
+
+    /// 记录 provider 返回序列的探测目标（探测 127.0.0.1 未监听端口：连接
+    /// 拒绝毫秒级返回，不发外网流量；sink no-op、enabled 恒真）
+    struct NoopSink;
+    impl HealthSink for NoopSink {
+        fn emit_health(&self, _health: &DomainHealth) {}
+    }
+
+    fn wait_until(pred: impl Fn() -> bool, timeout_ms: u64) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        while std::time::Instant::now() < deadline {
+            if pred() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("等待超时（{timeout_ms}ms）");
+    }
+
+    /// spec 013 AC5：探测目标每轮实时取自 provider——运行中变更返回值，
+    /// 下一轮探测即跟随（免重启）。若实现固化启动时单值，第二轮断言必失败。
+    #[test]
+    fn spawn_resolves_url_per_round_from_provider() {
+        let calls: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let target: std::sync::Arc<std::sync::Mutex<String>> =
+            std::sync::Arc::new(std::sync::Mutex::new("http://127.0.0.1:1/".into()));
+
+        let calls_c = calls.clone();
+        let target_c = target.clone();
+        let provider: Arc<dyn Fn() -> String + Send + Sync> = Arc::new(move || {
+            let v = target_c.lock().expect("目标锁").clone();
+            calls_c.lock().expect("记录锁").push(v.clone());
+            v
+        });
+
+        let monitor = Arc::new(HealthMonitor::new(provider));
+        let shared: SharedHealth = Arc::new(std::sync::Mutex::new(None));
+        monitor.spawn(
+            Arc::new(NoopSink),
+            Arc::new(|| true),
+            Arc::clone(&shared),
+        );
+
+        // 第一轮：poke 提前唤醒（100ms 步进），等 provider 首次被消费
+        monitor.poke();
+        wait_until(|| calls.lock().expect("记录锁").len() >= 1, 10_000);
+
+        // 运行中改目标 → 等待新值真正被消费（poke#1 触发的提前轮可能仍记
+        // 旧值，轮数计数是弱信号；直接等「末条 == 新值」这一 AC5 本义）
+        *target.lock().expect("目标锁") = "http://127.0.0.1:2/".into();
+        monitor.poke();
+        wait_until(
+            || {
+                calls.lock().expect("记录锁").last().map(|v| v == "http://127.0.0.1:2/").unwrap_or(false)
+            },
+            20_000,
+        );
+
+        let got = calls.lock().expect("记录锁").clone();
+        assert_eq!(got[0], "http://127.0.0.1:1/");
+        assert_eq!(
+            got.last().expect("至少两轮"),
+            "http://127.0.0.1:2/",
+            "变更后下一轮探测目标应取新值（AC5 免重启）"
+        );
     }
 }
