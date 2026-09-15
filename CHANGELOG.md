@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **域名单一数据来源（Spec 013）**：修复安装包分发给其他用户后暴露的域名硬编码缺陷——`ai.jackqi.cn` 以编译期常量写死，装机向导录入的用户域名从未被看板消费：①「同步 DNS」拿用户自己的腾讯云密钥操作研发者域名，报 `OperationDenied.NoPermissionToOperateDomain`；②「访问地址」区、设置页只读卡显示研发者域名；③心跳、托盘、DNS 对齐检测、mesh 诊断、中英文 6 处文案同错。现 `settings.json` 新增 `domain` 字段（装机向导「腾讯云前置」录入即双写，为唯一写入口；空/非法回落默认值，旧文件兼容），全部消费点经 `effective_domain` 解析取值——同步 DNS 派生用户自己的根域/子域、地址区与只读卡显示生效域名、心跳探测目标每轮实时解析（向导改域名免重启即生效）、托盘「打开工作台」与 mesh 诊断跟随、i18n 文案参数化 `{domain}`；`install-server.ps1` 收尾输出与 `uninstall-legacy.ps1` CNAME 残留探测改 `-Domain` 参数化，缺省不再以研发者域名为实际执行依据
+
 ## [0.7.0] - 2026-09-13
 
 Sprint 9 交付（Spec 011 攻击面加固 + Spec 012 install-client 退役，同迭代交付）：**工作台命令面硬化**（`domain`/`stack_dir` 双闸校验 + 值参数单引号包裹、EasyTier 二进制 SHA256 校验去短路、CSP 基线）、**Caddy 下载指纹锁定**（方案 A：URL 钉版 + 下载后哈希校验**严格先于落位**）、**443 入口 basic_auth 多账号门**（工作台发起 + 可见窗脚本取密，bcrypt 哈希落 `auth-accounts.json`、Caddyfile 标记段再生），以及傻瓜式组件升级脚本 `upgrade-component.ps1`。验收期真机发现并修复**登录死循环**（CloudCLI 前端 Bearer 头与 basic_auth 冲突 → `@noBearer` 匹配器）与**心跳探测 401 误判红标**，并固化**单门模式**（CloudCLI 官方平台模式运行，443 入口为唯一认证门）。另含设置页整批 UI 打磨与「启动后打开工作台页面」冗余选项移除。011 于 2026-09-13 验收 done（AC1~AC11 全勾，真机实测 / 自动化背书 / 未单独实测子项三分陈述，记录见其 acceptance-manual）。

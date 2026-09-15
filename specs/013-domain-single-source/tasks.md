@@ -26,7 +26,9 @@
 
 ## 阶段 4: 回归与收尾
 
-- [ ] T8 回归：`cargo test` 全绿 + `npm run build` 通过；`CHANGELOG.md` Unreleased 区登记；对照 spec.md 逐条验证 AC 并勾选（自动化项以测试为证，GUI/真机项执行手工清单：地址区显示、同步 DNS 真机（需求方自有域名）、托盘、文案走查）；spec/tasks/MOC 状态流转（依赖: T1~T7）（验收: 全部 AC）
+- [~] T8 回归：`cargo test` 全绿 + `npm run build` 通过；`CHANGELOG.md` Unreleased 区登记；对照 spec.md 逐条验证 AC 并勾选（自动化项以测试为证，GUI/真机项执行手工清单：地址区显示、同步 DNS 真机（需求方自有域名）、托盘、文案走查）；spec/tasks/MOC 状态流转（依赖: T1~T7）（验收: 全部 AC）
+  - ✅ 2026-09-15 自动化侧完成：cargo test 262 绿（新增 8 项：settings domain 4 + 生效解析 1 + wizard 双写 1 + 心跳 provider 1 + tool_plan 透传扩 1）+ tsc/vite 构建过 + PS Parser 双脚本 OK + `src/` 与 `resources/bin` 域名字面量清零（consts 回落默认值除外）+ CHANGELOG 已登记
+  - ⏳ 待需求方真机验收（下方手工清单）→ 全过后勾选 spec.md AC → 状态流转 done
 
 ## 手工验收清单（GUI/真机类 AC 的测试载体）
 
