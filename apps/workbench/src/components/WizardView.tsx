@@ -242,7 +242,7 @@ export function WizardView(props: WizardViewProps) {
                 <CopyButton text="https://console.cloud.tencent.com/cam/capi" lang={lang} onToast={onToast} />
               </li>
               <li>{t("wizard.tencent.step2", lang)}</li>
-              <li>{t("wizard.tencent.step3", lang)}</li>
+              <li>{t("wizard.tencent.step3", lang).replace("{domain}", state.domain)}</li>
             </ol>
             <div class="wizard__row">
               <label class="wizard__label">{t("wizard.domainLabel", lang)}</label>
@@ -368,7 +368,7 @@ export function WizardView(props: WizardViewProps) {
             >
               {busy === "meshDns" ? t("tunnel.dnsChecking", lang) : t("wizard.channel.meshDnsBtn", lang)}
             </button>
-            <p class="muted">{t("wizard.channel.meshDnsHint", lang)}</p>
+            <p class="muted">{t("wizard.channel.meshDnsHint", lang).replace("{domain}", state.domain)}</p>
             <Detail s={s} />
             <CheckButton />
           </>

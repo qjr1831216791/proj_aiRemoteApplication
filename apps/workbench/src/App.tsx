@@ -221,6 +221,7 @@ export function App() {
         <SettingsView
           lang={lang}
           settings={settings}
+          workbenchDomain={urls ? new URL(urls.domain).hostname : null}
           onToast={pushToast}
           onSettingsChange={setSettings}
           onLanguageChange={changeLanguage}

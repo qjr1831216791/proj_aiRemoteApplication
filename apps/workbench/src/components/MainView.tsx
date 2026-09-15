@@ -266,6 +266,7 @@ export function MainView(props: MainViewProps) {
         settings={settings}
         meshStatus={meshStatus}
         lanHealth={lanHealth}
+        domain={urls ? new URL(urls.domain).hostname : null}
         onLanRefresh={refreshLan}
         onToast={onToast}
       />

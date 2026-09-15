@@ -225,9 +225,9 @@ export const zh = {
   "tunnel.dnsChecking": "检测中…",
   "tunnel.dnsFailed": "DNS 检测失败（网络或解析异常），请稍后重试",
 
-  // 组网通道 DNS 指引（spec 007；spec 008 起组网为唯一通道）
+  // 组网通道 DNS 指引（spec 007；spec 008 起组网为唯一通道；spec 013：域名参数化 {domain}）
   "tunnel.dnsGuideMesh":
-    "DNS 待建立：在腾讯云 DNS 控制台为 ai.jackqi.cn 添加 A 记录指向虚拟 IP：{target}（公共解析生效最长需等一个 TTL，约 10 分钟）",
+    "DNS 待建立：在腾讯云 DNS 控制台为 {domain} 添加 A 记录指向虚拟 IP：{target}（公共解析生效最长需等一个 TTL，约 10 分钟）",
   "tunnel.dnsMismatchA":
     "A 记录不符：当前 {actual}，组网通道应为 {target}（虚拟 IP），请在腾讯云 DNS 控制台修正",
   "tunnel.dnsCnameLeftMesh":
@@ -297,7 +297,7 @@ export const zh = {
   "wizard.tencent.desc": "签发可信证书与维护域名解析（组网 A 记录同步）都依赖腾讯云密钥。以下三步只需做一次。",
   "wizard.tencent.step1": "打开腾讯云 CAM 控制台，新建密钥：",
   "wizard.tencent.step2": "建议：先建子用户并仅授予 QcloudDNSPodFullAccess 权限，再为其新建密钥",
-  "wizard.tencent.step3": "在控制台「DNS 解析 DNSPod」确认你的域名已添加解析记录（如 ai.jackqi.cn）",
+  "wizard.tencent.step3": "在控制台「DNS 解析 DNSPod」确认你的域名已添加解析记录（如 {domain}）",
   "wizard.tencent.keyBtn": "输入访问密钥（不回显）",
   "wizard.https.desc": "下载带证书插件的 Caddy，生成配置并放行 443。证书将在 Caddy 启动后自动签发（约 1~2 分钟，无需 80/443 入站）。",
   "wizard.https.run": "开始安装 HTTPS 栈（管理员）",
@@ -335,7 +335,7 @@ export const zh = {
   "wizard.channel.meshApplyBtn": "应用并重启（管理员）",
   "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
   "wizard.channel.meshDnsHint":
-    "把 ai.jackqi.cn 的 A 记录自动同步为虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
+    "把 {domain} 的 A 记录自动同步为虚拟 IP（需腾讯云密钥已就绪）；成员设备亦可不经域名、直接用虚拟 IP 访问",
   "wizard.channel.meshDnsDone": "DNS 同步完成（{n} 条记录操作）",
   "wizard.finalize.desc": "收尾：确认目标达成情况（开机自启在「设置」页开关）。",
   "wizard.summary.lan": "本机服务",

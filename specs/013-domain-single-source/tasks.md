@@ -21,7 +21,7 @@
 
 ## 阶段 3: 前端与脚本
 
-- [ ] T6 前端接线：`SettingsView.tsx` 只读卡域名改经 `get_urls` 下发解析（`READONLY.domain` 字面量退役）；i18n zh/en 三对键参数化 `{domain}` 并更新调用点传参；`npm run build` 通过（依赖: T4）（验收: AC1、AC7）
+- [x] T6 前端接线：`SettingsView.tsx` 只读卡域名改经 `get_urls` 下发解析（`READONLY.domain` 字面量退役）；i18n zh/en 三对键参数化 `{domain}` 并更新调用点传参；`npm run build` 通过（依赖: T4）（验收: AC1、AC7）✅ 2026-09-15（域名经 App→SettingsView / MainView→MeshCard→DnsNotice props 链下发；向导文案取 `state.domain`（含回落默认）；src/ 全仓 grep `jackqi` 零残留；tsc+vite 构建过）
 - [ ] T7 脚本参数化：`install-server.ps1` 加 `-Domain`（缺省不输出域名行）、`uninstall-legacy.ps1` 加 `-Domain`（缺省跳过 CNAME 检测段）；grep 全部派发点接线透传；PS 解析检查断言参数与缺省分支（依赖: T4）（验收: AC8）
 
 ## 阶段 4: 回归与收尾
