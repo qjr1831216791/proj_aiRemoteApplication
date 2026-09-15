@@ -21,6 +21,10 @@ pub struct AccessUrls {
 /// LAN 探测目标（公网 DNS 地址，仅用于选路，不发包）
 pub const LAN_PROBE_TARGET: (&str, u16) = ("8.8.8.8", 80);
 
+/// urls 变更事件（spec 013 验收期补漏）：向导改域名后推新快照，展示层
+/// （地址区/只读卡/组网卡）免重启跟随——快照启动兜底、变化走事件的既有格局
+pub const EVENT_URLS_CHANGED: &str = "urls://changed";
+
 /// 探测默认路由上的本机局域网 IPv4（失败返回 None：无路由/离线等）
 pub fn detect_lan_ip() -> Option<Ipv4Addr> {
     let sock = UdpSocket::bind("0.0.0.0:0").ok()?;

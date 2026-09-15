@@ -41,7 +41,9 @@ v0.7.0 安装包首次分发给其他用户使用，随即暴露**域名硬编�
 
 - [ ] **AC1**: Given 向导腾讯云前置已录入 `ai.example.com` When 查看看板「访问地址 · 域名」行与设置页只读卡 Then 均显示 `https://ai.example.com/`，两处一致
 - [ ] **AC2**: Given 向导腾讯云前置已录入 `ai.example.com` 且 DNSPod 密钥与根域 `example.com` 已就绪 When 点击「同步 DNS： A 记录 → 虚拟 IP」（看板或向导 Channel 阶段③） Then DNSPod 侧对 `example.com` 的 `ai` 子域执行 A 记录调和并返回成功，不再出现 `NoPermissionToOperateDomain`
-- [ ] **AC3**: Given 未跑向导（`settings.domain` 为空） When 查看任意域名消费点 Then 回落编译期默认域名（研发机既有部署行为不变）
+- [ ] **AC3**: Given 未跑向导（`settings.domain` 为空） When 查看任意域名消费点 Then 回落编译期默认域名（研发机既有部署行为不变；**DNS 操作类消费点除外，见 AC9**）
+- [ ] **AC9**: Given `settings.domain` 为空 When 点击「同步 DNS」 Then 不发起任何 DNSPod 调用，报错明示「域名传入为空」并指引到向导「腾讯云前置」录入（**不得回落研发者域名试错**——真机 2026-09-15：分发用户以其自有密钥操作 `ai.jackqi.cn` 报 `NoPermissionToOperateDomain`）
+- [ ] **AC10**: Given 同步 DNS 的 DNSPod 调用返回错误（如对无权限域名操作） Then 报错文案以「域名：<所操作域名>，」开头，错值一眼可辨
 
 ### US2: 作为装机用户，我希望域名相关的检测、入口与文案也跟随我的域名，以便诊断结果可信、快捷入口可用
 
@@ -57,7 +59,7 @@ v0.7.0 安装包首次分发给其他用户使用，随即暴露**域名硬编�
 - **生效域名解析**：Rust 侧统一入口函数（如 `effective_domain`）：读 settings.domain → 空则回落 `consts::DOMAIN`；根域与完整 URL 由其派生，消费点不得再直读 `consts::DOMAIN/DOMAIN_ROOT/WORKBENCH_URL`。
 - **前端取数路径**：设置页只读卡的域名当前是 TS 侧独立硬编码副本（`SettingsView.tsx` 的 `READONLY.domain`），改为经后端载荷（`get_urls` 或 settings 命令）下发生效域名，前端字面量退役。
 - **心跳实时性**：心跳探测目标在每次探测时从配置读取（替代启动时固化），支撑 AC5。
-- **异常路径**：`settings.domain` 含非法值时按未配置处理（回落默认），不得 panic 或阻断命令。
+- **异常路径**：`settings.domain` 含非法值时按未配置处理（回落默认），不得 panic 或阻断命令；**例外：同步 DNS 链路对"未配置/空"拒绝执行并明确报错（AC9），不回落默认域名试错（2026-09-15 变更）**。
 
 ## 5. 约束与假设
 
@@ -75,3 +77,4 @@ v0.7.0 安装包首次分发给其他用户使用，随即暴露**域名硬编�
 |------|----------|------|
 | 2026-09-15 | 初稿（draft） | 分发用户真机反馈两项缺陷（同步 DNS 报 `NoPermissionToOperateDomain` + 看板域名写死研发者域名）；需求方拍板「域名应有单一数据来源（装机向导腾讯云前置录入）」并选择立 spec 走变更流程 |
 | 2026-09-15 | 子代理评审 PASS-with-notes（4 条低severity 全部采纳修复：§4 补前端取数路径、AC2 Given 补自足前置、决策 6 归属表述精确化、MOC 迭代表补 Sprint 10）；状态 draft → reviewed | 需求方指示「派发子代理审核，如果没问题则下一步」 |
+| 2026-09-15 | 真机验收期修订：**DNS 操作链不再回落默认域名**——新增 AC9（未配置域名点同步 → 拒绝并报「域名传入为空」）、AC10（DNSPod 报错带「域名：X」前缀）；§5 异常路径对同步 DNS 链路 carve-out。展示/心跳类消费点回落口径不变（AC3） | 需求方同事真机复现：重装后未录域名点同步 DNS，后端把回落默认 `ai.jackqi.cn` 传给 DNSPod（配用户自有密钥）报 `NoPermissionToOperateDomain`，报错又不含域名值无从排查；需求方定「不能默认传值，执行侧校验并明示域名」 |

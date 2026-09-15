@@ -137,6 +137,11 @@ export function onWizardChanged(cb: (state: WizardState) => void): Promise<() =>
   return listen<WizardState>("wizard://changed", (e) => cb(e.payload));
 }
 
+/** 访问地址事件（spec 013 验收期补漏：向导改域名后推新快照，展示层免重启跟随） */
+export function onUrlsChanged(cb: (urls: AccessUrls) => void): Promise<() => void> {
+  return listen<AccessUrls>("urls://changed", (e) => cb(e.payload));
+}
+
 /** 复制到剪贴板：navigator.clipboard 优先，execCommand 兜底（WebView2 兼容） */
 export async function copyText(text: string): Promise<boolean> {
   try {

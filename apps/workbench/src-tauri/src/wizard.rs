@@ -541,9 +541,10 @@ pub fn wizard_set_domain(
 ) -> Result<WizardState, String> {
     let d = apply_domain_to(&domain, &settings)?;
     let mut next = holder.current();
-    next.domain = d;
+    next.domain = d.clone();
     let saved = holder.replace(next)?;
     emit_changed(&app, &saved);
+    emit_urls_changed(&app, &d);
     Ok(saved)
 }
 
@@ -565,6 +566,17 @@ fn emit_changed(app: &tauri::AppHandle, state: &WizardState) {
     use tauri::Emitter;
     if let Err(e) = app.emit(EVENT_WIZARD_CHANGED, state) {
         log::error!("发送 {EVENT_WIZARD_CHANGED} 失败：{e}");
+    }
+}
+
+/// 以新域名现算访问地址推 `urls://changed`（spec 013 验收期补漏，AC1）：
+/// 展示层消费 get_urls 快照，不推则改域名后地址区/只读卡残留旧值直至重启
+/// （真机反馈 2026-09-15：腾讯云前置改域名后设置页仍是旧域名）
+fn emit_urls_changed(app: &tauri::AppHandle, domain: &str) {
+    use tauri::Emitter;
+    let urls = crate::urls::access_urls(&crate::settings::effective_workbench_url(domain));
+    if let Err(e) = app.emit(crate::urls::EVENT_URLS_CHANGED, &urls) {
+        log::error!("发送 {} 失败：{e}", crate::urls::EVENT_URLS_CHANGED);
     }
 }
 

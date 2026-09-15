@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { api, onDomainHealth, onMeshStatus, onNetChanged, onSettingsRepaired, onStatusChanged, onWizardChanged } from "./api";
+import { api, onDomainHealth, onMeshStatus, onNetChanged, onSettingsRepaired, onStatusChanged, onUrlsChanged, onWizardChanged } from "./api";
 import { installAutoTitles } from "./autoTitle";
 import { detectLang, resolveLang, t, type Lang } from "./i18n";
 import type {
@@ -101,6 +101,8 @@ export function App() {
       track(await onMeshStatus(setMeshStatus));
       // 域名心跳事件（spec 005）：60s 周期探测
       track(await onDomainHealth(setDomainHealth));
+      // urls 事件（spec 013 验收期补漏）：向导改域名后推新快照，地址区/只读卡免重启跟随
+      track(await onUrlsChanged(setUrls));
       // 设置损坏恢复：非阻塞提示（AC24）
       track(await onSettingsRepaired(() => pushToast(t("settings.repaired", lang), "info")));
       // 向导状态事件（spec 006）：引导条随 done 收敛

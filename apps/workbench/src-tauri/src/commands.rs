@@ -399,8 +399,10 @@ pub async fn mesh_sync_dns(
     }
     let cred = crate::dns_api::read_credential(&cur.stack_dir)
         .ok_or("腾讯云凭证不存在：请先完成向导「腾讯云前置」阶段（写入密钥）")?;
-    // spec 013 T4：根域/子域派生自生效域名（向导录入），不再直读 consts
-    let domain = crate::settings::effective_domain(&cur.domain);
+    // spec 013 T4：根域/子域派生自生效域名（向导录入），不再直读 consts；
+    // spec 013 验收期修订（AC9）：不回落默认域名——未配置就点同步，宁可明确
+    // 报错也不能拿研发者域名配用户密钥试错（真机 2026-09-15 NoPermissionToOperateDomain）
+    let domain = resolve_sync_domain(&cur.domain)?;
     let root = crate::settings::effective_root(&domain);
     let sub = crate::dns_api::subdomain_of(&domain, &root).to_string();
     let virtual_ip = cur.mesh.virtual_ip.clone();
@@ -411,6 +413,19 @@ pub async fn mesh_sync_dns(
     .map_err(|e| format!("DNS 同步线程失败：{e}"))??;
     log::info!("组网 DNS 同步完成（{count} 条记录操作）");
     Ok(count)
+}
+
+/// 同步 DNS 的域名校核（spec 013 AC9，2026-09-15 验收期修订）：归一
+/// （去空白/尾点、小写）后返回；**空即 Err**——本链路不走 `effective_domain`
+/// 回落，避免未配置时静默拿研发者域名发起 DNSPod 操作。
+pub fn resolve_sync_domain(raw: &str) -> Result<String, String> {
+    let d = raw.trim().trim_end_matches('.').to_ascii_lowercase();
+    if d.is_empty() {
+        return Err(
+            "同步 DNS 失败：域名传入为空——请先在装机向导「腾讯云前置」录入你的工作台域名".into(),
+        );
+    }
+    Ok(d)
 }
 
 /// 组网诊断（T16，AC13）：六项只读探测——服务态/密钥就绪/逐条对端 TCP 可达/
@@ -744,6 +759,27 @@ mod tests {
         // 编译期语义：Orchestrator 可跨线程共享（spawn_blocking 前提）
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Arc<Orchestrator>>();
+    }
+
+    // ── spec 013 验收期修订（AC9）：同步 DNS 不回落默认域名 ───────────────
+
+    #[test]
+    fn sync_domain_empty_rejects_with_guidance() {
+        // 未配置（空/纯空白/仅尾点）→ 明确报错，绝不回落 consts::DOMAIN 试错
+        for raw in ["", "   ", ".", "  .  "] {
+            let err = resolve_sync_domain(raw).unwrap_err();
+            assert!(err.contains("域名传入为空"), "{raw:?} → {err}");
+            assert!(!err.contains("jackqi"), "报错不得引导到研发者域名：{err}");
+        }
+    }
+
+    #[test]
+    fn sync_domain_normalizes_without_fallback() {
+        // 合法值归一（去空白/尾点、小写）；已配置值原样通过，不注入默认域名
+        assert_eq!(resolve_sync_domain(" AI.Example.COM. ").unwrap(), "ai.example.com");
+        assert_eq!(resolve_sync_domain("ai.example.com").unwrap(), "ai.example.com");
+        let ok = resolve_sync_domain("box.example.com").unwrap();
+        assert!(!ok.contains("jackqi"));
     }
 
     // ── spec 010 T4：组合派发构造面 + 例外复测循环 ────────────────────────
