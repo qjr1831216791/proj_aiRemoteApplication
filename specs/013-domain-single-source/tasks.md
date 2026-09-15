@@ -16,7 +16,7 @@
 
 ## 阶段 2: 消费点接线（Rust）
 
-- [ ] T4 `urls.rs`/`get_urls` 改经生效域名下发；`mesh_sync_dns`、`check_dns_alignment`、`check_domain_health_now`、`mesh_diagnostics` 四命令取参改生效域名；`tray.rs` 托盘「打开工作台」事件时解析生效域名（核实无菜单构建期固化文案）；更新既有测试断言（依赖: T2）（验收: AC1、AC2、AC4、AC6）
+- [x] T4 `urls.rs`/`get_urls` 改经生效域名下发；`mesh_sync_dns`、`check_dns_alignment`、`check_domain_health_now`、`mesh_diagnostics` 四命令取参改生效域名；`tray.rs` 托盘「打开工作台」事件时解析生效域名（核实无菜单构建期固化文案）；更新既有测试断言（依赖: T2）（验收: AC1、AC2、AC4、AC6）✅ 2026-09-15（另接线 `open_external`（地址区「打开」按钮同源）；`build_urls` 加 domain_url 参数；consts.rs 口径注释更新；托盘无构建期固化，菜单仅含固定 id——261 测试绿零 warning）
 - [ ] T5 `heartbeat.rs` 的 url 改 provider 闭包（`Arc<dyn Fn() -> String>`，对称 `enabled` 先例），`lib.rs` 装配处接 settings；单测：闭包返回变化后下一探测目标随之变化（依赖: T2）（验收: AC5）
 
 ## 阶段 3: 前端与脚本

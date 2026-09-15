@@ -1,5 +1,9 @@
-//! 实例常量（plan §4：端口/路径/域名为编译期常量，不进设置文件；
+//! 实例常量（plan §4：端口/路径为编译期常量，不进设置文件；
 //! 与 sprint0 部署知识对齐，修改须重跑安装脚本，故对用户只读展示）。
+//!
+//! spec 013 起域名口径变更：DOMAIN/WORKBENCH_URL 降级为「回落默认值」
+//! （settings.domain 未配置时生效），运行时消费点经
+//! `settings::effective_domain / effective_workbench_url` 取值，不得直读本文件。
 
 /// CloudCLI 控制端口（本机 127.0.0.1）
 pub const CLOUDCLI_PORT: u16 = 3001;
@@ -12,9 +16,9 @@ pub const DEFAULT_STACK_DIR: &str = r"D:\Software\cloudcli-https";
 /// Caddy 配置文件（setup-autostart.ps1 契约：caddy.exe run --config）
 pub const CADDYFILE_PATH: &str = r"D:\Software\cloudcli-https\Caddyfile";
 
-/// 对外域名（HTTPS 反代入口）
+/// 对外域名**回落默认值**（spec 013：运行时生效域名见 settings::effective_domain）
 pub const DOMAIN: &str = "ai.jackqi.cn";
-/// 工作台页面地址
+/// 工作台页面地址**回落默认值**（spec 013：运行时见 settings::effective_workbench_url）
 pub const WORKBENCH_URL: &str = "https://ai.jackqi.cn/";
 
 /// CloudCLI 监听进程的可执行名：run-server-hidden.ps1 经 npm 全局拉起 node.exe，
@@ -24,7 +28,9 @@ pub const CLOUDCLI_EXE_NAME: &str = "node.exe";
 /// 栈目录环境文件（腾讯云密钥唯一载体，spec 008 凭据单源化：Caddy DNS-01
 /// 续期与 dns_api 调和均读此处；历史名 FRPC_ENV_FILE 随穿透通道退役）
 pub const STACK_ENV_FILE: &str = ".env";
-/// 对外域名根（权威 NS 查询起点，DNS 对齐/调和的比对口径）
+/// 对外域名根（spec 013 后运行时根域由 `settings::effective_root` 动态派生，
+/// 本常量仅作回落基准供测试与文档对照，无运行时消费方）
+#[allow(dead_code)]
 pub const DOMAIN_ROOT: &str = "jackqi.cn";
 
 // ── 组网通道（spec 007：EasyTier v2.6.4 随包分发，版本+SHA256 锁定）──────────

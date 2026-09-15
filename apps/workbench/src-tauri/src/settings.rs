@@ -346,6 +346,12 @@ pub fn workbench_url_of(full_domain: &str) -> String {
     format!("https://{full_domain}/")
 }
 
+/// 生效工作台 URL（一步到位组合）：settings.domain → 解析生效域名 → URL。
+/// 命令层/托盘的标准取值形态（spec 013 T4）。
+pub fn effective_workbench_url(domain_setting: &str) -> String {
+    workbench_url_of(&effective_domain(domain_setting))
+}
+
 /// 栈目录规整（纯函数）：去首尾空白与尾随分隔符；未以 `cloudcli-https`
 /// 子目录结尾则自动追加（需求方：用户输入安装根，子目录名固定）；
 /// 空输入回落默认值。spec 011 AC1 源头闸：非绝对盘符路径或含 PowerShell

@@ -95,7 +95,12 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         "open_workbench" => {
             log::info!("托盘「打开工作台」：默认浏览器打开域名入口");
-            if let Err(code) = crate::scripts::open_url(crate::consts::WORKBENCH_URL) {
+            // spec 013 T4：事件时解析生效域名（向导改域名无需重启即跟随）
+            let url = {
+                let cur = app.state::<crate::settings::SettingsState>().current();
+                crate::settings::effective_workbench_url(&cur.domain)
+            };
+            if let Err(code) = crate::scripts::open_url(&url) {
                 log::error!("打开工作台页面失败（ShellExecuteW {code}）");
             }
         }
