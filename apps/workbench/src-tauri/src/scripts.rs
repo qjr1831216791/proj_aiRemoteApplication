@@ -629,9 +629,10 @@ pub fn tool_plan(
         extra.push("-Username");
         extra.push(opts.auth_user.as_deref().expect("上方白名单校验已确保存在"));
     }
-    // 域名透传（spec 006：装机向导自定义域名 → Caddyfile；ddns-go 已退役）
+    // 域名透传（spec 006：装机向导自定义域名 → Caddyfile；spec 013：install-server
+    // 收尾输出用户域名；ddns-go 已退役）
     if let Some(domain) = opts.domain.as_deref() {
-        if matches!(kind, ToolKind::InstallHttps) {
+        if matches!(kind, ToolKind::InstallHttps | ToolKind::InstallServer) {
             extra.push("-Domain");
             extra.push(domain);
         }
@@ -996,6 +997,8 @@ mod tests {
         assert!(plan.params.contains("install-server.ps1"), "{}", plan.params);
         assert!(plan.params.contains("-Lang zh"));
         assert!(!plan.params.contains("-Update") && !plan.params.contains("-UseMirror"), "{}", plan.params);
+        // spec 013 T7：缺省（无 domain）不透传 -Domain（脚本缺省不输出域名行）
+        assert!(!plan.params.contains("-Domain"), "{}", plan.params);
 
         // 升级 + 镜像源：两个开关透传
         let opts = ToolOpts { update: true, mirror: true, domain: None, ..ToolOpts::default() };
@@ -1004,6 +1007,17 @@ mod tests {
         assert!(plan.params.contains("-Update"), "{}", plan.params);
         assert!(plan.params.contains("-UseMirror"), "{}", plan.params);
         assert!(plan.params.contains("-Lang en"), "{}", plan.params);
+
+        // spec 013 T7：domain 提供时透传 -Domain（收尾输出用户域名；011 白名单已在上游闸口）
+        let opts = ToolOpts {
+            update: false,
+            mirror: false,
+            domain: Some("ai.example.com".into()),
+            ..ToolOpts::default()
+        };
+        let plan = tool_plan(ToolKind::InstallServer, opts, &dir, Lang::Zh, DEFAULT_STACK_DIR)
+            .expect("带域名派发应通过");
+        assert!(plan.params.contains("-Domain 'ai.example.com'"), "{}", plan.params);
     }
 
     #[test]

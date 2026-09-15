@@ -10,11 +10,13 @@
 import { useState } from "preact/hooks";
 import { api } from "../api";
 import { t, type DictKey, type Lang } from "../i18n";
-import type { ScriptsAvailability, ToolKind } from "../types";
+import type { ScriptsAvailability, Settings, ToolKind } from "../types";
 
 export interface ToolsSectionProps {
   lang: Lang;
   scripts: ScriptsAvailability | null;
+  /** 全量设置（spec 013：install_server 派发透传生效域名，收尾输出用户域名） */
+  settings: Settings | null;
   onToast: (text: string, kind?: "info" | "success" | "error") => void;
 }
 
@@ -28,14 +30,16 @@ interface ToolDef {
 }
 
 export function ToolsSection(props: ToolsSectionProps) {
-  const { lang, scripts, onToast } = props;
+  const { lang, scripts, settings, onToast } = props;
   const [open, setOpen] = useState(false);
   const [mirror, setMirror] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   // 可用性未知（加载中）按可用渲染，按钮点击仍有后端校验兜底
   const available = scripts?.available ?? true;
 
-  const runTool = (kind: ToolKind, update: boolean) => api.runTool(kind, { update, mirror });
+  // spec 013：生效域名透传（空 = 未配置 → 后端缺省行为，脚本不输出域名行）
+  const runTool = (kind: ToolKind, update: boolean) =>
+    api.runTool(kind, { update, mirror, domain: settings?.domain || undefined });
 
   const defs: ToolDef[] = [
     {

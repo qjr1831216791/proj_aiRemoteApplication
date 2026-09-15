@@ -16,8 +16,9 @@
     4. 注销计划任务 "ddns-go Sprint0 autostart"（与 setup-autostart.ps1 定义精确一致）
     5. 删除 ddns-go.exe / ddns-go.yaml / frpc.exe / frpc-run.log
     6. 从栈 .env 移除 SAKURA_FRP_KEY 行（其余行与 UTF-8 BOM 形态原样保留）
-    7. CNAME 残留检测：ai.jackqi.cn 仍解析出 CNAME → 提示去工作台设置页执行
-       「同步 DNS」清理（本脚本不直接调 DNSPod API）；查询失败按「无法判断」提示人工核验
+    7. CNAME 残留检测（spec 013：目标 = -Domain 参数，缺省跳过）：域名仍解析出
+       CNAME → 提示去工作台设置页执行「同步 DNS」清理（本脚本不直接调 DNSPod API）；
+       查询失败按「无法判断」提示人工核验
 
   ★ 真机执行前置闸门：spec 007 验收签收之后才可执行（spec 008 tasks 约定）。
   无需管理员权限（栈目录、.env、当前用户的进程与计划任务均可直接操作）。
@@ -30,6 +31,9 @@
 param(
     [string]$StackDir = 'D:\Software\cloudcli-https',
     [switch]$Force,
+    # 生效域名（spec 013）：CNAME 残留检测的目标；缺省跳过该检测段
+    # （不再以研发者域名为缺省——分发场景下检测别人的域名毫无意义）
+    [string]$Domain = '',
     [ValidateSet('auto', 'zh', 'en')]
     [string]$Lang = 'auto'
 )
@@ -218,21 +222,27 @@ if (-not (Test-Path $EnvFile)) {
     }
 }
 
-# ---------- 6. CNAME 残留检测（只提示，不直接调 DNSPod API） ----------
-$stepName = (T 'CNAME 残留检测（ai.jackqi.cn）' 'CNAME residue check (ai.jackqi.cn)')
-try {
-    $cname = @(Resolve-DnsName -Name 'ai.jackqi.cn' -Type CNAME -ErrorAction Stop | Where-Object { $_.QueryType -eq 'CNAME' })
-    if ($cname.Count -gt 0) {
-        $target = ($cname | Select-Object -First 1).NameHost
-        Record -Step $stepName -Status Done -Note (T "仍指向 $target" "still points to $target")
-        Write-Warn (T "发现 CNAME 残留：ai.jackqi.cn -> $target。请在工作台设置页执行「同步 DNS」清理（本脚本不直接调 DNSPod API）。" "CNAME residue found: ai.jackqi.cn -> $target. Run 'Sync DNS' on the workbench settings page to clean it (this script does not call the DNSPod API).")
-    } else {
-        Record -Step $stepName -Status Done -Note (T '无 CNAME 记录' 'no CNAME record')
-        Write-Ok (T 'ai.jackqi.cn 无 CNAME 残留。' 'No CNAME residue on ai.jackqi.cn.')
+# ---------- 6. CNAME 残留检测（只提示，不直接调 DNSPod API；spec 013：目标= -Domain，缺省跳过） ----------
+$stepName = (T 'CNAME 残留检测' 'CNAME residue check')
+if ($Domain) {
+    $stepName = (T "CNAME 残留检测（$Domain）" "CNAME residue check ($Domain)")
+    try {
+        $cname = @(Resolve-DnsName -Name $Domain -Type CNAME -ErrorAction Stop | Where-Object { $_.QueryType -eq 'CNAME' })
+        if ($cname.Count -gt 0) {
+            $target = ($cname | Select-Object -First 1).NameHost
+            Record -Step $stepName -Status Done -Note (T "仍指向 $target" "still points to $target")
+            Write-Warn (T "发现 CNAME 残留：$Domain -> $target。请在工作台设置页执行「同步 DNS」清理（本脚本不直接调 DNSPod API）。" "CNAME residue found: $Domain -> $target. Run 'Sync DNS' on the workbench settings page to clean it (this script does not call the DNSPod API).")
+        } else {
+            Record -Step $stepName -Status Done -Note (T '无 CNAME 记录' 'no CNAME record')
+            Write-Ok (T "$Domain 无 CNAME 残留。" "No CNAME residue on $Domain.")
+        }
+    } catch {
+        Record -Step $stepName -Status Skipped -Note (T '查询失败，无法判断' 'query failed; undetermined')
+        Write-Warn (T "CNAME 查询失败（$($_.Exception.Message)），无法判断是否残留，请人工核验：nslookup -type=CNAME $Domain" "CNAME query failed ($($_.Exception.Message)); cannot determine residue - verify manually: nslookup -type=CNAME $Domain")
     }
-} catch {
-    Record -Step $stepName -Status Skipped -Note (T '查询失败，无法判断' 'query failed; undetermined')
-    Write-Warn (T "CNAME 查询失败（$($_.Exception.Message)），无法判断是否残留，请人工核验：nslookup -type=CNAME ai.jackqi.cn" "CNAME query failed ($($_.Exception.Message)); cannot determine residue - verify manually: nslookup -type=CNAME ai.jackqi.cn")
+} else {
+    Record -Step $stepName -Status Skipped -Note (T '未指定 -Domain，跳过' 'no -Domain given; skipped')
+    Write-Info (T '未指定 -Domain，跳过 CNAME 残留检测。' 'No -Domain given; CNAME residue check skipped.')
 }
 
 # ---------- 7. 汇总 ----------
