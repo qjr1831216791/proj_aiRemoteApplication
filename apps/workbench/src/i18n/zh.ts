@@ -159,6 +159,10 @@ export const zh = {
   "settings.meshCidrInvalid": "虚拟网段格式无效（应为 CIDR，如 10.126.10.0/24）",
   "settings.meshIpNotInCidr": "虚拟 IP 不在虚拟网段内",
   "settings.meshPeersInvalid": "对端节点不能为空，且每条须为「协议://地址」形态（如 tcp://host:port）",
+  // spec 014：自定义候选中继（仅候选不生效，检测通过后一键应用才写入对端）
+  "settings.meshPool": "自定义候选节点（每行一条，可选）",
+  "settings.meshPoolPlaceholder": "如 tcp://my-node.example.com:11010",
+  "settings.meshPoolInvalid": "候选节点每条须为「协议://地址」形态（如 tcp://host:port）",
   "settings.meshSaved": "组网配置已保存（应用配置并重启服务后生效）",
   "settings.meshSecretHint":
     "组网密钥不经程序输入框：点右侧按钮在弹出的控制台输入，脚本直写栈目录 network-secret 文件（不回显、不落日志、不进设置文件）",
@@ -332,6 +336,24 @@ export const zh = {
   "mesh.diag.domain_chain.ok": "域名解析与 443 访问链路正常",
   "mesh.diag.domain_chain.bad":
     "域名链路异常：resolve_failed=域名未设置或解析失败；resolved=解析值≠本机虚拟 IP（到装机向导点「同步 DNS」）；tcp443_unreachable=虚拟 IP 443 不可达（查服务与防火墙）",
+  // spec 014：候选中继池体检与一键切换（refused/timeout 区分源自 2026-09 实战排障口径）
+  "mesh.pool.desc":
+    "中继节点池：对内置与自定义候选并发探测连通性，一键把健康节点设为生效对端（社区节点无 SLA，节点失效时以此自愈）",
+  "mesh.pool.runBtn": "检测中继节点",
+  "mesh.pool.running": "检测中…（全池并发探测，最长约 3 秒）",
+  "mesh.pool.applyBtn": "应用健康节点（{n} 个）",
+  "mesh.pool.applying": "应用中…（写入配置并重启组网服务）",
+  "mesh.pool.applyNone": "全部候选不可达：请检查本机网络后重试，或先在上方添加自定义候选（原配置未改动）",
+  "mesh.pool.applyDone": "健康节点已应用，组网服务已重启（状态数秒内刷新）",
+  "mesh.pool.applyDispatch": "配置已保存但服务重启未完成：请点上方「应用配置并重启服务」补一次（需管理员确认）",
+  "mesh.pool.source.active": "生效中",
+  "mesh.pool.source.custom": "自定义",
+  "mesh.pool.source.builtin": "内置",
+  "mesh.pool.reason.refused": "端口无服务监听（服务器侧未运行或端口已变更）",
+  "mesh.pool.reason.timeout": "网络不可达或被拦截（可尝试更换网络）",
+  "mesh.pool.reason.resolve": "域名解析失败",
+  "mesh.pool.reason.error": "连接异常（未知网络错误）",
+  "mesh.pool.reason.invalid": "URI 格式非法（应为 协议://地址:端口）",
   "wizard.channel.meshApplyBtn": "应用并重启（管理员）",
   "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
   "wizard.channel.meshDnsHint":

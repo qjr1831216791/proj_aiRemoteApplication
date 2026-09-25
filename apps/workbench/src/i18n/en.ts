@@ -163,6 +163,10 @@ export const en = {
   "settings.meshCidrInvalid": "Invalid virtual subnet (must be CIDR, e.g. 10.126.10.0/24)",
   "settings.meshIpNotInCidr": "Virtual IP is not inside the virtual subnet",
   "settings.meshPeersInvalid": "Peers must not be empty; each entry must look like scheme://host (e.g. tcp://host:port)",
+  // spec 014: custom relay candidates (pool only — written into peers via one-click apply after probing)
+  "settings.meshPool": "Custom candidate relays (one per line, optional)",
+  "settings.meshPoolPlaceholder": "e.g. tcp://my-node.example.com:11010",
+  "settings.meshPoolInvalid": "Each candidate must look like scheme://host (e.g. tcp://host:port)",
   "settings.meshSaved": "Mesh configuration saved (applies after \"Apply config & restart service\")",
   "settings.meshSecretHint":
     "The mesh secret never goes through an app input: click the button on the right and type it in the popped-up console; the script writes it straight into the network-secret file in the stack directory (hidden input, never logged, never in the settings file)",
@@ -339,6 +343,24 @@ export const en = {
   "mesh.diag.domain_chain.ok": "Domain resolution and 443 chain healthy",
   "mesh.diag.domain_chain.bad":
     "Domain chain broken: resolve_failed = domain unset or resolution failed; resolved = resolved IP ≠ virtual IP (click \"Sync DNS\" in the wizard); tcp443_unreachable = virtual IP 443 unreachable (check service and firewall)",
+  // spec 014: relay pool probing & one-click switch (refused/timeout split comes from the 2026-09 field troubleshooting)
+  "mesh.pool.desc":
+    "Relay pool: probe built-in and custom candidates concurrently, then apply healthy ones as active peers in one click (community relays have no SLA — use this to recover when a relay dies)",
+  "mesh.pool.runBtn": "Probe relays",
+  "mesh.pool.running": "Probing… (concurrent across the pool, up to ~3s)",
+  "mesh.pool.applyBtn": "Apply healthy relays ({n})",
+  "mesh.pool.applying": "Applying… (writing config and restarting the mesh service)",
+  "mesh.pool.applyNone": "All candidates unreachable: check this PC's network and retry, or add custom candidates above (config untouched)",
+  "mesh.pool.applyDone": "Healthy relays applied; mesh service restarted (status refreshes within seconds)",
+  "mesh.pool.applyDispatch": "Config saved but restart unfinished: click \"Apply config & restart service\" above to finish (admin approval needed)",
+  "mesh.pool.source.active": "active",
+  "mesh.pool.source.custom": "custom",
+  "mesh.pool.source.builtin": "built-in",
+  "mesh.pool.reason.refused": "No service on the port (server-side down or port changed)",
+  "mesh.pool.reason.timeout": "Network unreachable or blocked (try another network)",
+  "mesh.pool.reason.resolve": "DNS resolution failed",
+  "mesh.pool.reason.error": "Connection error (unknown network failure)",
+  "mesh.pool.reason.invalid": "Invalid URI (expected scheme://host:port)",
   "wizard.channel.meshApplyBtn": "Apply & restart (admin)",
   "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
   "wizard.channel.meshDnsHint":

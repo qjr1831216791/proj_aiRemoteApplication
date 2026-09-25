@@ -29,6 +29,9 @@ interface MeshConfig {
   virtualIp: string;
   virtualCidr: string;
   peers: string[];
+  /** 自定义候选中继（spec 014：仅候选不生效，检测通过后经 relay_apply 才入 peers；
+   * 旧版设置文件缺字段 → 空数组） */
+  relayPool: string[];
 }
 
 /** 局域网边界守卫标记（spec 010 plan §4.1；sinceMs 由后端在派发成功后写入，
@@ -121,6 +124,26 @@ export interface MeshDiagItem {
   code: "service" | "secret" | "peer_reachable" | "members" | "local_nic" | "domain_chain";
   ok: boolean;
   detail?: string;
+}
+
+// ── 候选中继池（spec 014：探测把关 + 一键应用健康节点）──────────────────────
+
+/** 候选来源（同列表呈现可区分；重复节点保留高优先级：active > custom > builtin） */
+export type RelaySource = "active" | "custom" | "builtin";
+
+/** 候选探测单项（relay_probe 载荷；reason 为稳定码 → `mesh.pool.reason.*` 双语文案） */
+export interface RelayProbeItem {
+  uri: string;
+  source: RelaySource;
+  ok: boolean;
+  reason?: "refused" | "timeout" | "resolve" | "error" | "invalid";
+}
+
+/** 一键应用结果（relay_apply 载荷；dispatchRequired = 静默重启未成功，
+ * 配置已落盘，需走设置区 UAC「应用配置并重启」兜底一次） */
+export interface RelayApplyOutcome {
+  peers: string[];
+  dispatchRequired: boolean;
 }
 
 /** 域名心跳快照（domain://health 载荷；healthy 已含 2 次防抖，spec 005 AC6） */
