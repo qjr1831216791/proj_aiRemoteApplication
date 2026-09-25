@@ -556,7 +556,7 @@ export function SettingsView(props: SettingsViewProps) {
             <span class="settings__label">{t("settings.meshPeers", lang)}</span>
             <textarea
               class="form-input"
-              rows={3}
+              rows={4}
               placeholder={t("settings.meshPeersPlaceholder", lang)}
               value={meshPeersText}
               onInput={(e) => setMeshPeersText(e.currentTarget.value)}
@@ -568,7 +568,7 @@ export function SettingsView(props: SettingsViewProps) {
             <span class="settings__label">{t("settings.meshPool", lang)}</span>
             <textarea
               class="form-input"
-              rows={2}
+              rows={5}
               placeholder={t("settings.meshPoolPlaceholder", lang)}
               value={meshPoolText}
               onInput={(e) => setMeshPoolText(e.currentTarget.value)}

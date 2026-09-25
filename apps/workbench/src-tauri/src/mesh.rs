@@ -845,6 +845,31 @@ fn relay_uri_key(uri: &str) -> Option<String> {
     peer_host_port(uri).map(|(h, p)| format!("{}:{p}", h.to_ascii_lowercase()))
 }
 
+/// 节点 host 可用性（2026-09-25 真机反馈：分享帖里他人的 `listeners`
+/// `tcp://0.0.0.0:11010` 被提取成候选，且探测连回本机监听**假绿**——
+/// 通配/回环/广播地址对本机之外不可达，一律不收；域名形态放行，DNS
+/// 解析与可达性由探测把关）。IPv6 形态剥方括号后同口径。
+fn usable_relay_host(host: &str) -> bool {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host);
+    match bare.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => {
+            !v4.is_unspecified() && !v4.is_loopback() && !v4.is_broadcast()
+        }
+        Ok(std::net::IpAddr::V6(v6)) => !v6.is_unspecified() && !v6.is_loopback(),
+        Err(_) => !bare.is_empty(),
+    }
+}
+
+/// 整条 URI 的 host 可用性（validate 用；解析失败视为不可用）
+fn relay_host_usable(uri: &str) -> bool {
+    peer_host_port(uri)
+        .map(|(h, _)| usable_relay_host(&h))
+        .unwrap_or(false)
+}
+
 fn relay_source_rank(source: RelaySource) -> u8 {
     match source {
         RelaySource::Active => 0,
@@ -873,11 +898,13 @@ pub fn relay_pool_compose(
         if trimmed.is_empty() {
             return;
         }
-        // invalid 口径对齐 validate_mesh_config（valid_peer_uri 严格形态：
-        // 拒含空白/无 scheme；peer_host_port 宽松解析不作数——"tcp://bad uri"
-        // 这类带空格 host 必须标 invalid 而非放行）
+        // invalid 口径对齐 validate_mesh_config（valid_peer_uri 严格形态拒含
+        // 空白/无 scheme；peer_host_port 宽松解析不作数），host 可用性另设
+        // unusable（0.0.0.0/127.x 监听回环——探测会连回本机假绿，2026-09-25）
+        let host_usable =
+            peer_host_port(trimmed).map(|(h, _)| usable_relay_host(&h)).unwrap_or(false);
         let key = match relay_uri_key(trimmed) {
-            Some(k) if valid_peer_uri(trimmed) => k,
+            Some(k) if valid_peer_uri(trimmed) && host_usable => k,
             _ => format!("__invalid__:{trimmed}"),
         };
         if let Some(pos) = keys.iter().position(|k| *k == key) {
@@ -889,12 +916,18 @@ pub fn relay_pool_compose(
             return;
         }
         keys.push(key);
-        let invalid = !valid_peer_uri(trimmed) || relay_uri_key(trimmed).is_none();
+        let reason = if !valid_peer_uri(trimmed) {
+            Some("invalid")
+        } else if !host_usable {
+            Some("unusable")
+        } else {
+            None
+        };
         out.push(RelayProbeItem {
             uri: trimmed.to_string(),
             source,
             ok: false,
-            reason: invalid.then_some("invalid"),
+            reason,
         });
     }
     for uri in active {
@@ -917,7 +950,9 @@ pub fn relay_probe_pool(items: Vec<RelayProbeItem>) -> Vec<RelayProbeItem> {
             .into_iter()
             .map(|mut item| {
                 scope.spawn(move || {
-                    if item.reason == Some("invalid") {
+                    // 已带原因码（invalid/unusable）的项免探测——unusable 主机
+                    // （0.0.0.0 等）探测会连回本机监听假绿，必须拦在探测前
+                    if item.reason.is_some() {
                         return item;
                     }
                     match peer_host_port(&item.uri) {
@@ -1098,7 +1133,9 @@ pub fn relay_list_extract(text: &str) -> Vec<String> {
         let candidate = &text[start..end];
         if RELAY_URI_SCHEMES.contains(&scheme.as_str()) {
             if let Some((host, port)) = peer_host_port(candidate) {
-                if valid_peer_uri(candidate) {
+                // 0.0.0.0/127.x 是他人配置里的监听地址而非节点（分享帖常见
+                // 贴完整 config），静默丢弃；形态不合法的同样不收
+                if usable_relay_host(&host) && valid_peer_uri(candidate) {
                     let key = format!("{scheme}://{}:{port}", host.to_ascii_lowercase());
                     if !keys.contains(&key) {
                         keys.push(key);
@@ -1415,12 +1452,22 @@ pub fn validate_mesh_config(cfg: &MeshConfig) -> Result<(), String> {
         if !valid_peer_uri(uri) {
             return Err(format!("对端 URI 不合法（应为 scheme://host:port）：{uri}"));
         }
+        if !relay_host_usable(uri) {
+            return Err(format!(
+                "对端地址不可用（0.0.0.0/127.x 为监听或回环地址，对其他成员无意义）：{uri}"
+            ));
+        }
     }
     // spec 014 AC7：候选池同口径校验（仅候选不生效，但坏 URI 不入库——
     // 探测时 invalid 项可见是「检测发现」，入库是「配置写入」，口径不同）
     for uri in &cfg.relay_pool {
         if !valid_peer_uri(uri) {
             return Err(format!("候选 URI 不合法（应为 scheme://host:port）：{uri}"));
+        }
+        if !relay_host_usable(uri) {
+            return Err(format!(
+                "候选地址不可用（0.0.0.0/127.x 为监听或回环地址），请删除该行：{uri}"
+            ));
         }
     }
     Ok(())
@@ -1891,22 +1938,26 @@ mod tests {
     // ── spec 014 US4：分享链接提取 ────────────────────────────────────────
 
     /// AC9：Markdown 分享帖形态（反引号/引号/toml 代码块/中文标点）提取 +
-    /// 白名单协议过滤 + 归一去重
+    /// 白名单协议过滤 + 归一去重；监听/回环地址（他人贴的 listeners）不收
     #[test]
     fn relay_list_extract_from_markdown_share_post() {
-        // 样例取自真实 discussion #2429 的排版形态
+        // 样例取自真实 discussion #2429 的排版形态（末行为 2026-09-25 真机
+        // 反馈的 0.0.0.0 混入案例——他人分享配置里的 listeners）
         let md = "## 节点信息\n\
                   节点 IP：`161.33.207.13`【日本-中转延迟可能较高】\n\
                   TCP    tcp://161.33.207.13:51010\n\
                   UDP    udp://161.33.207.13:51010\n\
                   WSS    wss://161.33.207.13:51012\n\
                   ```toml\n\
+                  listeners = [\n\
+                    \"tcp://0.0.0.0:11010\",\n\
+                  ]\n\
                   [[peer]]\n\
                   uri = \"tcp://161.33.207.13:51010\"\n\
                   uri = \"tcp://sh.example.org:7910\"\n\
                   ```\n\
                   参考 http://not-a-relay.example.com:80 与 ftp://x.example.com:1\n\
-                  坏值 tcp:// 和 tcp://:11010 不应收";
+                  坏值 tcp:// 和 tcp://:11010 不应收；127.0.0.1:11010 与 [::]:11010 亦不收";
         let uris = relay_list_extract(md);
         assert_eq!(
             uris,
@@ -1916,8 +1967,39 @@ mod tests {
                 "wss://161.33.207.13:51012",
                 "tcp://sh.example.org:7910",
             ],
-            "白名单过滤 http/ftp、toml 引号内提取、同节点去重：{uris:?}"
+            "白名单过滤 http/ftp、通配/回环不收、toml 引号内提取、同节点去重：{uris:?}"
         );
+    }
+
+    /// 真机反馈（2026-09-25）：候选池里的 0.0.0.0 标 unusable（探测连回本机
+    /// 会假绿），与形态错误 invalid 区分
+    #[test]
+    fn relay_pool_compose_marks_listener_and_loopback_unusable() {
+        let custom = vec![
+            "tcp://0.0.0.0:11010".to_string(),
+            "tcp://127.0.0.1:11010".to_string(),
+        ];
+        let items = relay_pool_compose(&[], &custom, &[]);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].reason, Some("unusable"), "通配地址：{items:?}");
+        assert_eq!(items[1].reason, Some("unusable"), "回环地址：{items:?}");
+        // 探测阶段对 unusable 免探测（防连回本机假绿）
+        let probed = relay_probe_pool(items);
+        assert!(probed.iter().all(|i| !i.ok), "unusable 项不得探测为 ok");
+    }
+
+    /// validate：peers/relay_pool 填监听或回环地址一律拒绝（含存量防线）
+    #[test]
+    fn validate_mesh_config_rejects_unusable_hosts() {
+        let mut cfg = sample_config();
+        cfg.peers = vec!["tcp://0.0.0.0:11010".into()];
+        assert!(validate_mesh_config(&cfg).unwrap_err().contains("对端地址不可用"));
+        cfg = sample_config();
+        cfg.peers = vec!["tcp://127.0.0.1:11010".into()];
+        assert!(validate_mesh_config(&cfg).unwrap_err().contains("对端地址不可用"));
+        cfg = sample_config();
+        cfg.relay_pool = vec!["tcp://0.0.0.0:11010".into()];
+        assert!(validate_mesh_config(&cfg).unwrap_err().contains("候选地址不可用"));
     }
 
     /// AC9：GitHub Discussions 链接识别（转 REST 的输入解析）

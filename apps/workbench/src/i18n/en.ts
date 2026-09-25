@@ -367,6 +367,7 @@ export const en = {
   "mesh.pool.reason.resolve": "DNS resolution failed",
   "mesh.pool.reason.error": "Connection error (unknown network failure)",
   "mesh.pool.reason.invalid": "Invalid URI (expected scheme://host:port)",
+  "mesh.pool.reason.unusable": "Unusable address (0.0.0.0/127.x is a listener/loopback address, meaningless to other members)",
   "wizard.channel.meshApplyBtn": "Apply & restart (admin)",
   "wizard.channel.meshDnsBtn": "③ Sync DNS: A record → virtual IP",
   "wizard.channel.meshDnsHint":

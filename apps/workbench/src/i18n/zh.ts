@@ -360,6 +360,7 @@ export const zh = {
   "mesh.pool.reason.resolve": "域名解析失败",
   "mesh.pool.reason.error": "连接异常（未知网络错误）",
   "mesh.pool.reason.invalid": "URI 格式非法（应为 协议://地址:端口）",
+  "mesh.pool.reason.unusable": "地址不可用（0.0.0.0/127.x 是监听或回环地址，对其他成员无意义）",
   "wizard.channel.meshApplyBtn": "应用并重启（管理员）",
   "wizard.channel.meshDnsBtn": "③ 同步 DNS：A 记录 → 虚拟 IP",
   "wizard.channel.meshDnsHint":
