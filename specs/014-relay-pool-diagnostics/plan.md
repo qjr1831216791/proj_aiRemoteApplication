@@ -98,3 +98,4 @@ relay_apply(healthy: Vec<String>) -> RelayApplyResult
 | 日期 | 变更内容 | 原因 |
 |------|----------|------|
 | 2026-09-25 | 初稿 | spec reviewed 后细化；静默重启兜底与 prepare 回滚为方案要点 |
+| 2026-09-25 | US4 拉取导入：复用 `ureq`（既有依赖，rustls）；`relay_list_extract` 纯函数扫描提取白名单协议 URI（无 regex 依赖，手写扫描）；GitHub Discussions 链接识别后转 `api.github.com` REST（正文+评论 per_page=100），网页不作依赖（真机直抓被拦实测）；https-only + 10s 超时 + 1MB 上限；前端拉取后直接合并进候选 textarea（可手动增删），不做勾选 UI（手动维护语义由既有编辑承载） | 需求方追加来源导入；#2429 实测为 Discussion（issues API 404 之谜解开） |

@@ -537,6 +537,23 @@ pub async fn relay_apply(
     Ok(RelayApplyOutcome { peers: healthy, dispatch_required })
 }
 
+/// 分享链接拉取候选节点（AC9~AC11）：GitHub Discussions 自动转官方 REST
+///（正文+评论），其余 https 文本源直抓；白名单协议提取 + 去重。只读动作，
+/// 不落任何配置——返回列表由前端合并进候选池、经「保存」入库。
+#[tauri::command]
+pub async fn relay_fetch_nodes(url: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = crate::mesh::relay_list_fetch(&url)?;
+        let uris = crate::mesh::relay_list_extract(&text);
+        if uris.is_empty() {
+            return Err("链接内容中未发现有效节点 URI（应为 协议://地址:端口）".into());
+        }
+        Ok(uris)
+    })
+    .await
+    .map_err(|e| format!("节点拉取线程失败：{e}"))?
+}
+
 /// 成员入网配置（spec 009 US4/AC9~AC11）：从已保存组网设置渲染 EasyTier 官方
 /// 最小口径 TOML 文本（关键字段带 App 输入项行注释；network_secret 为占位符
 /// + set-mesh-secret.ps1 指引——真实密钥永不进 APP 界面，spec 007 AC8 延续）。

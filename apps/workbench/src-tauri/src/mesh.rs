@@ -1039,6 +1039,148 @@ fn await_service_state(
     }
 }
 
+// ── 分享链接拉取导入（spec 014 US4，AC9~AC11）──────────────────────────────
+//
+// 社区节点的真实来源是 EasyTier 官方仓库的 Discussions 分享帖（官方公共节点
+// public.easytier.top/.cn 均已 NXDOMAIN）。本段把「链接 → 候选池」做成通用
+// 通道：GitHub Discussions 自动转官方 REST（正文+评论——真机直抓 github.com
+// 网页常被拦，api.github.com 实测可达），其余 https 文本源直抓；提取统一走
+// 白名单协议扫描。导入仅进候选池，生效仍须经 US1 检测 + US2 应用。
+
+/// 候选 URI 白名单协议（EasyTier peer 支持的协议；http 等非组网协议不收）
+const RELAY_URI_SCHEMES: &[&str] = &["tcp", "udp", "ws", "wss", "quic", "wg", "faketcp"];
+
+/// 拉取响应体上限（AC11：1MB——分享帖远小于此，防异常大响应）
+const RELAY_FETCH_MAX_BYTES: usize = 1024 * 1024;
+
+/// 从任意文本提取候选节点 URI（纯函数，AC9 核心）：扫描 `scheme://host[:port]`
+/// 形态（手写扫描，不加 regex 依赖），scheme 白名单过滤、host:port 可解析才收；
+/// 按 协议+host:port 归一去重、保序。Markdown 常见包裹（反引号/引号/括号/中英文
+/// 标点）一律视作终止符。限制：host 取 ASCII 形态（IDN/裸 IPv6 不支持——候选
+/// 场景罕见，解析失败即丢弃不报错）。
+pub fn relay_list_extract(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut keys: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i + 3 <= bytes.len() {
+        if &bytes[i..i + 3] != b"://" {
+            i += 1;
+            continue;
+        }
+        // 回溯 scheme（[字母数字+.-] 连续段）
+        let mut start = i;
+        while start > 0 {
+            let c = bytes[start - 1];
+            if c.is_ascii_alphanumeric() || matches!(c, b'+' | b'.' | b'-') {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        let scheme = text[start..i].to_ascii_lowercase();
+        // 前进到终止符（空白/非 ASCII/包裹与标点）
+        let mut end = i + 3;
+        while end < bytes.len() {
+            let c = bytes[end];
+            if c.is_ascii_whitespace()
+                || c >= 0x80
+                || matches!(
+                    c,
+                    b'`' | b'"' | b'\'' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'<' | b'>'
+                        | b',' | b';'
+                )
+            {
+                break;
+            }
+            end += 1;
+        }
+        let candidate = &text[start..end];
+        if RELAY_URI_SCHEMES.contains(&scheme.as_str()) {
+            if let Some((host, port)) = peer_host_port(candidate) {
+                if valid_peer_uri(candidate) {
+                    let key = format!("{scheme}://{}:{port}", host.to_ascii_lowercase());
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                        out.push(format!("{scheme}://{host}:{port}"));
+                    }
+                }
+            }
+        }
+        i = end.max(i + 3);
+    }
+    out
+}
+
+/// 分享链接 → 拼接文本（AC9/AC11）：GitHub Discussions 链接自动转官方 REST
+///（正文 + 单页评论）；其余 https URL 直抓原始文本。仅 https；10s 超时；
+/// 响应体超 [`RELAY_FETCH_MAX_BYTES`] 拒绝。
+pub fn relay_list_fetch(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("https://") {
+        return Err("仅支持 https 链接".into());
+    }
+    if let Some(rest) = trimmed.strip_prefix("https://github.com/") {
+        let segs: Vec<&str> = rest.split('?').next().unwrap_or("").split('/').collect();
+        if segs.len() >= 4 && segs[2] == "discussions" {
+            return fetch_github_discussion(segs[0], segs[1], segs[3]);
+        }
+    }
+    http_get_text(trimmed)
+}
+
+/// GitHub Discussions → REST：正文 + 评论拼接（issues API 对 discussion 恒 404，
+/// 必须走 discussions 端点；UA 为 GitHub API 强制要求）
+fn fetch_github_discussion(owner: &str, repo: &str, num: &str) -> Result<String, String> {
+    num.parse::<u64>()
+        .map_err(|_| format!("discussion 编号不合法：{num}"))?;
+    let base = format!("https://api.github.com/repos/{owner}/{repo}/discussions/{num}");
+    let main = http_get_text(&base)?;
+    let body = serde_json::from_str::<serde_json::Value>(&main)
+        .map_err(|e| format!("GitHub 响应解析失败：{e}"))?
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mut text = body;
+    let comments = http_get_text(&format!("{base}/comments?per_page=100"))?;
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&comments) {
+        if let Some(arr) = v.as_array() {
+            for c in arr {
+                if let Some(b) = c.get("body").and_then(|x| x.as_str()) {
+                    text.push('\n');
+                    text.push_str(b);
+                }
+            }
+        }
+    }
+    Ok(text)
+}
+
+/// https GET → 文本（ureq/rustls 既有依赖；10s 超时；take 限长——超限读出
+/// 1MB+1 即可判定拒绝，不整读）
+fn http_get_text(url: &str) -> Result<String, String> {
+    use std::io::Read as _;
+
+    let resp = ureq::get(url)
+        .timeout(Duration::from_secs(10))
+        .set("User-Agent", "ai-remote-workbench")
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(code, _) => format!("拉取失败（HTTP {code}）：{url}"),
+            _ => format!("网络不可达或超时：{url}"),
+        })?;
+    let mut buf: Vec<u8> = Vec::new();
+    resp.into_reader()
+        .take((RELAY_FETCH_MAX_BYTES + 1) as u64)
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if buf.len() > RELAY_FETCH_MAX_BYTES {
+        return Err(format!("响应超过 {}KB 上限，已拒绝", RELAY_FETCH_MAX_BYTES / 1024));
+    }
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
 /// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
 /// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
 /// **无条件 SHA256 办后校验**（spec 011 AC3：旧「exe 已存在即跳过」的短路
@@ -1744,6 +1886,45 @@ mod tests {
             poll,
         )
         .expect("1056 应容忍");
+    }
+
+    // ── spec 014 US4：分享链接提取 ────────────────────────────────────────
+
+    /// AC9：Markdown 分享帖形态（反引号/引号/toml 代码块/中文标点）提取 +
+    /// 白名单协议过滤 + 归一去重
+    #[test]
+    fn relay_list_extract_from_markdown_share_post() {
+        // 样例取自真实 discussion #2429 的排版形态
+        let md = "## 节点信息\n\
+                  节点 IP：`161.33.207.13`【日本-中转延迟可能较高】\n\
+                  TCP    tcp://161.33.207.13:51010\n\
+                  UDP    udp://161.33.207.13:51010\n\
+                  WSS    wss://161.33.207.13:51012\n\
+                  ```toml\n\
+                  [[peer]]\n\
+                  uri = \"tcp://161.33.207.13:51010\"\n\
+                  uri = \"tcp://sh.example.org:7910\"\n\
+                  ```\n\
+                  参考 http://not-a-relay.example.com:80 与 ftp://x.example.com:1\n\
+                  坏值 tcp:// 和 tcp://:11010 不应收";
+        let uris = relay_list_extract(md);
+        assert_eq!(
+            uris,
+            vec![
+                "tcp://161.33.207.13:51010",
+                "udp://161.33.207.13:51010",
+                "wss://161.33.207.13:51012",
+                "tcp://sh.example.org:7910",
+            ],
+            "白名单过滤 http/ftp、toml 引号内提取、同节点去重：{uris:?}"
+        );
+    }
+
+    /// AC9：GitHub Discussions 链接识别（转 REST 的输入解析）
+    #[test]
+    fn relay_list_fetch_rejects_non_https() {
+        assert!(relay_list_fetch("http://github.com/a/b/discussions/1").unwrap_err().contains("https"));
+        assert!(relay_list_fetch("").unwrap_err().contains("https"));
     }
 
     // ── T4：网段冲突检测 ──────────────────────────────────────────────────

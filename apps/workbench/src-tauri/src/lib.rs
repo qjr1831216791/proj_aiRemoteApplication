@@ -110,9 +110,10 @@ pub fn run() {
             commands::mesh_sync_dns,
             commands::mesh_diagnostics,
             commands::mesh_member_config,
-            // spec 014：候选中继池（探测 / 一键应用健康节点）
+            // spec 014：候选中继池（探测 / 一键应用健康节点 / 分享链接导入）
             commands::relay_probe,
             commands::relay_apply,
+            commands::relay_fetch_nodes,
             // spec 010：局域网边界守卫（T4 命令层）
             commands::lan_guard_status,
             commands::lan_guard_set_exception,

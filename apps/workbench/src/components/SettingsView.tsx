@@ -193,6 +193,11 @@ export function SettingsView(props: SettingsViewProps) {
   const [meshPeersText, setMeshPeersText] = useState(settings.mesh.peers.join("\n"));
   // 自定义候选中继（spec 014：仅候选不生效，随 mesh 补丁一起保存）
   const [meshPoolText, setMeshPoolText] = useState(settings.mesh.relayPool.join("\n"));
+  // 分享链接导入（spec 014 US4）：预填 EasyTier 官方仓库的社区节点分享帖
+  //（GitHub Discussions；官方公共节点 public.easytier.top/.cn 均已失效）
+  const RELAY_SHARE_URL = "https://github.com/EasyTier/EasyTier/discussions/2429";
+  const [poolUrl, setPoolUrl] = useState(RELAY_SHARE_URL);
+  const [poolFetchBusy, setPoolFetchBusy] = useState(false);
   // 组网动作在途（安装/应用/卸载共用；UAC 派发为异步返回）
   const [meshBusy, setMeshBusy] = useState(false);
   // 组网诊断结果（007 T16/AC13；null = 尚未运行）
@@ -328,6 +333,36 @@ export function SettingsView(props: SettingsViewProps) {
       onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
     } finally {
       setApplyBusy(false);
+    }
+  };
+
+  /** 分享链接拉取（AC9~AC10）：提取白名单协议节点并合并进候选 textarea
+   * （不覆盖既有项、不直接生效）；入库仍须经「保存」 */
+  const fetchPoolNodes = async () => {
+    setPoolFetchBusy(true);
+    try {
+      const nodes = await api.relayFetchNodes(poolUrl.trim());
+      const existing = new Set(
+        meshPoolText.split("\n").map((s) => s.trim()).filter(Boolean),
+      );
+      const fresh = nodes.filter((n) => !existing.has(n));
+      if (fresh.length === 0) {
+        onToast(t("settings.meshPoolFetchNone", lang), "info");
+        return;
+      }
+      setMeshPoolText(
+        [...meshPoolText.split("\n").map((s) => s.trim()).filter(Boolean), ...fresh].join("\n"),
+      );
+      onToast(
+        t("settings.meshPoolFetchDone", lang)
+          .replace("{n}", String(nodes.length))
+          .replace("{m}", String(fresh.length)),
+        "success",
+      );
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setPoolFetchBusy(false);
     }
   };
 
@@ -538,6 +573,26 @@ export function SettingsView(props: SettingsViewProps) {
               value={meshPoolText}
               onInput={(e) => setMeshPoolText(e.currentTarget.value)}
             />
+          </div>
+          {/* 分享链接导入（spec 014 US4）：拉取社区分享帖的已知节点合并进上方
+              候选（可再手动增删），入库须经「保存」；GitHub Discussions 自动转
+              API 拉取（网页直抓不作依赖） */}
+          <div class="settings__row settings__row--field">
+            <div class="settings__row-text">
+              <span class="settings__label">{t("settings.meshPoolFetchLabel", lang)}</span>
+              <input
+                class="form-input"
+                value={poolUrl}
+                onInput={(e) => setPoolUrl(e.currentTarget.value)}
+              />
+            </div>
+            <button
+              class="btn btn--sm"
+              disabled={poolFetchBusy}
+              onClick={() => void fetchPoolNodes()}
+            >
+              {poolFetchBusy ? t("settings.meshPoolFetching", lang) : t("settings.meshPoolFetchBtn", lang)}
+            </button>
           </div>
           {/* 保存配置独占一行（2026-09-13 需求方「不协调」反馈）：原先挤在字段行尾，
               与 textarea 右边界参差；移出后三输入平分整行、与 textarea 同宽 */}

@@ -167,6 +167,12 @@ export const en = {
   "settings.meshPool": "Custom candidate relays (one per line, optional)",
   "settings.meshPoolPlaceholder": "e.g. tcp://my-node.example.com:11010",
   "settings.meshPoolInvalid": "Each candidate must look like scheme://host (e.g. tcp://host:port)",
+  // spec 014 US4: import from share links (GitHub Discussions via official REST)
+  "settings.meshPoolFetchLabel": "Fetch from community share link",
+  "settings.meshPoolFetchBtn": "Fetch nodes",
+  "settings.meshPoolFetching": "Fetching…",
+  "settings.meshPoolFetchDone": "Extracted {n} nodes, {m} new; filled into the candidate list above — click \"Save\" to persist",
+  "settings.meshPoolFetchNone": "No new valid nodes found in the link (they may already exist)",
   "settings.meshSaved": "Mesh configuration saved (applies after \"Apply config & restart service\")",
   "settings.meshSecretHint":
     "The mesh secret never goes through an app input: click the button on the right and type it in the popped-up console; the script writes it straight into the network-secret file in the stack directory (hidden input, never logged, never in the settings file)",

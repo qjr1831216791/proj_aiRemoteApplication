@@ -163,6 +163,12 @@ export const zh = {
   "settings.meshPool": "自定义候选节点（每行一条，可选）",
   "settings.meshPoolPlaceholder": "如 tcp://my-node.example.com:11010",
   "settings.meshPoolInvalid": "候选节点每条须为「协议://地址」形态（如 tcp://host:port）",
+  // spec 014 US4：分享链接导入（GitHub Discussions 自动转 API 拉取）
+  "settings.meshPoolFetchLabel": "从社区分享链接获取",
+  "settings.meshPoolFetchBtn": "获取节点",
+  "settings.meshPoolFetching": "获取中…",
+  "settings.meshPoolFetchDone": "提取 {n} 个节点，新增 {m} 个；已填入上方候选列表，点「保存」入库",
+  "settings.meshPoolFetchNone": "链接中未发现新的有效节点（可能均已存在）",
   "settings.meshSaved": "组网配置已保存（应用配置并重启服务后生效）",
   "settings.meshSecretHint":
     "组网密钥不经程序输入框：点右侧按钮在弹出的控制台输入，脚本直写栈目录 network-secret 文件（不回显、不落日志、不进设置文件）",

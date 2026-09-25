@@ -79,6 +79,8 @@ export const api = {
   /** 一键应用健康节点（spec 014 AC4~AC6）：健康列表写入生效 peers 并重启服务 */
   relayApply: (healthy: string[]) =>
     invoke<RelayApplyOutcome>("relay_apply", { healthy }),
+  /** 分享链接拉取候选节点（spec 014 AC9~AC11）：提取白名单协议 URI 并去重 */
+  relayFetchNodes: (url: string) => invoke<string[]>("relay_fetch_nodes", { url }),
   /** DNS 对齐检测（AC8：A=虚拟 IP 对齐 + 残留 CNAME 判旁路暴露面） */
   checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
 

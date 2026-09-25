@@ -46,6 +46,13 @@
   ④ 真机验收清单已建 `acceptance-manual.md`（8 项，含 AC 归属标注）——**待需求方执行**
   完成标志：自动化面全绿 ✓ + 真机清单交付需求方 ✓
 
+- [x] **T7 变更：分享链接导入（US4/AC9~AC11）**（依赖: T6 前提；2026-09-25 需求方追加）：
+  ① spec/plan 变更记录 + US4 三 AC ✓；
+  ② 内核 `relay_list_extract`（手写扫描不加 regex 依赖，白名单 7 协议，Markdown 包裹/中英文标点终止；真实 #2429 排版样例单测 `relay_list_extract_from_markdown_share_post`）+ `relay_list_fetch`（GitHub Discussions 自动转 `api.github.com` REST 正文+评论——issues API 对 discussion 恒 404 之谜实测解开；https-only + 10s 超时 + 1MB 上限）✓；
+  ③ `relay_fetch_nodes` 命令注册 ✓；
+  ④ 前端「从社区分享链接获取」行（预填 #2429，合并去重进候选 textarea、不直接生效）+ i18n 键对 ✓
+  完成标志：`cargo test` 272 绿 + 前端构建绿 ✓（2026-09-25；真机导入走查归验收清单 #9/#10）
+
 ## 完成定义（DoD）核对清单
 
 - [ ] AC1~AC8 逐条验证（自动化覆盖面 + 真机清单标注归属）
