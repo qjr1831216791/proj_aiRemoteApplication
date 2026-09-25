@@ -19,6 +19,7 @@ pub const CADDYFILE_PATH: &str = r"D:\Software\cloudcli-https\Caddyfile";
 /// 对外域名**回落默认值**（spec 013：运行时生效域名见 settings::effective_domain）
 pub const DOMAIN: &str = "ai.jackqi.cn";
 /// 工作台页面地址**回落默认值**（spec 013：运行时见 settings::effective_workbench_url）
+#[allow(dead_code)] // 与 DOMAIN_ROOT 同口径：仅测试与文档对照消费，无运行时直读
 pub const WORKBENCH_URL: &str = "https://ai.jackqi.cn/";
 
 /// CloudCLI 监听进程的可执行名：run-server-hidden.ps1 经 npm 全局拉起 node.exe，
