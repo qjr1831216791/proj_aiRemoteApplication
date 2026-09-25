@@ -803,6 +803,421 @@ pub fn run_diagnostics(cfg: &MeshConfig, stack_dir: &str, domain: &str) -> Vec<D
     ]
 }
 
+// ── 候选中继池（spec 014：探测把关、一键应用）──────────────────────────────
+//
+// 背景：默认社区节点 vomiku 于 2026-09-24 停止服务致组网瘫痪——诊断此前
+// 只覆盖已配置 peers，用户无从知晓「有没有别的节点可用」。本段提供
+// 池合成（内置 ∪ 自定义 ∪ 生效）→ 并发探测 → 结果即切换依据的内核；
+// 配置变更动作在命令层（relay_apply），内核保持纯只读。
+
+/// 候选节点来源（AC3：同列表呈现可区分；优先级 Active > Custom > Builtin——
+/// 同一节点重复出现时保留更高优先级的身份标注）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelaySource {
+    /// 生效中（当前 peers 成员）
+    Active,
+    /// 用户自定义候选（settings.mesh.relay_pool）
+    Custom,
+    /// 内置清单（consts::RELAY_POOL_BUILTIN）
+    Builtin,
+}
+
+/// 候选探测单项（`relay_probe` 载荷；AC1：绿/红 + 失败原因码。reason 为
+/// 固定枚举稳定码，前端 `mesh.pool.reason.*` 双语映射——不含用户数据/密钥）
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayProbeItem {
+    /// 节点 URI（保持用户输入原貌，仅 trim）
+    pub uri: String,
+    pub source: RelaySource,
+    /// TCP 连通判定（invalid 项恒 false）
+    pub ok: bool,
+    /// 失败原因码（ok=true 时省略）：refused=端口无监听 / timeout=网络不可达
+    /// 或被拦 / resolve=域名解析失败 / error=其他 IO 错误 / invalid=URI 非法
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+}
+
+/// 候选去重键（host:port，host 小写；scheme 不参与——探测的是端口连通，
+/// tcp/udp 同址视作同一节点）
+fn relay_uri_key(uri: &str) -> Option<String> {
+    peer_host_port(uri).map(|(h, p)| format!("{}:{p}", h.to_ascii_lowercase()))
+}
+
+/// 节点 host 可用性（2026-09-25 真机反馈：分享帖里他人的 `listeners`
+/// `tcp://0.0.0.0:11010` 被提取成候选，且探测连回本机监听**假绿**——
+/// 通配/回环/广播地址对本机之外不可达，一律不收；域名形态放行，DNS
+/// 解析与可达性由探测把关）。IPv6 形态剥方括号后同口径。
+fn usable_relay_host(host: &str) -> bool {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host);
+    match bare.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => {
+            !v4.is_unspecified() && !v4.is_loopback() && !v4.is_broadcast()
+        }
+        Ok(std::net::IpAddr::V6(v6)) => !v6.is_unspecified() && !v6.is_loopback(),
+        Err(_) => !bare.is_empty(),
+    }
+}
+
+/// 整条 URI 的 host 可用性（validate 用；解析失败视为不可用）
+fn relay_host_usable(uri: &str) -> bool {
+    peer_host_port(uri)
+        .map(|(h, _)| usable_relay_host(&h))
+        .unwrap_or(false)
+}
+
+fn relay_source_rank(source: RelaySource) -> u8 {
+    match source {
+        RelaySource::Active => 0,
+        RelaySource::Custom => 1,
+        RelaySource::Builtin => 2,
+    }
+}
+
+/// 池合成（spec 014 §4.2 纯函数）：生效 peers ∪ 自定义 ∪ 内置，归一去重；
+/// 重复节点保留高优先级来源；非法 URI 原样入列标 invalid（坏数据可见而非
+/// 静默丢弃——AC1 让用户看到配置里的问题项）。空串跳过（前端空行残留）。
+pub fn relay_pool_compose(
+    builtin: &[String],
+    custom: &[String],
+    active: &[String],
+) -> Vec<RelayProbeItem> {
+    let mut out: Vec<RelayProbeItem> = Vec::new();
+    let mut keys: Vec<String> = Vec::new();
+    fn push_item(
+        uri: &str,
+        source: RelaySource,
+        out: &mut Vec<RelayProbeItem>,
+        keys: &mut Vec<String>,
+    ) {
+        let trimmed = uri.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        // invalid 口径对齐 validate_mesh_config（valid_peer_uri 严格形态拒含
+        // 空白/无 scheme；peer_host_port 宽松解析不作数），host 可用性另设
+        // unusable（0.0.0.0/127.x 监听回环——探测会连回本机假绿，2026-09-25）
+        let host_usable =
+            peer_host_port(trimmed).map(|(h, _)| usable_relay_host(&h)).unwrap_or(false);
+        let key = match relay_uri_key(trimmed) {
+            Some(k) if valid_peer_uri(trimmed) && host_usable => k,
+            _ => format!("__invalid__:{trimmed}"),
+        };
+        if let Some(pos) = keys.iter().position(|k| *k == key) {
+            // 重复节点：保留高优先级来源（合法键与 invalid 键形态互斥——
+            // 同址节点不可能既有合法键又先以 invalid 入列，无需重置 reason）
+            if relay_source_rank(source) < relay_source_rank(out[pos].source) {
+                out[pos].source = source;
+            }
+            return;
+        }
+        keys.push(key);
+        let reason = if !valid_peer_uri(trimmed) {
+            Some("invalid")
+        } else if !host_usable {
+            Some("unusable")
+        } else {
+            None
+        };
+        out.push(RelayProbeItem {
+            uri: trimmed.to_string(),
+            source,
+            ok: false,
+            reason,
+        });
+    }
+    for uri in active {
+        push_item(uri, RelaySource::Active, &mut out, &mut keys);
+    }
+    for uri in custom {
+        push_item(uri, RelaySource::Custom, &mut out, &mut keys);
+    }
+    for uri in builtin {
+        push_item(uri, RelaySource::Builtin, &mut out, &mut keys);
+    }
+    out
+}
+
+/// 全池并发探测（AC1/AC2）：`thread::scope` 并行（单节点 `probe_tcp` 3s 超时），
+/// 总耗时≈最慢单节点而非逐项串行；invalid 项免探测。纯只读——不改任何配置。
+pub fn relay_probe_pool(items: Vec<RelayProbeItem>) -> Vec<RelayProbeItem> {
+    std::thread::scope(|scope| {
+        items
+            .into_iter()
+            .map(|mut item| {
+                scope.spawn(move || {
+                    // 已带原因码（invalid/unusable）的项免探测——unusable 主机
+                    // （0.0.0.0 等）探测会连回本机监听假绿，必须拦在探测前
+                    if item.reason.is_some() {
+                        return item;
+                    }
+                    match peer_host_port(&item.uri) {
+                        // 口径同 compose：宽松解析成功但形态非法（含空白等）仍按
+                        // invalid 处理，不对其发起探测
+                        Some((host, port)) if valid_peer_uri(&item.uri) => {
+                            match probe_tcp(&host, port) {
+                                Ok(()) => {
+                                    item.ok = true;
+                                    item.reason = None;
+                                }
+                                Err(code) => {
+                                    item.ok = false;
+                                    item.reason = Some(code);
+                                }
+                            }
+                        }
+                        _ => {
+                            item.ok = false;
+                            item.reason = Some("invalid");
+                        }
+                    }
+                    item
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|h| h.join().expect("候选探测线程不应 panic"))
+            .collect()
+    })
+}
+
+// ── 一键应用健康节点（spec 014 T4，AC4~AC6）────────────────────────────────
+
+/// relay_apply 载荷（AC4/AC6）：peers = 应用后的生效列表；
+/// dispatch_required = 静默重启未成功（旧装机无 SDDL 授权等），配置已落盘
+/// 且校验通过，需用户走设置区 UAC「应用配置并重启」兜底一次。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayApplyOutcome {
+    pub peers: Vec<String>,
+    pub dispatch_required: bool,
+}
+
+/// apply 入参校验（AC5 + 011 命令面惯例，纯函数）：healthy 非空（全灭时
+/// 拒绝应用——防清空 peers 致永久「连接中」）、逐项 URI 合法、全部 ⊆ 池
+///（防前端伪造不在池中的节点直达生效面）。
+pub fn validate_relay_apply(healthy: &[String], pool: &[RelayProbeItem]) -> Result<(), String> {
+    if healthy.is_empty() {
+        return Err("没有可应用的健康节点：请先检测中继节点，或添加自定义候选".into());
+    }
+    for uri in healthy {
+        if !valid_peer_uri(uri) {
+            return Err(format!("健康节点 URI 不合法（应为 scheme://host:port）：{uri}"));
+        }
+        if !pool.iter().any(|p| &p.uri == uri) {
+            return Err(format!("节点不在候选池中（请先检测或添加为自定义候选）：{uri}"));
+        }
+    }
+    Ok(())
+}
+
+/// 服务静默重启等待（relay_apply 专用；plan §3.4）：sc stop → 轮询至
+/// Stopped/Disabled → sc start → 轮询至 Running/StartPending。`run_sc` 注入
+/// sc 派发（生产 = sc.exe 静默调用；测试 = mock），ops 注入服务态探测；
+/// 任一步失败/超时 → Err（调用方回落 dispatch_required）。退出码静默口径：
+/// stop 沿 [`stop_exit_code_is_quiet`]（0/1060/1062），start 容忍 1056（已运行）。
+pub fn restart_service_await(
+    ops: &dyn MeshOps,
+    run_sc: &dyn Fn(&[&str]) -> Result<i32, String>,
+    stop_wait: Duration,
+    start_wait: Duration,
+    poll_every: Duration,
+) -> Result<(), String> {
+    let code = run_sc(&["stop", SERVICE_NAME])?;
+    if !stop_exit_code_is_quiet(code) {
+        return Err(format!("sc stop 未受理（退出码 {code}）"));
+    }
+    await_service_state(
+        ops,
+        &[MeshServiceState::Stopped, MeshServiceState::Disabled],
+        stop_wait,
+        poll_every,
+        "停止",
+    )?;
+    let code = run_sc(&["start", SERVICE_NAME])?;
+    if code != 0 && code != 1056 {
+        return Err(format!("sc start 未受理（退出码 {code}）"));
+    }
+    await_service_state(
+        ops,
+        &[MeshServiceState::Running, MeshServiceState::StartPending],
+        start_wait,
+        poll_every,
+        "启动",
+    )
+}
+
+/// 轮询等待服务态进入目标集（restart 内核；超时 Err 带阶段名与时长）
+fn await_service_state(
+    ops: &dyn MeshOps,
+    targets: &[MeshServiceState],
+    wait: Duration,
+    poll_every: Duration,
+    phase: &str,
+) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        if targets.contains(&ops.service_state()) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!(
+                "等待服务{phase}超时（{}s）：请刷新组网状态确认，或走设置区手动应用",
+                wait.as_secs()
+            ));
+        }
+        std::thread::sleep(poll_every);
+    }
+}
+
+// ── 分享链接拉取导入（spec 014 US4，AC9~AC11）──────────────────────────────
+//
+// 社区节点的真实来源是 EasyTier 官方仓库的 Discussions 分享帖（官方公共节点
+// public.easytier.top/.cn 均已 NXDOMAIN）。本段把「链接 → 候选池」做成通用
+// 通道：GitHub Discussions 自动转官方 REST（正文+评论——真机直抓 github.com
+// 网页常被拦，api.github.com 实测可达），其余 https 文本源直抓；提取统一走
+// 白名单协议扫描。导入仅进候选池，生效仍须经 US1 检测 + US2 应用。
+
+/// 候选 URI 白名单协议（EasyTier peer 支持的协议；http 等非组网协议不收）
+const RELAY_URI_SCHEMES: &[&str] = &["tcp", "udp", "ws", "wss", "quic", "wg", "faketcp"];
+
+/// 拉取响应体上限（AC11：1MB——分享帖远小于此，防异常大响应）
+const RELAY_FETCH_MAX_BYTES: usize = 1024 * 1024;
+
+/// 从任意文本提取候选节点 URI（纯函数，AC9 核心）：扫描 `scheme://host[:port]`
+/// 形态（手写扫描，不加 regex 依赖），scheme 白名单过滤、host:port 可解析才收；
+/// 按 协议+host:port 归一去重、保序。Markdown 常见包裹（反引号/引号/括号/中英文
+/// 标点）一律视作终止符。限制：host 取 ASCII 形态（IDN/裸 IPv6 不支持——候选
+/// 场景罕见，解析失败即丢弃不报错）。
+pub fn relay_list_extract(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut keys: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i + 3 <= bytes.len() {
+        if &bytes[i..i + 3] != b"://" {
+            i += 1;
+            continue;
+        }
+        // 回溯 scheme（[字母数字+.-] 连续段）
+        let mut start = i;
+        while start > 0 {
+            let c = bytes[start - 1];
+            if c.is_ascii_alphanumeric() || matches!(c, b'+' | b'.' | b'-') {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        let scheme = text[start..i].to_ascii_lowercase();
+        // 前进到终止符（空白/非 ASCII/包裹与标点）
+        let mut end = i + 3;
+        while end < bytes.len() {
+            let c = bytes[end];
+            if c.is_ascii_whitespace()
+                || c >= 0x80
+                || matches!(
+                    c,
+                    b'`' | b'"' | b'\'' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'<' | b'>'
+                        | b',' | b';'
+                )
+            {
+                break;
+            }
+            end += 1;
+        }
+        let candidate = &text[start..end];
+        if RELAY_URI_SCHEMES.contains(&scheme.as_str()) {
+            if let Some((host, port)) = peer_host_port(candidate) {
+                // 0.0.0.0/127.x 是他人配置里的监听地址而非节点（分享帖常见
+                // 贴完整 config），静默丢弃；形态不合法的同样不收
+                if usable_relay_host(&host) && valid_peer_uri(candidate) {
+                    let key = format!("{scheme}://{}:{port}", host.to_ascii_lowercase());
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                        out.push(format!("{scheme}://{host}:{port}"));
+                    }
+                }
+            }
+        }
+        i = end.max(i + 3);
+    }
+    out
+}
+
+/// 分享链接 → 拼接文本（AC9/AC11）：GitHub Discussions 链接自动转官方 REST
+///（正文 + 单页评论）；其余 https URL 直抓原始文本。仅 https；10s 超时；
+/// 响应体超 [`RELAY_FETCH_MAX_BYTES`] 拒绝。
+pub fn relay_list_fetch(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("https://") {
+        return Err("仅支持 https 链接".into());
+    }
+    if let Some(rest) = trimmed.strip_prefix("https://github.com/") {
+        let segs: Vec<&str> = rest.split('?').next().unwrap_or("").split('/').collect();
+        if segs.len() >= 4 && segs[2] == "discussions" {
+            return fetch_github_discussion(segs[0], segs[1], segs[3]);
+        }
+    }
+    http_get_text(trimmed)
+}
+
+/// GitHub Discussions → REST：正文 + 评论拼接（issues API 对 discussion 恒 404，
+/// 必须走 discussions 端点；UA 为 GitHub API 强制要求）
+fn fetch_github_discussion(owner: &str, repo: &str, num: &str) -> Result<String, String> {
+    num.parse::<u64>()
+        .map_err(|_| format!("discussion 编号不合法：{num}"))?;
+    let base = format!("https://api.github.com/repos/{owner}/{repo}/discussions/{num}");
+    let main = http_get_text(&base)?;
+    let body = serde_json::from_str::<serde_json::Value>(&main)
+        .map_err(|e| format!("GitHub 响应解析失败：{e}"))?
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mut text = body;
+    let comments = http_get_text(&format!("{base}/comments?per_page=100"))?;
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&comments) {
+        if let Some(arr) = v.as_array() {
+            for c in arr {
+                if let Some(b) = c.get("body").and_then(|x| x.as_str()) {
+                    text.push('\n');
+                    text.push_str(b);
+                }
+            }
+        }
+    }
+    Ok(text)
+}
+
+/// https GET → 文本（ureq/rustls 既有依赖；10s 超时；take 限长——超限读出
+/// 1MB+1 即可判定拒绝，不整读）
+fn http_get_text(url: &str) -> Result<String, String> {
+    use std::io::Read as _;
+
+    let resp = ureq::get(url)
+        .timeout(Duration::from_secs(10))
+        .set("User-Agent", "ai-remote-workbench")
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(code, _) => format!("拉取失败（HTTP {code}）：{url}"),
+            _ => format!("网络不可达或超时：{url}"),
+        })?;
+    let mut buf: Vec<u8> = Vec::new();
+    resp.into_reader()
+        .take((RELAY_FETCH_MAX_BYTES + 1) as u64)
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if buf.len() > RELAY_FETCH_MAX_BYTES {
+        return Err(format!("响应超过 {}KB 上限，已拒绝", RELAY_FETCH_MAX_BYTES / 1024));
+    }
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
 /// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
 /// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
 /// **无条件 SHA256 办后校验**（spec 011 AC3：旧「exe 已存在即跳过」的短路
@@ -1037,6 +1452,23 @@ pub fn validate_mesh_config(cfg: &MeshConfig) -> Result<(), String> {
         if !valid_peer_uri(uri) {
             return Err(format!("对端 URI 不合法（应为 scheme://host:port）：{uri}"));
         }
+        if !relay_host_usable(uri) {
+            return Err(format!(
+                "对端地址不可用（0.0.0.0/127.x 为监听或回环地址，对其他成员无意义）：{uri}"
+            ));
+        }
+    }
+    // spec 014 AC7：候选池同口径校验（仅候选不生效，但坏 URI 不入库——
+    // 探测时 invalid 项可见是「检测发现」，入库是「配置写入」，口径不同）
+    for uri in &cfg.relay_pool {
+        if !valid_peer_uri(uri) {
+            return Err(format!("候选 URI 不合法（应为 scheme://host:port）：{uri}"));
+        }
+        if !relay_host_usable(uri) {
+            return Err(format!(
+                "候选地址不可用（0.0.0.0/127.x 为监听或回环地址），请删除该行：{uri}"
+            ));
+        }
     }
     Ok(())
 }
@@ -1209,6 +1641,7 @@ mod tests {
                 "tcp://sh.vomiku.com:7910".into(),
                 "udp://backup.example.com:11010".into(),
             ],
+            relay_pool: Vec::new(),
         }
     }
 
@@ -1285,8 +1718,295 @@ mod tests {
         cfg.peers = vec!["sh.vomiku.com:7910".into()];
         assert!(validate_mesh_config(&cfg).unwrap_err().contains("URI"));
 
+        // spec 014 AC7：候选池同口径校验（非法 URI 拒入库；空池合法）
+        cfg = sample_config();
+        cfg.relay_pool = vec!["tcp://ok.example.com:11010".into()];
+        assert!(validate_mesh_config(&cfg).is_ok(), "合法候选应通过");
+        cfg.relay_pool = vec!["bad uri".into()];
+        assert!(
+            validate_mesh_config(&cfg).unwrap_err().contains("候选"),
+            "非法候选应拒绝且文案指明候选"
+        );
+
         // 默认配置本身合法（默认值体检）
         assert!(validate_mesh_config(&crate::settings::MeshConfig::default()).is_ok());
+    }
+
+    // ── spec 014：候选池合成与探测 ────────────────────────────────────────
+
+    /// AC3/§4.2：生效 ∪ 自定义 ∪ 内置，归一去重、来源优先级、非法项可见
+    #[test]
+    fn relay_pool_compose_dedup_priority_and_invalid_visible() {
+        let builtin = vec!["tcp://us01.example.com:11010".to_string()];
+        let custom = vec![
+            "tcp://US01.Example.com:11010".to_string(),
+            "tcp://mine.example.com:22010".to_string(),
+            "   ".to_string(),
+        ];
+        let active = vec![
+            "tcp://mine.example.com:22010".to_string(),
+            "tcp://bad uri".to_string(),
+        ];
+        let items = relay_pool_compose(&builtin, &custom, &active);
+
+        // 顺序 = active → custom → builtin 首次出现序（active 的 invalid 项亦然）
+        assert_eq!(items.len(), 3, "空串跳过、大小写归一去重：{items:?}");
+        assert_eq!(items[0].uri, "tcp://mine.example.com:22010");
+        assert_eq!(items[0].source, RelaySource::Active);
+        assert_eq!(items[1].uri, "tcp://bad uri", "active 段次项");
+        assert_eq!(items[1].reason, Some("invalid"), "非法项可见而非静默丢弃");
+        assert_eq!(items[2].uri, "tcp://US01.Example.com:11010", "用户输入原貌");
+        assert_eq!(
+            items[2].source, RelaySource::Custom,
+            "重复节点（host 大小写不敏感）保留高优先级来源"
+        );
+    }
+
+    /// 序列化契约：camelCase + reason 稳定码；ok 项 reason 省略（不含密钥/用户数据）
+    #[test]
+    fn relay_probe_item_serialization_contract() {
+        let bad = RelayProbeItem {
+            uri: "tcp://a.example.com:1".into(),
+            source: RelaySource::Active,
+            ok: false,
+            reason: Some("refused"),
+        };
+        let json = serde_json::to_string(&bad).unwrap();
+        assert!(json.contains(r#""source":"active""#), "{json}");
+        assert!(json.contains(r#""reason":"refused""#), "{json}");
+
+        let good = RelayProbeItem {
+            uri: "tcp://a.example.com:1".into(),
+            source: RelaySource::Builtin,
+            ok: true,
+            reason: None,
+        };
+        let json = serde_json::to_string(&good).unwrap();
+        assert!(!json.contains("reason"), "ok 项 reason 应省略：{json}");
+    }
+
+    /// AC1/AC2：invalid 免探测、refused/ok 实网分类（本机 listener 保证确定性）
+    #[test]
+    fn relay_probe_pool_reason_codes() {
+        // 本机临时监听 → ok（connect 进 backlog 即成功，无需 accept）
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        // 127.0.0.1:1 几乎恒 refused（无进程监听的保留端口）
+        let items = vec![
+            RelayProbeItem {
+                uri: format!("tcp://127.0.0.1:{port}"),
+                source: RelaySource::Builtin,
+                ok: false,
+                reason: None,
+            },
+            RelayProbeItem {
+                uri: "tcp://127.0.0.1:1".into(),
+                source: RelaySource::Custom,
+                ok: false,
+                reason: None,
+            },
+            RelayProbeItem {
+                uri: "no scheme here".into(),
+                source: RelaySource::Custom,
+                ok: false,
+                reason: Some("invalid"),
+            },
+        ];
+        let out = relay_probe_pool(items);
+        assert!(out[0].ok, "本机监听应 ok：{:?}", out[0].reason);
+        assert_eq!(out[0].reason, None);
+        assert!(!out[1].ok);
+        assert_eq!(out[1].reason, Some("refused"), "127.0.0.1:1 应 refused");
+        assert_eq!(out[2].reason, Some("invalid"), "invalid 项免探测原样透出");
+    }
+
+    // ── spec 014 T4：apply 校验与重启等待 ─────────────────────────────────
+
+    /// MeshOps mock：按预排状态序列出队，耗尽后停在末态（轮询即读它）
+    struct MockServiceOps(std::sync::Mutex<Vec<MeshServiceState>>);
+
+    impl MeshOps for MockServiceOps {
+        fn service_state(&self) -> MeshServiceState {
+            let mut s = self.0.lock().expect("锁");
+            if s.len() > 1 {
+                s.remove(0)
+            } else {
+                s[0]
+            }
+        }
+        fn query_peers(&self) -> Result<Vec<PeerBrief>, String> {
+            Ok(vec![])
+        }
+    }
+
+    /// AC5 + 命令面：空列表拒绝 / 非法 URI 拒绝 / 不在池中拒绝 / 合法通过
+    #[test]
+    fn validate_relay_apply_rejects_empty_illegal_and_foreign() {
+        let pool = vec![RelayProbeItem {
+            uri: "tcp://a.example.com:1".into(),
+            source: RelaySource::Builtin,
+            ok: true,
+            reason: None,
+        }];
+        let err = validate_relay_apply(&[], &pool).unwrap_err();
+        assert!(err.contains("没有可应用"), "AC5 全灭拒绝：{err}");
+        assert!(validate_relay_apply(&["bad uri".into()], &pool)
+            .unwrap_err()
+            .contains("不合法"));
+        assert!(validate_relay_apply(&["tcp://evil.example.com:1".into()], &pool)
+            .unwrap_err()
+            .contains("不在候选池"), "防前端伪造节点直达生效面");
+        assert!(validate_relay_apply(&["tcp://a.example.com:1".into()], &pool).is_ok());
+    }
+
+    /// 重启等待：正常流调用序 stop→start、stop/start 拒绝码、停止/启动超时
+    #[test]
+    fn restart_service_await_paths() {
+        use MeshServiceState::{Running, Stopped};
+        let no_wait = Duration::from_millis(1);
+        let poll = Duration::from_millis(1);
+
+        // 正常流：stop(0) → Stopped → start(0) → Running
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped, Running]));
+        let calls = std::cell::RefCell::new(Vec::<Vec<String>>::new());
+        let run = |args: &[&str]| -> Result<i32, String> {
+            calls
+                .borrow_mut()
+                .push(args.iter().map(|s| s.to_string()).collect());
+            Ok(0)
+        };
+        restart_service_await(&ops, &run, no_wait, no_wait, poll).expect("正常流应通过");
+        assert_eq!(
+            calls.into_inner(),
+            vec![
+                vec!["stop".to_string(), "EasyTierMesh".to_string()],
+                vec!["start".to_string(), "EasyTierMesh".to_string()],
+            ],
+            "调用序应为 stop→start 且指向服务名"
+        );
+
+        // stop 拒绝码（5 = ACCESS_DENIED，旧装机无 SDDL）→ Err 不再 start
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Running]));
+        let r = restart_service_await(&ops, &|_| Ok(5), no_wait, no_wait, poll);
+        assert!(r.unwrap_err().contains("stop"), "stop 拒绝应报停止阶段");
+
+        // start 拒绝码（非 0/1056）→ Err
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped]));
+        let r = restart_service_await(
+            &ops,
+            &|args| {
+                if args[0] == "start" {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            },
+            no_wait,
+            no_wait,
+            poll,
+        );
+        assert!(r.unwrap_err().contains("start"), "start 拒绝应报启动阶段");
+
+        // 停止超时：状态恒 Running
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Running]));
+        let r = restart_service_await(&ops, &|_| Ok(0), no_wait, no_wait, poll);
+        assert!(r.unwrap_err().contains("停止超时"));
+
+        // 启动超时：停止到位但状态恒 Stopped
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped]));
+        let r = restart_service_await(&ops, &|_| Ok(0), no_wait, no_wait, poll);
+        assert!(r.unwrap_err().contains("启动超时"));
+
+        // start 容忍 1056（服务已运行——竞态下 SCM 已自行拉起）
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped, Running]));
+        restart_service_await(
+            &ops,
+            &|args| {
+                if args[0] == "start" {
+                    Ok(1056)
+                } else {
+                    Ok(0)
+                }
+            },
+            no_wait,
+            no_wait,
+            poll,
+        )
+        .expect("1056 应容忍");
+    }
+
+    // ── spec 014 US4：分享链接提取 ────────────────────────────────────────
+
+    /// AC9：Markdown 分享帖形态（反引号/引号/toml 代码块/中文标点）提取 +
+    /// 白名单协议过滤 + 归一去重；监听/回环地址（他人贴的 listeners）不收
+    #[test]
+    fn relay_list_extract_from_markdown_share_post() {
+        // 样例取自真实 discussion #2429 的排版形态（末行为 2026-09-25 真机
+        // 反馈的 0.0.0.0 混入案例——他人分享配置里的 listeners）
+        let md = "## 节点信息\n\
+                  节点 IP：`161.33.207.13`【日本-中转延迟可能较高】\n\
+                  TCP    tcp://161.33.207.13:51010\n\
+                  UDP    udp://161.33.207.13:51010\n\
+                  WSS    wss://161.33.207.13:51012\n\
+                  ```toml\n\
+                  listeners = [\n\
+                    \"tcp://0.0.0.0:11010\",\n\
+                  ]\n\
+                  [[peer]]\n\
+                  uri = \"tcp://161.33.207.13:51010\"\n\
+                  uri = \"tcp://sh.example.org:7910\"\n\
+                  ```\n\
+                  参考 http://not-a-relay.example.com:80 与 ftp://x.example.com:1\n\
+                  坏值 tcp:// 和 tcp://:11010 不应收；127.0.0.1:11010 与 [::]:11010 亦不收";
+        let uris = relay_list_extract(md);
+        assert_eq!(
+            uris,
+            vec![
+                "tcp://161.33.207.13:51010",
+                "udp://161.33.207.13:51010",
+                "wss://161.33.207.13:51012",
+                "tcp://sh.example.org:7910",
+            ],
+            "白名单过滤 http/ftp、通配/回环不收、toml 引号内提取、同节点去重：{uris:?}"
+        );
+    }
+
+    /// 真机反馈（2026-09-25）：候选池里的 0.0.0.0 标 unusable（探测连回本机
+    /// 会假绿），与形态错误 invalid 区分
+    #[test]
+    fn relay_pool_compose_marks_listener_and_loopback_unusable() {
+        let custom = vec![
+            "tcp://0.0.0.0:11010".to_string(),
+            "tcp://127.0.0.1:11010".to_string(),
+        ];
+        let items = relay_pool_compose(&[], &custom, &[]);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].reason, Some("unusable"), "通配地址：{items:?}");
+        assert_eq!(items[1].reason, Some("unusable"), "回环地址：{items:?}");
+        // 探测阶段对 unusable 免探测（防连回本机假绿）
+        let probed = relay_probe_pool(items);
+        assert!(probed.iter().all(|i| !i.ok), "unusable 项不得探测为 ok");
+    }
+
+    /// validate：peers/relay_pool 填监听或回环地址一律拒绝（含存量防线）
+    #[test]
+    fn validate_mesh_config_rejects_unusable_hosts() {
+        let mut cfg = sample_config();
+        cfg.peers = vec!["tcp://0.0.0.0:11010".into()];
+        assert!(validate_mesh_config(&cfg).unwrap_err().contains("对端地址不可用"));
+        cfg = sample_config();
+        cfg.peers = vec!["tcp://127.0.0.1:11010".into()];
+        assert!(validate_mesh_config(&cfg).unwrap_err().contains("对端地址不可用"));
+        cfg = sample_config();
+        cfg.relay_pool = vec!["tcp://0.0.0.0:11010".into()];
+        assert!(validate_mesh_config(&cfg).unwrap_err().contains("候选地址不可用"));
+    }
+
+    /// AC9：GitHub Discussions 链接识别（转 REST 的输入解析）
+    #[test]
+    fn relay_list_fetch_rejects_non_https() {
+        assert!(relay_list_fetch("http://github.com/a/b/discussions/1").unwrap_err().contains("https"));
+        assert!(relay_list_fetch("").unwrap_err().contains("https"));
     }
 
     // ── T4：网段冲突检测 ──────────────────────────────────────────────────

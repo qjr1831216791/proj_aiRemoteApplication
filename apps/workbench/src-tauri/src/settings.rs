@@ -79,6 +79,11 @@ pub struct MeshConfig {
     pub virtual_cidr: String,
     /// 对端节点列表（默认社区节点，可编辑多条——公共节点无 SLA，冗余对冲）
     pub peers: Vec<String>,
+    /// 自定义候选中继节点（spec 014：仅候选不生效——`relay_probe` 探测、
+    /// `relay_apply` 检测通过后才写入 peers；与内置清单合并成池。旧版文件
+    /// 缺字段 → serde default → 空表）
+    #[serde(default)]
+    pub relay_pool: Vec<String>,
 }
 
 impl Default for MeshConfig {
@@ -88,6 +93,7 @@ impl Default for MeshConfig {
             virtual_ip: crate::consts::DEFAULT_MESH_VIRTUAL_IP.to_string(),
             virtual_cidr: crate::consts::DEFAULT_MESH_VIRTUAL_CIDR.to_string(),
             peers: crate::consts::DEFAULT_MESH_PEERS.iter().map(|s| s.to_string()).collect(),
+            relay_pool: Vec::new(),
         }
     }
 }
@@ -578,6 +584,46 @@ mod tests {
         cleanup(&path);
     }
 
+    /// spec 014 T2：旧版文件缺 mesh.relayPool 字段 → serde default → 空表，
+    /// peers 等其余字段不受影响；roundtrip 与 camelCase 键名
+    #[test]
+    fn relay_pool_field_legacy_compat_and_roundtrip() {
+        let path = temp_settings_path("relaypool-legacy");
+        fs::write(
+            &path,
+            r#"{"version":1,"mesh":{"networkName":"kept","virtualIp":"10.9.9.1","virtualCidr":"10.9.9.0/24","peers":["tcp://k:1"]}}"#,
+        )
+        .expect("写入失败");
+        match load_from(&path) {
+            LoadOutcome::Loaded(s) => {
+                assert!(s.mesh.relay_pool.is_empty(), "缺 relayPool → 空表");
+                assert_eq!(s.mesh.peers, vec!["tcp://k:1".to_string()], "peers 不受影响");
+            }
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        cleanup(&path);
+
+        // roundtrip：自定义候选落盘重载保持
+        let path = temp_settings_path("relaypool-roundtrip");
+        let mut s = Settings::default();
+        s.mesh.relay_pool = vec!["tcp://my.node.example.com:11010".into()];
+        save_to(&path, &s).expect("保存失败");
+        match load_from(&path) {
+            LoadOutcome::Loaded(loaded) => {
+                assert_eq!(loaded.mesh.relay_pool, s.mesh.relay_pool, "roundtrip 保持");
+            }
+            other => panic!("应为 Loaded，实际 {other:?}"),
+        }
+        let json = fs::read_to_string(&path).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&json).expect("保存文件应为合法 JSON");
+        assert_eq!(
+            saved["mesh"]["relayPool"],
+            serde_json::json!(["tcp://my.node.example.com:11010"]),
+            "camelCase 键名 relayPool：{json}"
+        );
+        cleanup(&path);
+    }
+
     /// spec 013 T1：normalize_domain 归一与白名单——trim/尾点/小写、空输入 =
     /// 未配置放行、非法形态拒绝（复用 validate_domain，文案指明 domain）
     #[test]
@@ -842,6 +888,7 @@ mod tests {
             virtual_ip: "10.200.0.1".into(),
             virtual_cidr: "10.200.0.0/24".into(),
             peers: vec!["tcp://p.example.com:11010".into()],
+            relay_pool: vec!["tcp://c.example.com:11010".into()],
         };
         save_to(&path, &s).expect("保存失败");
         match load_from(&path) {
@@ -1075,6 +1122,7 @@ mod tests {
             virtual_ip: "10.200.0.1".into(),
             virtual_cidr: "10.200.0.0/24".into(),
             peers: vec!["tcp://a.example.com:11010".into(), "udp://b.example.com:11011".into()],
+            relay_pool: vec!["tcp://c.example.com:11010".into()],
         };
         let patch = SettingsPatch {
             mesh: Some(custom.clone()),

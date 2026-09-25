@@ -11,6 +11,7 @@
 - （暂无）
 
 ### 🟠 实现中（in-progress）
+- [014-relay-pool-diagnostics](./014-relay-pool-diagnostics/spec.md) — 中继节点池检测与切换：内置+自定义候选池一键 TCP 体检（refused/timeout 原因细分）+ 一键应用健康节点（自动剔除死节点并重启组网服务）——vomiku 社区节点瘫痪实战复盘的落地（Sprint 11）
 - [013-domain-single-source](./013-domain-single-source/spec.md) — 域名单一数据来源：装机向导录入域名接线全链路消费点（同步 DNS / 地址区 / 心跳 / 托盘 / 诊断 / 文案 / 脚本），推翻 001 域名常量化口径（分发用户真机反馈两项缺陷；2026-09-15 子代理评审通过，plan/tasks 已定）
 - [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) — 攻击面加固：工作台命令面硬化（domain/stack_dir 双闸校验 + SHA256 去短路 + CSP）+ Caddy 下载指纹锁定 + 443 入口 basic_auth + 傻瓜式组件升级脚本（依据 [2026-09 安全审查报告](../docs/research/security-audit-2026-09.md)；双子代理评审修订后实施；**2026-09-13 验收 done**——AC1~AC11 全勾，真机发现并修复登录死循环与心跳误判，单门模式固化，记录见其 acceptance-manual；**v0.7.0 发布**）
 
@@ -47,6 +48,7 @@
 | Sprint 9 | [011-attack-surface-hardening](./011-attack-surface-hardening/spec.md) | **v0.7.0**：攻击面加固（P1 命令面硬化 / P2 Caddy 指纹锁定 / P3 basic_auth + 升级脚本；2026-09-13 验收 done，发布 v0.7.0） |
 | Sprint 9 | [012-install-client-retirement](./012-install-client-retirement/spec.md) | install-client 退役（运维工具「客户端配置」移除；需求方拍板随 011 同迭代，2026-09-13 done） |
 | Sprint 10 | [013-domain-single-source](./013-domain-single-source/spec.md) | 域名单一数据来源（装机向导录入域名接线全链路消费点，修复分发场景域名硬编码缺陷） |
+| Sprint 11 | [014-relay-pool-diagnostics](./014-relay-pool-diagnostics/spec.md) | 中继节点池检测与切换（候选池体检 + 一键应用健康节点，防社区节点单点瘫痪；**in-progress**） |
 
 ## 按主题导航
 

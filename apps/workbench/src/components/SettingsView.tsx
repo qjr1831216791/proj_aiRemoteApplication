@@ -21,6 +21,7 @@ import type {
   ExitAction,
   LanguageSetting,
   MeshDiagItem,
+  RelayProbeItem,
   Settings,
   SettingsPatch,
 } from "../types";
@@ -190,6 +191,13 @@ export function SettingsView(props: SettingsViewProps) {
   const [meshIp, setMeshIp] = useState(settings.mesh.virtualIp);
   const [meshCidr, setMeshCidr] = useState(settings.mesh.virtualCidr);
   const [meshPeersText, setMeshPeersText] = useState(settings.mesh.peers.join("\n"));
+  // 自定义候选中继（spec 014：仅候选不生效，随 mesh 补丁一起保存）
+  const [meshPoolText, setMeshPoolText] = useState(settings.mesh.relayPool.join("\n"));
+  // 分享链接导入（spec 014 US4）：预填 EasyTier 官方仓库的社区节点分享帖
+  //（GitHub Discussions；官方公共节点 public.easytier.top/.cn 均已失效）
+  const RELAY_SHARE_URL = "https://github.com/EasyTier/EasyTier/discussions/2429";
+  const [poolUrl, setPoolUrl] = useState(RELAY_SHARE_URL);
+  const [poolFetchBusy, setPoolFetchBusy] = useState(false);
   // 组网动作在途（安装/应用/卸载共用；UAC 派发为异步返回）
   const [meshBusy, setMeshBusy] = useState(false);
   // 组网诊断结果（007 T16/AC13；null = 尚未运行）
@@ -231,10 +239,19 @@ export function SettingsView(props: SettingsViewProps) {
       onToast(t("settings.meshPeersInvalid", lang), "error");
       return;
     }
+    // 候选池（spec 014 AC7）：空行容忍、逐条同 peers 口径校验（仅入库不改生效）
+    const pool = meshPoolText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (pool.some((p) => !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+$/.test(p))) {
+      onToast(t("settings.meshPoolInvalid", lang), "error");
+      return;
+    }
     try {
       onSettingsChange(
         await api.saveSettings({
-          mesh: { networkName: name, virtualIp: ip, virtualCidr: cidr, peers },
+          mesh: { networkName: name, virtualIp: ip, virtualCidr: cidr, peers, relayPool: pool },
         }),
       );
       onToast(t("settings.meshSaved", lang), "success");
@@ -282,6 +299,70 @@ export function SettingsView(props: SettingsViewProps) {
       onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
     } finally {
       setDiagBusy(false);
+    }
+  };
+
+  // ── 候选中继池（spec 014：体检 + 一键应用健康节点）──────────────────────
+  const [poolResult, setPoolResult] = useState<RelayProbeItem[] | null>(null);
+  const [poolBusy, setPoolBusy] = useState(false);
+  const [applyBusy, setApplyBusy] = useState(false);
+
+  /** 全池并发探测（只读）：结果含来源标注与失败原因码，作为「应用」的输入 */
+  const runPoolProbe = async () => {
+    setPoolBusy(true);
+    try {
+      setPoolResult(await api.relayProbe());
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setPoolBusy(false);
+    }
+  };
+
+  /** 一键应用健康节点（AC4~AC6）：写入生效 peers 并重启服务；dispatchRequired
+   * = 静默重启未成功，引导走上方 UAC「应用配置并重启服务」补一次 */
+  const applyHealthy = async (healthy: string[]) => {
+    setApplyBusy(true);
+    try {
+      const out = await api.relayApply(healthy);
+      onToast(
+        t(out.dispatchRequired ? "mesh.pool.applyDispatch" : "mesh.pool.applyDone", lang),
+        out.dispatchRequired ? "info" : "success",
+      );
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setApplyBusy(false);
+    }
+  };
+
+  /** 分享链接拉取（AC9~AC10）：提取白名单协议节点并合并进候选 textarea
+   * （不覆盖既有项、不直接生效）；入库仍须经「保存」 */
+  const fetchPoolNodes = async () => {
+    setPoolFetchBusy(true);
+    try {
+      const nodes = await api.relayFetchNodes(poolUrl.trim());
+      const existing = new Set(
+        meshPoolText.split("\n").map((s) => s.trim()).filter(Boolean),
+      );
+      const fresh = nodes.filter((n) => !existing.has(n));
+      if (fresh.length === 0) {
+        onToast(t("settings.meshPoolFetchNone", lang), "info");
+        return;
+      }
+      setMeshPoolText(
+        [...meshPoolText.split("\n").map((s) => s.trim()).filter(Boolean), ...fresh].join("\n"),
+      );
+      onToast(
+        t("settings.meshPoolFetchDone", lang)
+          .replace("{n}", String(nodes.length))
+          .replace("{m}", String(fresh.length)),
+        "success",
+      );
+    } catch (e) {
+      onToast(`${t("toast.opFailed", lang)}: ${String(e)}`, "error");
+    } finally {
+      setPoolFetchBusy(false);
     }
   };
 
@@ -475,11 +556,43 @@ export function SettingsView(props: SettingsViewProps) {
             <span class="settings__label">{t("settings.meshPeers", lang)}</span>
             <textarea
               class="form-input"
-              rows={3}
+              rows={4}
               placeholder={t("settings.meshPeersPlaceholder", lang)}
               value={meshPeersText}
               onInput={(e) => setMeshPeersText(e.currentTarget.value)}
             />
+          </div>
+          {/* 自定义候选（spec 014 AC7/AC8）：仅候选不生效——检测通过后经
+              「应用健康节点」才写入上方对端；随保存一起持久化 */}
+          <div class="tunnel-form-field">
+            <span class="settings__label">{t("settings.meshPool", lang)}</span>
+            <textarea
+              class="form-input"
+              rows={5}
+              placeholder={t("settings.meshPoolPlaceholder", lang)}
+              value={meshPoolText}
+              onInput={(e) => setMeshPoolText(e.currentTarget.value)}
+            />
+          </div>
+          {/* 分享链接导入（spec 014 US4）：拉取社区分享帖的已知节点合并进上方
+              候选（可再手动增删），入库须经「保存」；GitHub Discussions 自动转
+              API 拉取（网页直抓不作依赖） */}
+          <div class="settings__row settings__row--field">
+            <div class="settings__row-text">
+              <span class="settings__label">{t("settings.meshPoolFetchLabel", lang)}</span>
+              <input
+                class="form-input"
+                value={poolUrl}
+                onInput={(e) => setPoolUrl(e.currentTarget.value)}
+              />
+            </div>
+            <button
+              class="btn btn--sm"
+              disabled={poolFetchBusy}
+              onClick={() => void fetchPoolNodes()}
+            >
+              {poolFetchBusy ? t("settings.meshPoolFetching", lang) : t("settings.meshPoolFetchBtn", lang)}
+            </button>
           </div>
           {/* 保存配置独占一行（2026-09-13 需求方「不协调」反馈）：原先挤在字段行尾，
               与 textarea 右边界参差；移出后三输入平分整行、与 textarea 同宽 */}
@@ -575,6 +688,62 @@ export function SettingsView(props: SettingsViewProps) {
                   </div>
                 );
               })}
+            </div>
+          ) : null}
+          {/* 候选中继池（spec 014）：体检 → 逐节点绿/红+原因 → 一键应用健康节点；
+              全灭时按钮区不出现、以警示替代（AC5 防清空对端） */}
+          <div class="settings__row mesh-start">
+            <div class="settings__row-text">
+              <span class="settings__desc">{t("mesh.pool.desc", lang)}</span>
+            </div>
+            <button class="btn btn--sm" disabled={poolBusy} onClick={() => void runPoolProbe()}>
+              {poolBusy ? t("mesh.pool.running", lang) : t("mesh.pool.runBtn", lang)}
+            </button>
+          </div>
+          {poolResult ? (
+            <div class="settings__rows">
+              {poolResult.map((item) => (
+                <div class="settings__row" key={item.uri}>
+                  <div class="settings__row-text">
+                    <span class="settings__label">
+                      <span
+                        class={item.ok ? "diag-mark diag-mark--ok" : "diag-mark diag-mark--bad"}
+                      >
+                        {item.ok ? "✓" : "✗"}
+                      </span>{" "}
+                      {item.uri}
+                      <span class="settings__desc">
+                        {" "}
+                        · {t(`mesh.pool.source.${item.source}` as DictKey, lang)}
+                      </span>
+                    </span>
+                    {!item.ok && item.reason ? (
+                      <span class="settings__desc">
+                        {t(`mesh.pool.reason.${item.reason}` as DictKey, lang)}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+              {(() => {
+                const healthy = poolResult.filter((i) => i.ok).map((i) => i.uri);
+                if (healthy.length === 0) {
+                  return <p class="notice notice--warn">{t("mesh.pool.applyNone", lang)}</p>;
+                }
+                return (
+                  <div class="settings__actions">
+                    <button
+                      class="btn btn--sm btn--primary"
+                      disabled={applyBusy}
+                      onClick={() => void applyHealthy(healthy)}
+                    >
+                      {applyBusy
+                        ? t("mesh.pool.applying", lang)
+                        : t("mesh.pool.applyBtn", lang).replace("{n}", String(healthy.length))}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           ) : null}
         </section>

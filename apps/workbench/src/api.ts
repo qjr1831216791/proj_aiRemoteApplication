@@ -16,6 +16,8 @@ import type {
   NetStatus,
   NetCategory,
   ProbeOutcome,
+  RelayApplyOutcome,
+  RelayProbeItem,
   ScriptsAvailability,
   Settings,
   SettingsPatch,
@@ -72,6 +74,13 @@ export const api = {
   meshDiagnostics: () => invoke<MeshDiagItem[]>("mesh_diagnostics"),
   /** 成员入网配置（009 US4）：官方 TOML 文本（密钥为占位符 + 指引注释，无真实密钥） */
   meshMemberConfig: () => invoke<string>("mesh_member_config"),
+  /** 候选中继池探测（spec 014 AC1~AC3）：全池并发 TCP 探测，只读不改配置 */
+  relayProbe: () => invoke<RelayProbeItem[]>("relay_probe"),
+  /** 一键应用健康节点（spec 014 AC4~AC6）：健康列表写入生效 peers 并重启服务 */
+  relayApply: (healthy: string[]) =>
+    invoke<RelayApplyOutcome>("relay_apply", { healthy }),
+  /** 分享链接拉取候选节点（spec 014 AC9~AC11）：提取白名单协议 URI 并去重 */
+  relayFetchNodes: (url: string) => invoke<string[]>("relay_fetch_nodes", { url }),
   /** DNS 对齐检测（AC8：A=虚拟 IP 对齐 + 残留 CNAME 判旁路暴露面） */
   checkDnsAlignment: () => invoke<DnsAlignment>("check_dns_alignment"),
 

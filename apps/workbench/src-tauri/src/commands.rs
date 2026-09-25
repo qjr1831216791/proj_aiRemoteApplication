@@ -446,6 +446,114 @@ pub async fn mesh_diagnostics(
     .map_err(|e| format!("诊断任务失败：{e}"))
 }
 
+// ── 候选中继池（spec 014：T3 探测 / T4 应用；内核在 mesh.rs）───────────────
+
+/// 候选中继池探测（AC1~AC3，只读）：池 = 生效 peers ∪ 用户自定义 ∪ 内置清单
+/// （compose 归一去重），全池并发 TCP 探测（3s 超时）。纯只读不改配置；
+/// spawn_blocking 执行不堵 UI。
+#[tauri::command]
+pub async fn relay_probe(
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+) -> Result<Vec<crate::mesh::RelayProbeItem>, String> {
+    let mesh = settings.current().mesh;
+    tauri::async_runtime::spawn_blocking(move || {
+        let builtin: Vec<String> =
+            crate::consts::RELAY_POOL_BUILTIN.iter().map(|s| s.to_string()).collect();
+        let pool = crate::mesh::relay_pool_compose(&builtin, &mesh.relay_pool, &mesh.peers);
+        Ok(crate::mesh::relay_probe_pool(pool))
+    })
+    .await
+    .map_err(|e| format!("候选探测线程失败：{e}"))?
+}
+
+/// 一键应用健康节点（AC4~AC6）：校验（非空/合法/⊆池）→ settings 补丁写
+/// （peers = healthy，relay_pool 不动）→ prepare_stack 磁盘段（Err：回滚
+/// peers 后报错，不派发重启——沿用「校验不过旧配置继续服务」语义）→
+/// 服务静默重启（SDDL 授权免提权；失败不报错，返回 dispatch_required
+/// 引导走设置区 UAC「应用配置并重启」兜底）。
+#[tauri::command]
+pub async fn relay_apply(
+    ctx: tauri::State<'_, AutostartContext>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    healthy: Vec<String>,
+) -> Result<crate::mesh::RelayApplyOutcome, String> {
+    use crate::mesh::{validate_relay_apply, RelayApplyOutcome};
+
+    let cur = settings.current();
+    let mesh = cur.mesh.clone();
+    let builtin: Vec<String> =
+        crate::consts::RELAY_POOL_BUILTIN.iter().map(|s| s.to_string()).collect();
+    let pool = crate::mesh::relay_pool_compose(&builtin, &mesh.relay_pool, &mesh.peers);
+    validate_relay_apply(&healthy, &pool)?;
+
+    // 补丁写生效对端（mesh 整块写入：除 peers 外字段保持原值）
+    settings
+        .patch(&crate::settings::SettingsPatch {
+            mesh: Some(crate::settings::MeshConfig {
+                peers: healthy.clone(),
+                ..mesh.clone()
+            }),
+            ..Default::default()
+        })
+        .map_err(|e| format!("保存组网设置失败：{e}"))?;
+
+    // 磁盘段失败（如密钥缺失/网段冲突/哈希不符）：回滚 peers，报原始错误。
+    // 此时 config.toml 可能已写新内容但服务未重启（prepare_stack 既有语义，
+    // 旧配置仍在服务内存中生效）；回滚后下次 apply 会按旧 peers 重渲染自愈。
+    if let Err(e) = prepare_mesh_stack(&ctx, &settings).await {
+        let _ = settings.patch(&crate::settings::SettingsPatch {
+            mesh: Some(crate::settings::MeshConfig { peers: mesh.peers.clone(), ..mesh }),
+            ..Default::default()
+        });
+        return Err(format!("新对端配置校验未通过，已回滚生效对端：{e}"));
+    }
+
+    // 静默重启（阻塞轮询 → spawn_blocking）：失败不算命令失败——配置已落盘
+    // 且校验通过，如实回报 dispatch_required 由用户 UAC 兜底（AC4 边界）
+    let stack = cur.stack_dir;
+    let dispatch_required = tauri::async_runtime::spawn_blocking(move || {
+        let ops = crate::mesh::WindowsMeshOps::new(None, stack);
+        let run_sc = |args: &[&str]| -> Result<i32, String> {
+            use std::os::windows::process::CommandExt;
+            let out = std::process::Command::new("sc.exe")
+                .args(args)
+                .creation_flags(crate::scripts::CREATE_NO_WINDOW)
+                .output()
+                .map_err(|e| format!("sc {args:?} 启动失败：{e}"))?;
+            Ok(out.status.code().unwrap_or(-1))
+        };
+        crate::mesh::restart_service_await(
+            &ops,
+            &run_sc,
+            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(20),
+            std::time::Duration::from_millis(200),
+        )
+    })
+    .await
+    .map_err(|e| format!("服务重启线程失败：{e}"))?
+    .is_err();
+
+    Ok(RelayApplyOutcome { peers: healthy, dispatch_required })
+}
+
+/// 分享链接拉取候选节点（AC9~AC11）：GitHub Discussions 自动转官方 REST
+///（正文+评论），其余 https 文本源直抓；白名单协议提取 + 去重。只读动作，
+/// 不落任何配置——返回列表由前端合并进候选池、经「保存」入库。
+#[tauri::command]
+pub async fn relay_fetch_nodes(url: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = crate::mesh::relay_list_fetch(&url)?;
+        let uris = crate::mesh::relay_list_extract(&text);
+        if uris.is_empty() {
+            return Err("链接内容中未发现有效节点 URI（应为 协议://地址:端口）".into());
+        }
+        Ok(uris)
+    })
+    .await
+    .map_err(|e| format!("节点拉取线程失败：{e}"))?
+}
+
 /// 成员入网配置（spec 009 US4/AC9~AC11）：从已保存组网设置渲染 EasyTier 官方
 /// 最小口径 TOML 文本（关键字段带 App 输入项行注释；network_secret 为占位符
 /// + set-mesh-secret.ps1 指引——真实密钥永不进 APP 界面，spec 007 AC8 延续）。

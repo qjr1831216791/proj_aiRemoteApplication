@@ -19,6 +19,7 @@ pub const CADDYFILE_PATH: &str = r"D:\Software\cloudcli-https\Caddyfile";
 /// 对外域名**回落默认值**（spec 013：运行时生效域名见 settings::effective_domain）
 pub const DOMAIN: &str = "ai.jackqi.cn";
 /// 工作台页面地址**回落默认值**（spec 013：运行时见 settings::effective_workbench_url）
+#[allow(dead_code)] // 与 DOMAIN_ROOT 同口径：仅测试与文档对照消费，无运行时直读
 pub const WORKBENCH_URL: &str = "https://ai.jackqi.cn/";
 
 /// CloudCLI 监听进程的可执行名：run-server-hidden.ps1 经 npm 全局拉起 node.exe，
@@ -58,6 +59,14 @@ pub const DEFAULT_MESH_VIRTUAL_CIDR: &str = "10.126.126.0/24";
 /// 默认对端节点（社区公益节点，腾讯云上海；无 SLA，多对端可编辑——plan §7-R1。
 /// T2 实测 2026-09-10 连通 46ms/0% 丢包，legacy 形态）
 pub const DEFAULT_MESH_PEERS: &[&str] = &["tcp://sh.vomiku.com:7910"];
+/// 内置候选中继节点池（spec 014：仅候选不生效，探测把关后才可入 peers）。
+/// 社区节点无 SLA——vomiku 于 2026-09-24 起停止服务（外部多点探测 refused），
+/// 正是本池存在的原因；清单随版本维护，用户可在设置区自定义候选兜底。
+/// us01：2026-09-25 真机实测连通（美国公共服务器，EasyTier 2.5.0）。
+pub const RELAY_POOL_BUILTIN: &[&str] = &[
+    "tcp://us01.225284.xyz:11010",
+    "tcp://sh.vomiku.com:7910",
+];
 /// 期望 SHA256：官方 Release easytier-windows-x86_64-v2.6.4.zip 内件
 /// （2026-09-10 经 gh 官方通道下载，zip 完整性 unzip -t 通过；镜像通道文件
 /// 与官方不符已弃用——plan §7-R6 教训）
