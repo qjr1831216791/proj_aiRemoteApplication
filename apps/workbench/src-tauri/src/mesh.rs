@@ -950,6 +950,95 @@ pub fn relay_probe_pool(items: Vec<RelayProbeItem>) -> Vec<RelayProbeItem> {
     })
 }
 
+// ── 一键应用健康节点（spec 014 T4，AC4~AC6）────────────────────────────────
+
+/// relay_apply 载荷（AC4/AC6）：peers = 应用后的生效列表；
+/// dispatch_required = 静默重启未成功（旧装机无 SDDL 授权等），配置已落盘
+/// 且校验通过，需用户走设置区 UAC「应用配置并重启」兜底一次。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayApplyOutcome {
+    pub peers: Vec<String>,
+    pub dispatch_required: bool,
+}
+
+/// apply 入参校验（AC5 + 011 命令面惯例，纯函数）：healthy 非空（全灭时
+/// 拒绝应用——防清空 peers 致永久「连接中」）、逐项 URI 合法、全部 ⊆ 池
+///（防前端伪造不在池中的节点直达生效面）。
+pub fn validate_relay_apply(healthy: &[String], pool: &[RelayProbeItem]) -> Result<(), String> {
+    if healthy.is_empty() {
+        return Err("没有可应用的健康节点：请先检测中继节点，或添加自定义候选".into());
+    }
+    for uri in healthy {
+        if !valid_peer_uri(uri) {
+            return Err(format!("健康节点 URI 不合法（应为 scheme://host:port）：{uri}"));
+        }
+        if !pool.iter().any(|p| &p.uri == uri) {
+            return Err(format!("节点不在候选池中（请先检测或添加为自定义候选）：{uri}"));
+        }
+    }
+    Ok(())
+}
+
+/// 服务静默重启等待（relay_apply 专用；plan §3.4）：sc stop → 轮询至
+/// Stopped/Disabled → sc start → 轮询至 Running/StartPending。`run_sc` 注入
+/// sc 派发（生产 = sc.exe 静默调用；测试 = mock），ops 注入服务态探测；
+/// 任一步失败/超时 → Err（调用方回落 dispatch_required）。退出码静默口径：
+/// stop 沿 [`stop_exit_code_is_quiet`]（0/1060/1062），start 容忍 1056（已运行）。
+pub fn restart_service_await(
+    ops: &dyn MeshOps,
+    run_sc: &dyn Fn(&[&str]) -> Result<i32, String>,
+    stop_wait: Duration,
+    start_wait: Duration,
+    poll_every: Duration,
+) -> Result<(), String> {
+    let code = run_sc(&["stop", SERVICE_NAME])?;
+    if !stop_exit_code_is_quiet(code) {
+        return Err(format!("sc stop 未受理（退出码 {code}）"));
+    }
+    await_service_state(
+        ops,
+        &[MeshServiceState::Stopped, MeshServiceState::Disabled],
+        stop_wait,
+        poll_every,
+        "停止",
+    )?;
+    let code = run_sc(&["start", SERVICE_NAME])?;
+    if code != 0 && code != 1056 {
+        return Err(format!("sc start 未受理（退出码 {code}）"));
+    }
+    await_service_state(
+        ops,
+        &[MeshServiceState::Running, MeshServiceState::StartPending],
+        start_wait,
+        poll_every,
+        "启动",
+    )
+}
+
+/// 轮询等待服务态进入目标集（restart 内核；超时 Err 带阶段名与时长）
+fn await_service_state(
+    ops: &dyn MeshOps,
+    targets: &[MeshServiceState],
+    wait: Duration,
+    poll_every: Duration,
+    phase: &str,
+) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        if targets.contains(&ops.service_state()) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!(
+                "等待服务{phase}超时（{}s）：请刷新组网状态确认，或走设置区手动应用",
+                wait.as_secs()
+            ));
+        }
+        std::thread::sleep(poll_every);
+    }
+}
+
 /// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
 /// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
 /// **无条件 SHA256 办后校验**（spec 011 AC3：旧「exe 已存在即跳过」的短路
@@ -1540,6 +1629,121 @@ mod tests {
         assert!(!out[1].ok);
         assert_eq!(out[1].reason, Some("refused"), "127.0.0.1:1 应 refused");
         assert_eq!(out[2].reason, Some("invalid"), "invalid 项免探测原样透出");
+    }
+
+    // ── spec 014 T4：apply 校验与重启等待 ─────────────────────────────────
+
+    /// MeshOps mock：按预排状态序列出队，耗尽后停在末态（轮询即读它）
+    struct MockServiceOps(std::sync::Mutex<Vec<MeshServiceState>>);
+
+    impl MeshOps for MockServiceOps {
+        fn service_state(&self) -> MeshServiceState {
+            let mut s = self.0.lock().expect("锁");
+            if s.len() > 1 {
+                s.remove(0)
+            } else {
+                s[0]
+            }
+        }
+        fn query_peers(&self) -> Result<Vec<PeerBrief>, String> {
+            Ok(vec![])
+        }
+    }
+
+    /// AC5 + 命令面：空列表拒绝 / 非法 URI 拒绝 / 不在池中拒绝 / 合法通过
+    #[test]
+    fn validate_relay_apply_rejects_empty_illegal_and_foreign() {
+        let pool = vec![RelayProbeItem {
+            uri: "tcp://a.example.com:1".into(),
+            source: RelaySource::Builtin,
+            ok: true,
+            reason: None,
+        }];
+        let err = validate_relay_apply(&[], &pool).unwrap_err();
+        assert!(err.contains("没有可应用"), "AC5 全灭拒绝：{err}");
+        assert!(validate_relay_apply(&["bad uri".into()], &pool)
+            .unwrap_err()
+            .contains("不合法"));
+        assert!(validate_relay_apply(&["tcp://evil.example.com:1".into()], &pool)
+            .unwrap_err()
+            .contains("不在候选池"), "防前端伪造节点直达生效面");
+        assert!(validate_relay_apply(&["tcp://a.example.com:1".into()], &pool).is_ok());
+    }
+
+    /// 重启等待：正常流调用序 stop→start、stop/start 拒绝码、停止/启动超时
+    #[test]
+    fn restart_service_await_paths() {
+        use MeshServiceState::{Running, Stopped};
+        let no_wait = Duration::from_millis(1);
+        let poll = Duration::from_millis(1);
+
+        // 正常流：stop(0) → Stopped → start(0) → Running
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped, Running]));
+        let calls = std::cell::RefCell::new(Vec::<Vec<String>>::new());
+        let run = |args: &[&str]| -> Result<i32, String> {
+            calls
+                .borrow_mut()
+                .push(args.iter().map(|s| s.to_string()).collect());
+            Ok(0)
+        };
+        restart_service_await(&ops, &run, no_wait, no_wait, poll).expect("正常流应通过");
+        assert_eq!(
+            calls.into_inner(),
+            vec![
+                vec!["stop".to_string(), "EasyTierMesh".to_string()],
+                vec!["start".to_string(), "EasyTierMesh".to_string()],
+            ],
+            "调用序应为 stop→start 且指向服务名"
+        );
+
+        // stop 拒绝码（5 = ACCESS_DENIED，旧装机无 SDDL）→ Err 不再 start
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Running]));
+        let r = restart_service_await(&ops, &|_| Ok(5), no_wait, no_wait, poll);
+        assert!(r.unwrap_err().contains("stop"), "stop 拒绝应报停止阶段");
+
+        // start 拒绝码（非 0/1056）→ Err
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped]));
+        let r = restart_service_await(
+            &ops,
+            &|args| {
+                if args[0] == "start" {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            },
+            no_wait,
+            no_wait,
+            poll,
+        );
+        assert!(r.unwrap_err().contains("start"), "start 拒绝应报启动阶段");
+
+        // 停止超时：状态恒 Running
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Running]));
+        let r = restart_service_await(&ops, &|_| Ok(0), no_wait, no_wait, poll);
+        assert!(r.unwrap_err().contains("停止超时"));
+
+        // 启动超时：停止到位但状态恒 Stopped
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped]));
+        let r = restart_service_await(&ops, &|_| Ok(0), no_wait, no_wait, poll);
+        assert!(r.unwrap_err().contains("启动超时"));
+
+        // start 容忍 1056（服务已运行——竞态下 SCM 已自行拉起）
+        let ops = MockServiceOps(std::sync::Mutex::new(vec![Stopped, Running]));
+        restart_service_await(
+            &ops,
+            &|args| {
+                if args[0] == "start" {
+                    Ok(1056)
+                } else {
+                    Ok(0)
+                }
+            },
+            no_wait,
+            no_wait,
+            poll,
+        )
+        .expect("1056 应容忍");
     }
 
     // ── T4：网段冲突检测 ──────────────────────────────────────────────────
