@@ -58,6 +58,14 @@ pub const DEFAULT_MESH_VIRTUAL_CIDR: &str = "10.126.126.0/24";
 /// 默认对端节点（社区公益节点，腾讯云上海；无 SLA，多对端可编辑——plan §7-R1。
 /// T2 实测 2026-09-10 连通 46ms/0% 丢包，legacy 形态）
 pub const DEFAULT_MESH_PEERS: &[&str] = &["tcp://sh.vomiku.com:7910"];
+/// 内置候选中继节点池（spec 014：仅候选不生效，探测把关后才可入 peers）。
+/// 社区节点无 SLA——vomiku 于 2026-09-24 起停止服务（外部多点探测 refused），
+/// 正是本池存在的原因；清单随版本维护，用户可在设置区自定义候选兜底。
+/// us01：2026-09-25 真机实测连通（美国公共服务器，EasyTier 2.5.0）。
+pub const RELAY_POOL_BUILTIN: &[&str] = &[
+    "tcp://us01.225284.xyz:11010",
+    "tcp://sh.vomiku.com:7910",
+];
 /// 期望 SHA256：官方 Release easytier-windows-x86_64-v2.6.4.zip 内件
 /// （2026-09-10 经 gh 官方通道下载，zip 完整性 unzip -t 通过；镜像通道文件
 /// 与官方不符已弃用——plan §7-R6 教训）

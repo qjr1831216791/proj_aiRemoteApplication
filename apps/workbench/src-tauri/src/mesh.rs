@@ -803,6 +803,153 @@ pub fn run_diagnostics(cfg: &MeshConfig, stack_dir: &str, domain: &str) -> Vec<D
     ]
 }
 
+// ── 候选中继池（spec 014：探测把关、一键应用）──────────────────────────────
+//
+// 背景：默认社区节点 vomiku 于 2026-09-24 停止服务致组网瘫痪——诊断此前
+// 只覆盖已配置 peers，用户无从知晓「有没有别的节点可用」。本段提供
+// 池合成（内置 ∪ 自定义 ∪ 生效）→ 并发探测 → 结果即切换依据的内核；
+// 配置变更动作在命令层（relay_apply），内核保持纯只读。
+
+/// 候选节点来源（AC3：同列表呈现可区分；优先级 Active > Custom > Builtin——
+/// 同一节点重复出现时保留更高优先级的身份标注）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelaySource {
+    /// 生效中（当前 peers 成员）
+    Active,
+    /// 用户自定义候选（settings.mesh.relay_pool）
+    Custom,
+    /// 内置清单（consts::RELAY_POOL_BUILTIN）
+    Builtin,
+}
+
+/// 候选探测单项（`relay_probe` 载荷；AC1：绿/红 + 失败原因码。reason 为
+/// 固定枚举稳定码，前端 `mesh.pool.reason.*` 双语映射——不含用户数据/密钥）
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayProbeItem {
+    /// 节点 URI（保持用户输入原貌，仅 trim）
+    pub uri: String,
+    pub source: RelaySource,
+    /// TCP 连通判定（invalid 项恒 false）
+    pub ok: bool,
+    /// 失败原因码（ok=true 时省略）：refused=端口无监听 / timeout=网络不可达
+    /// 或被拦 / resolve=域名解析失败 / error=其他 IO 错误 / invalid=URI 非法
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+}
+
+/// 候选去重键（host:port，host 小写；scheme 不参与——探测的是端口连通，
+/// tcp/udp 同址视作同一节点）
+fn relay_uri_key(uri: &str) -> Option<String> {
+    peer_host_port(uri).map(|(h, p)| format!("{}:{p}", h.to_ascii_lowercase()))
+}
+
+fn relay_source_rank(source: RelaySource) -> u8 {
+    match source {
+        RelaySource::Active => 0,
+        RelaySource::Custom => 1,
+        RelaySource::Builtin => 2,
+    }
+}
+
+/// 池合成（spec 014 §4.2 纯函数）：生效 peers ∪ 自定义 ∪ 内置，归一去重；
+/// 重复节点保留高优先级来源；非法 URI 原样入列标 invalid（坏数据可见而非
+/// 静默丢弃——AC1 让用户看到配置里的问题项）。空串跳过（前端空行残留）。
+pub fn relay_pool_compose(
+    builtin: &[String],
+    custom: &[String],
+    active: &[String],
+) -> Vec<RelayProbeItem> {
+    let mut out: Vec<RelayProbeItem> = Vec::new();
+    let mut keys: Vec<String> = Vec::new();
+    fn push_item(
+        uri: &str,
+        source: RelaySource,
+        out: &mut Vec<RelayProbeItem>,
+        keys: &mut Vec<String>,
+    ) {
+        let trimmed = uri.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        // invalid 口径对齐 validate_mesh_config（valid_peer_uri 严格形态：
+        // 拒含空白/无 scheme；peer_host_port 宽松解析不作数——"tcp://bad uri"
+        // 这类带空格 host 必须标 invalid 而非放行）
+        let key = match relay_uri_key(trimmed) {
+            Some(k) if valid_peer_uri(trimmed) => k,
+            _ => format!("__invalid__:{trimmed}"),
+        };
+        if let Some(pos) = keys.iter().position(|k| *k == key) {
+            // 重复节点：保留高优先级来源（合法键与 invalid 键形态互斥——
+            // 同址节点不可能既有合法键又先以 invalid 入列，无需重置 reason）
+            if relay_source_rank(source) < relay_source_rank(out[pos].source) {
+                out[pos].source = source;
+            }
+            return;
+        }
+        keys.push(key);
+        let invalid = !valid_peer_uri(trimmed) || relay_uri_key(trimmed).is_none();
+        out.push(RelayProbeItem {
+            uri: trimmed.to_string(),
+            source,
+            ok: false,
+            reason: invalid.then_some("invalid"),
+        });
+    }
+    for uri in active {
+        push_item(uri, RelaySource::Active, &mut out, &mut keys);
+    }
+    for uri in custom {
+        push_item(uri, RelaySource::Custom, &mut out, &mut keys);
+    }
+    for uri in builtin {
+        push_item(uri, RelaySource::Builtin, &mut out, &mut keys);
+    }
+    out
+}
+
+/// 全池并发探测（AC1/AC2）：`thread::scope` 并行（单节点 `probe_tcp` 3s 超时），
+/// 总耗时≈最慢单节点而非逐项串行；invalid 项免探测。纯只读——不改任何配置。
+pub fn relay_probe_pool(items: Vec<RelayProbeItem>) -> Vec<RelayProbeItem> {
+    std::thread::scope(|scope| {
+        items
+            .into_iter()
+            .map(|mut item| {
+                scope.spawn(move || {
+                    if item.reason == Some("invalid") {
+                        return item;
+                    }
+                    match peer_host_port(&item.uri) {
+                        // 口径同 compose：宽松解析成功但形态非法（含空白等）仍按
+                        // invalid 处理，不对其发起探测
+                        Some((host, port)) if valid_peer_uri(&item.uri) => {
+                            match probe_tcp(&host, port) {
+                                Ok(()) => {
+                                    item.ok = true;
+                                    item.reason = None;
+                                }
+                                Err(code) => {
+                                    item.ok = false;
+                                    item.reason = Some(code);
+                                }
+                            }
+                        }
+                        _ => {
+                            item.ok = false;
+                            item.reason = Some("invalid");
+                        }
+                    }
+                    item
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|h| h.join().expect("候选探测线程不应 panic"))
+            .collect()
+    })
+}
+
 /// 配置生效流水线的磁盘段（T9 命令内核，纯 IO 可直测）：
 /// 密钥就绪检查（AC9 拒绝前置）→ 渲染（校验 AC11）→ 二进制缺失时落位 →
 /// **无条件 SHA256 办后校验**（spec 011 AC3：旧「exe 已存在即跳过」的短路
@@ -1038,6 +1185,13 @@ pub fn validate_mesh_config(cfg: &MeshConfig) -> Result<(), String> {
             return Err(format!("对端 URI 不合法（应为 scheme://host:port）：{uri}"));
         }
     }
+    // spec 014 AC7：候选池同口径校验（仅候选不生效，但坏 URI 不入库——
+    // 探测时 invalid 项可见是「检测发现」，入库是「配置写入」，口径不同）
+    for uri in &cfg.relay_pool {
+        if !valid_peer_uri(uri) {
+            return Err(format!("候选 URI 不合法（应为 scheme://host:port）：{uri}"));
+        }
+    }
     Ok(())
 }
 
@@ -1209,6 +1363,7 @@ mod tests {
                 "tcp://sh.vomiku.com:7910".into(),
                 "udp://backup.example.com:11010".into(),
             ],
+            relay_pool: Vec::new(),
         }
     }
 
@@ -1285,8 +1440,106 @@ mod tests {
         cfg.peers = vec!["sh.vomiku.com:7910".into()];
         assert!(validate_mesh_config(&cfg).unwrap_err().contains("URI"));
 
+        // spec 014 AC7：候选池同口径校验（非法 URI 拒入库；空池合法）
+        cfg = sample_config();
+        cfg.relay_pool = vec!["tcp://ok.example.com:11010".into()];
+        assert!(validate_mesh_config(&cfg).is_ok(), "合法候选应通过");
+        cfg.relay_pool = vec!["bad uri".into()];
+        assert!(
+            validate_mesh_config(&cfg).unwrap_err().contains("候选"),
+            "非法候选应拒绝且文案指明候选"
+        );
+
         // 默认配置本身合法（默认值体检）
         assert!(validate_mesh_config(&crate::settings::MeshConfig::default()).is_ok());
+    }
+
+    // ── spec 014：候选池合成与探测 ────────────────────────────────────────
+
+    /// AC3/§4.2：生效 ∪ 自定义 ∪ 内置，归一去重、来源优先级、非法项可见
+    #[test]
+    fn relay_pool_compose_dedup_priority_and_invalid_visible() {
+        let builtin = vec!["tcp://us01.example.com:11010".to_string()];
+        let custom = vec![
+            "tcp://US01.Example.com:11010".to_string(),
+            "tcp://mine.example.com:22010".to_string(),
+            "   ".to_string(),
+        ];
+        let active = vec![
+            "tcp://mine.example.com:22010".to_string(),
+            "tcp://bad uri".to_string(),
+        ];
+        let items = relay_pool_compose(&builtin, &custom, &active);
+
+        // 顺序 = active → custom → builtin 首次出现序（active 的 invalid 项亦然）
+        assert_eq!(items.len(), 3, "空串跳过、大小写归一去重：{items:?}");
+        assert_eq!(items[0].uri, "tcp://mine.example.com:22010");
+        assert_eq!(items[0].source, RelaySource::Active);
+        assert_eq!(items[1].uri, "tcp://bad uri", "active 段次项");
+        assert_eq!(items[1].reason, Some("invalid"), "非法项可见而非静默丢弃");
+        assert_eq!(items[2].uri, "tcp://US01.Example.com:11010", "用户输入原貌");
+        assert_eq!(
+            items[2].source, RelaySource::Custom,
+            "重复节点（host 大小写不敏感）保留高优先级来源"
+        );
+    }
+
+    /// 序列化契约：camelCase + reason 稳定码；ok 项 reason 省略（不含密钥/用户数据）
+    #[test]
+    fn relay_probe_item_serialization_contract() {
+        let bad = RelayProbeItem {
+            uri: "tcp://a.example.com:1".into(),
+            source: RelaySource::Active,
+            ok: false,
+            reason: Some("refused"),
+        };
+        let json = serde_json::to_string(&bad).unwrap();
+        assert!(json.contains(r#""source":"active""#), "{json}");
+        assert!(json.contains(r#""reason":"refused""#), "{json}");
+
+        let good = RelayProbeItem {
+            uri: "tcp://a.example.com:1".into(),
+            source: RelaySource::Builtin,
+            ok: true,
+            reason: None,
+        };
+        let json = serde_json::to_string(&good).unwrap();
+        assert!(!json.contains("reason"), "ok 项 reason 应省略：{json}");
+    }
+
+    /// AC1/AC2：invalid 免探测、refused/ok 实网分类（本机 listener 保证确定性）
+    #[test]
+    fn relay_probe_pool_reason_codes() {
+        // 本机临时监听 → ok（connect 进 backlog 即成功，无需 accept）
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        // 127.0.0.1:1 几乎恒 refused（无进程监听的保留端口）
+        let items = vec![
+            RelayProbeItem {
+                uri: format!("tcp://127.0.0.1:{port}"),
+                source: RelaySource::Builtin,
+                ok: false,
+                reason: None,
+            },
+            RelayProbeItem {
+                uri: "tcp://127.0.0.1:1".into(),
+                source: RelaySource::Custom,
+                ok: false,
+                reason: None,
+            },
+            RelayProbeItem {
+                uri: "no scheme here".into(),
+                source: RelaySource::Custom,
+                ok: false,
+                reason: Some("invalid"),
+            },
+        ];
+        let out = relay_probe_pool(items);
+        assert!(out[0].ok, "本机监听应 ok：{:?}", out[0].reason);
+        assert_eq!(out[0].reason, None);
+        assert!(!out[1].ok);
+        assert_eq!(out[1].reason, Some("refused"), "127.0.0.1:1 应 refused");
+        assert_eq!(out[2].reason, Some("invalid"), "invalid 项免探测原样透出");
     }
 
     // ── T4：网段冲突检测 ──────────────────────────────────────────────────
