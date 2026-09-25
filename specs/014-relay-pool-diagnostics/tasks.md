@@ -55,7 +55,7 @@
 
 ## 完成定义（DoD）核对清单
 
-- [ ] AC1~AC8 逐条验证（自动化覆盖面 + 真机清单标注归属）
-- [ ] `cargo test` / `npm run build` 全绿
-- [ ] spec / plan / tasks / MOC 状态同步
-- [ ] CHANGELOG Unreleased 登记（用户可感知：诊断面板新增中继节点池体检与一键切换）
+- [x] AC1~AC11 逐条验证（自动化覆盖面 + 真机清单需求方签收 2026-09-25）
+- [x] `cargo test`（274 绿）/ `npm run build` 全绿
+- [x] spec / plan / tasks / MOC 状态同步
+- [x] CHANGELOG Unreleased 登记（用户可感知：诊断面板新增中继节点池体检与一键切换）

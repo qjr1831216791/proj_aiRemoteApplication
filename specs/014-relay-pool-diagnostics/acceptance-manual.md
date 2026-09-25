@@ -18,7 +18,7 @@
 | AC7（非法 URI 拒绝） | 是 | `validate_mesh_config_rejects_bad_fields`（候选段）+ `saveMesh` 前端同口径正则 |
 | AC8（自定义持久化+内置不污染） | 是 | `relay_pool_field_legacy_compat_and_roundtrip`（旧文件兼容+roundtrip+camelCase）；内置清单为编译期常量结构性不可被用户改写 |
 
-## 2. 真机验收清单（需求方）
+## 2. 真机验收清单（需求方）——✅ 2026-09-25 需求方真机验收通过
 
 前置：开发态 `npm run tauri dev` 或安装包；组网服务已安装。
 

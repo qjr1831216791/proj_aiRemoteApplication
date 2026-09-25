@@ -2,10 +2,10 @@
 
 > 导航：[plan.md](./plan.md) · [tasks.md](./tasks.md) · 返回 [MOC](../MOC.md)
 
-- **状态**: in-progress <!-- draft | reviewed | in-progress | done | archived -->
+- **状态**: done <!-- draft | reviewed | in-progress | done | archived -->
 - **迭代**: Sprint 10
 - **创建日期**: 2026-09-15
-- **最后更新**: 2026-09-15
+- **最后更新**: 2026-09-25
 
 ## 1. 背景与问题
 
@@ -78,3 +78,4 @@ v0.7.0 安装包首次分发给其他用户使用，随即暴露**域名硬编�
 | 2026-09-15 | 初稿（draft） | 分发用户真机反馈两项缺陷（同步 DNS 报 `NoPermissionToOperateDomain` + 看板域名写死研发者域名）；需求方拍板「域名应有单一数据来源（装机向导腾讯云前置录入）」并选择立 spec 走变更流程 |
 | 2026-09-15 | 子代理评审 PASS-with-notes（4 条低severity 全部采纳修复：§4 补前端取数路径、AC2 Given 补自足前置、决策 6 归属表述精确化、MOC 迭代表补 Sprint 10）；状态 draft → reviewed | 需求方指示「派发子代理审核，如果没问题则下一步」 |
 | 2026-09-15 | 真机验收期修订：**DNS 操作链不再回落默认域名**——新增 AC9（未配置域名点同步 → 拒绝并报「域名传入为空」）、AC10（DNSPod 报错带「域名：X」前缀）；§5 异常路径对同步 DNS 链路 carve-out。展示/心跳类消费点回落口径不变（AC3） | 需求方同事真机复现：重装后未录域名点同步 DNS，后端把回落默认 `ai.jackqi.cn` 传给 DNSPod（配用户自有密钥）报 `NoPermissionToOperateDomain`，报错又不含域名值无从排查；需求方定「不能默认传值，执行侧校验并明示域名」 |
+| 2026-09-25 | 需求方真机签收：分发场景装机/域名链路全部走查通过（含验收期两项修复），状态 in-progress → **done** | AC1~AC10 全部验证通过 |
